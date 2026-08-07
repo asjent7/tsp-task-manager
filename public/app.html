@@ -45,7 +45,7 @@
       display: flex;
     }
 
-    /* ── Sidebar ─────────────────────────────────────────────────────────── */
+    /* ── Sidebar ──────────────────────────────────────────────────────────── */
 
     #sidebar {
       width: var(--sidebar-w);
@@ -59,22 +59,13 @@
 
     .sidebar-logo {
       padding: 18px 16px 12px;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
     }
     .sidebar-logo .brand {
-      font-size: 16px;
+      font-size: 15px;
       font-weight: 700;
       color: white;
       letter-spacing: -.02em;
     }
-    .sidebar-logo a {
-      font-size: 11px;
-      color: var(--sidebar-text);
-      text-decoration: none;
-    }
-    .sidebar-logo a:hover { color: white; }
 
     .sidebar-section { padding: 8px 0; }
     .sidebar-label {
@@ -94,7 +85,6 @@
       cursor: pointer;
       font-size: 13px;
       color: var(--sidebar-text);
-      border-radius: 0;
       transition: background .1s, color .1s;
       user-select: none;
     }
@@ -119,7 +109,7 @@
       margin: 6px 0;
     }
 
-    .add-project-btn {
+    .sidebar-action-btn {
       display: flex;
       align-items: center;
       gap: 8px;
@@ -129,9 +119,9 @@
       cursor: pointer;
       transition: color .1s;
     }
-    .add-project-btn:hover { color: #94a3b8; }
+    .sidebar-action-btn:hover { color: #94a3b8; }
 
-    /* ── Main ────────────────────────────────────────────────────────────── */
+    /* ── Main ─────────────────────────────────────────────────────────────── */
 
     #main-content {
       flex: 1;
@@ -141,18 +131,52 @@
     }
 
     #topbar {
-      padding: 14px 20px;
+      padding: 10px 20px;
       border-bottom: 1px solid var(--border);
       background: var(--surface);
       display: flex;
       align-items: center;
-      gap: 16px;
+      gap: 10px;
       flex-shrink: 0;
+      flex-wrap: wrap;
     }
-    #topbar h2 { font-size: 17px; font-weight: 600; flex: 1; }
+    #topbar h2 { font-size: 17px; font-weight: 600; min-width: 120px; }
 
-    .filter-bar { display: flex; align-items: center; gap: 8px; }
-    .filter-bar select {
+    #search-wrap {
+      flex: 1;
+      min-width: 140px;
+      max-width: 260px;
+      position: relative;
+    }
+    #search-wrap .search-icon {
+      position: absolute;
+      left: 9px;
+      top: 50%;
+      transform: translateY(-50%);
+      color: #94a3b8;
+      font-size: 13px;
+      pointer-events: none;
+    }
+    #search {
+      width: 100%;
+      padding: 6px 10px 6px 28px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      font-size: 12px;
+      outline: none;
+      background: var(--bg);
+      transition: border-color .15s;
+    }
+    #search:focus { border-color: var(--accent); background: white; }
+    #search::placeholder { color: #94a3b8; }
+
+    #filter-bar {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      flex-wrap: wrap;
+    }
+    #filter-bar select, #filter-bar input[type="date"] {
       padding: 5px 8px;
       border: 1px solid var(--border);
       border-radius: 6px;
@@ -162,7 +186,10 @@
       outline: none;
       cursor: pointer;
     }
-    .filter-bar select:focus { border-color: var(--accent); }
+    #filter-bar select:focus, #filter-bar input[type="date"]:focus { border-color: var(--accent); }
+    #custom-date-range { display: none; align-items: center; gap: 4px; font-size: 12px; color: var(--muted); }
+    #custom-date-range.visible { display: flex; }
+    #custom-date-range input[type="date"] { width: 130px; }
 
     #quick-add-bar {
       padding: 10px 20px;
@@ -224,7 +251,7 @@
     .btn-ghost   { background: transparent; color: var(--muted); border: 1px solid var(--border); }
     .btn-sm { padding: 4px 10px; font-size: 12px; }
 
-    /* ── Task List ───────────────────────────────────────────────────────── */
+    /* ── Task List ────────────────────────────────────────────────────────── */
 
     #task-list-wrap {
       flex: 1;
@@ -243,7 +270,7 @@
       display: flex;
       align-items: flex-start;
       gap: 12px;
-      transition: box-shadow .15s, border-color .1s;
+      transition: box-shadow .15s;
     }
     .task-card:hover { box-shadow: 0 2px 8px rgba(0,0,0,.08); }
     .task-card.selected { box-shadow: 0 0 0 2px var(--accent); }
@@ -260,10 +287,7 @@
       overflow: hidden;
       text-overflow: ellipsis;
     }
-    .task-card-title.done {
-      text-decoration: line-through;
-      color: var(--muted);
-    }
+    .task-card-title.done { text-decoration: line-through; color: var(--muted); }
     .task-card-meta {
       display: flex;
       flex-wrap: wrap;
@@ -313,7 +337,53 @@
     .empty-state .icon { font-size: 36px; margin-bottom: 10px; }
     .empty-state p { font-size: 14px; }
 
-    /* ── Detail Panel ────────────────────────────────────────────────────── */
+    /* ── Calendar View ────────────────────────────────────────────────────── */
+
+    .cal-day { margin-bottom: 20px; }
+
+    .cal-day-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 8px 12px;
+      background: #f1f5f9;
+      border-radius: 8px 8px 0 0;
+      border: 1px solid var(--border);
+      border-bottom: none;
+      margin-bottom: 0;
+    }
+    .cal-day-header.overload { background: #fef2f2; border-color: #fecaca; }
+    .cal-day-label { font-size: 13px; font-weight: 600; color: var(--text); }
+    .cal-day-header.overload .cal-day-label { color: var(--urgent); }
+    .cal-day-total { font-size: 12px; color: var(--muted); }
+    .cal-day-header.overload .cal-day-total { color: var(--urgent); font-weight: 600; }
+
+    .cal-task-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 12px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-top: none;
+      cursor: pointer;
+      transition: background .1s;
+    }
+    .cal-task-row:last-child { border-radius: 0 0 8px 8px; }
+    .cal-task-row:hover { background: #f8fafc; }
+    .cal-task-row[data-priority="urgent"] { border-left: 3px solid var(--urgent); }
+    .cal-task-row[data-priority="high"]   { border-left: 3px solid var(--high); }
+    .cal-task-row[data-priority="medium"] { border-left: 3px solid var(--medium); }
+    .cal-task-row[data-priority="low"]    { border-left: 3px solid var(--low); }
+
+    .cal-task-body { flex: 1; min-width: 0; }
+    .cal-task-title { font-size: 13px; font-weight: 500; display: block; margin-bottom: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .cal-task-meta { display: flex; gap: 5px; flex-wrap: wrap; }
+    .cal-task-time { font-size: 12px; color: var(--muted); white-space: nowrap; flex-shrink: 0; font-weight: 500; }
+
+    .cal-no-due { color: var(--muted); font-style: italic; }
+
+    /* ── Detail Panel ─────────────────────────────────────────────────────── */
 
     #detail-panel {
       width: var(--detail-w);
@@ -464,44 +534,48 @@
       padding: 12px 16px;
       border-top: 1px solid var(--border);
       display: flex;
-      gap: 8px;
+      gap: 6px;
+      flex-wrap: wrap;
       flex-shrink: 0;
     }
 
-    /* ── Project modal ───────────────────────────────────────────────────── */
+    /* ── Modals ───────────────────────────────────────────────────────────── */
 
     .overlay {
       position: fixed;
       inset: 0;
       background: rgba(0,0,0,.4);
       z-index: 200;
-      display: flex;
+      display: none;
       align-items: center;
       justify-content: center;
-      display: none;
     }
     .overlay.open { display: flex; }
     .modal {
       background: white;
       border-radius: 12px;
       padding: 24px;
-      width: 340px;
+      width: 380px;
       box-shadow: 0 20px 60px rgba(0,0,0,.2);
     }
-    .modal h3 { font-size: 16px; font-weight: 600; margin-bottom: 14px; }
-    .modal input {
+    .modal h3 { font-size: 16px; font-weight: 600; margin-bottom: 4px; }
+    .modal .modal-sub { font-size: 12px; color: var(--muted); margin-bottom: 14px; }
+    .modal input, .modal select {
       width: 100%;
       padding: 9px 12px;
       border: 1px solid var(--border);
       border-radius: 7px;
       font-size: 14px;
+      font-family: inherit;
       outline: none;
-      margin-bottom: 12px;
+      margin-bottom: 10px;
+      color: var(--text);
+      background: var(--bg);
     }
-    .modal input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(59,130,246,.12); }
-    .modal-btns { display: flex; gap: 8px; justify-content: flex-end; }
+    .modal input:focus, .modal select:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(59,130,246,.12); background: white; }
+    .modal-btns { display: flex; gap: 8px; justify-content: flex-end; margin-top: 4px; }
 
-    /* ── Toast ───────────────────────────────────────────────────────────── */
+    /* ── Toast ────────────────────────────────────────────────────────────── */
 
     #toast {
       position: fixed;
@@ -541,6 +615,9 @@
       <div class="nav-item" data-view="all" onclick="setView('all')">
         <span class="nav-label"><span class="nav-icon">📋</span> All Tasks</span>
         <span class="nav-count" id="cnt-all">0</span>
+      </div>
+      <div class="nav-item" data-view="calendar" onclick="setView('calendar')">
+        <span class="nav-label"><span class="nav-icon">🗓️</span> Calendar</span>
       </div>
     </div>
 
@@ -582,8 +659,11 @@
     <div class="sidebar-section">
       <div class="sidebar-label">Projects</div>
       <div id="proj-nav"></div>
-      <div class="add-project-btn" onclick="openAddProject()">
+      <div class="sidebar-action-btn" onclick="openAddProject()">
         <span>＋</span> New Project
+      </div>
+      <div class="sidebar-action-btn" onclick="openProjectFromTemplate()">
+        <span>⊞</span> From Template
       </div>
     </div>
   </aside>
@@ -592,7 +672,13 @@
   <div id="main-content">
     <div id="topbar">
       <h2 id="view-title">Inbox</h2>
-      <div class="filter-bar">
+
+      <div id="search-wrap">
+        <span class="search-icon">⌕</span>
+        <input type="text" id="search" placeholder="Search tasks…" autocomplete="off">
+      </div>
+
+      <div id="filter-bar">
         <select id="filter-priority" onchange="applyFilters()">
           <option value="">All priorities</option>
           <option value="urgent">Urgent</option>
@@ -608,6 +694,22 @@
           <option value="on-hold">On Hold</option>
           <option value="complete">Complete</option>
         </select>
+        <select id="filter-due" onchange="applyFilters()">
+          <option value="">All dates</option>
+          <option value="overdue">🔴 Overdue</option>
+          <option value="today">Today</option>
+          <option value="tomorrow">Tomorrow</option>
+          <option value="this-week">This week</option>
+          <option value="next-week">Next week</option>
+          <option value="next-2-weeks">Next 2 weeks</option>
+          <option value="this-month">This month</option>
+          <option value="custom">Custom range…</option>
+        </select>
+        <div id="custom-date-range">
+          <input type="date" id="filter-from" onchange="applyFilters()">
+          <span>–</span>
+          <input type="date" id="filter-to" onchange="applyFilters()">
+        </div>
       </div>
     </div>
 
@@ -721,6 +823,7 @@
 
     <div class="detail-footer">
       <button class="btn btn-primary" onclick="saveDetail()" style="flex:1">Save</button>
+      <button class="btn btn-ghost btn-sm" onclick="openSaveAsTemplate()" title="Save as template">As Template</button>
       <button class="btn btn-ghost" onclick="closeDetail()">Cancel</button>
       <button class="btn btn-danger btn-sm" onclick="deleteCurrentTask()">Delete</button>
     </div>
@@ -728,10 +831,11 @@
 
 </div>
 
-<!-- Add Project Modal -->
+<!-- New Project Modal -->
 <div class="overlay" id="proj-modal">
   <div class="modal">
     <h3>New Project</h3>
+    <div class="modal-sub">Creates a blank project</div>
     <input type="text" id="new-proj-name" placeholder="Project name">
     <div class="modal-btns">
       <button class="btn btn-ghost btn-sm" onclick="closeAddProject()">Cancel</button>
@@ -740,21 +844,49 @@
   </div>
 </div>
 
+<!-- Save as Template Modal -->
+<div class="overlay" id="tmpl-save-modal">
+  <div class="modal">
+    <h3>Save as Template</h3>
+    <div class="modal-sub">Saves this task as a reusable template task</div>
+    <input type="text" id="new-tmpl-name" placeholder="Template name">
+    <div class="modal-btns">
+      <button class="btn btn-ghost btn-sm" onclick="closeSaveAsTemplate()">Cancel</button>
+      <button class="btn btn-primary btn-sm" onclick="saveAsTemplate()">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- New Project from Template Modal -->
+<div class="overlay" id="tmpl-proj-modal">
+  <div class="modal">
+    <h3>New Project from Template</h3>
+    <div class="modal-sub">Creates a project and copies template tasks into it (due dates left blank)</div>
+    <input type="text" id="new-tmpl-proj-name" placeholder="New project name">
+    <select id="tmpl-select"></select>
+    <div class="modal-btns">
+      <button class="btn btn-ghost btn-sm" onclick="closeProjectFromTemplate()">Cancel</button>
+      <button class="btn btn-primary btn-sm" onclick="createProjectFromTemplate()">Create</button>
+    </div>
+  </div>
+</div>
+
 <div id="toast"></div>
 
 <script>
 const CATEGORIES = ['admin','ops','accounting','marketing','sales','pm','hr','personal'];
-const CAT_ICONS = { admin:'🗂', ops:'⚙️', accounting:'💰', marketing:'📣', sales:'💼', pm:'📐', hr:'👥', personal:'🏠' };
+const CAT_ICONS  = { admin:'🗂', ops:'⚙️', accounting:'💰', marketing:'📣', sales:'💼', pm:'📐', hr:'👥', personal:'🏠' };
 
 // ── State ─────────────────────────────────────────────────────────────────────
 
 let state = {
-  tasks: [],
-  projects: [],
-  view: 'inbox',           // 'inbox' | 'all' | 'status:x' | 'category:x' | 'project:x'
-  filters: { priority: '', status: '' },
+  tasks:     [],
+  projects:  [],
+  templates: [],
+  view:      'inbox',
+  filters:   { priority: '', status: '', search: '', due: '', dueFrom: '', dueTo: '' },
   selectedId: null,
-  timeLogs: []
+  timeLogs:  []
 };
 
 // ── API ───────────────────────────────────────────────────────────────────────
@@ -779,14 +911,13 @@ function toast(msg) {
   el.textContent = msg;
   el.classList.add('show');
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => el.classList.remove('show'), 2200);
+  toastTimer = setTimeout(() => el.classList.remove('show'), 2400);
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 function esc(s) {
-  return String(s ?? '')
-    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 
 function fmtMins(m) {
@@ -797,34 +928,86 @@ function fmtMins(m) {
 
 function fmtDate(d) {
   if (!d) return '';
-  const dt = new Date(d + 'T00:00:00');
-  return dt.toLocaleDateString('en-US', { month:'short', day:'numeric' });
+  return new Date(d + 'T00:00:00').toLocaleDateString('en-US', { month:'short', day:'numeric' });
 }
+
+function fmtDateLong(d) {
+  return new Date(d + 'T00:00:00').toLocaleDateString('en-US', { weekday:'long', month:'long', day:'numeric' });
+}
+
+function today0() { return new Date(new Date().toDateString()); }
 
 function isOverdue(d) {
   if (!d) return false;
-  return new Date(d + 'T00:00:00') < new Date(new Date().toDateString());
+  return new Date(d + 'T00:00:00') < today0();
 }
 
 function viewTitle(view) {
-  if (view === 'inbox') return 'Inbox';
-  if (view === 'all')   return 'All Tasks';
+  if (view === 'inbox')    return 'Inbox';
+  if (view === 'all')      return 'All Tasks';
+  if (view === 'calendar') return 'Calendar';
   const [type, val] = view.split(':');
-  if (type === 'status') return val.replace('-', ' ').replace(/\b\w/g, c => c.toUpperCase());
+  if (type === 'status')   return val.replace(/-/g,' ').replace(/\b\w/g, c => c.toUpperCase());
   if (type === 'category') return val.charAt(0).toUpperCase() + val.slice(1);
-  if (type === 'project') return state.projects.find(p => p.id == val)?.name ?? 'Project';
+  if (type === 'project')  return state.projects.find(p => p.id == val)?.name ?? 'Project';
   return view;
+}
+
+// Due-date filter matching
+function dueDateMatches(dueDate, filter, fromStr, toStr) {
+  if (!filter) return true;
+  const td = today0();
+
+  if (filter === 'overdue') {
+    return !!dueDate && new Date(dueDate + 'T00:00:00') < td;
+  }
+  if (!dueDate) return false;
+  const d = new Date(dueDate + 'T00:00:00');
+
+  if (filter === 'today') return d.getTime() === td.getTime();
+
+  if (filter === 'tomorrow') {
+    const tom = new Date(td); tom.setDate(td.getDate() + 1);
+    return d.getTime() === tom.getTime();
+  }
+  if (filter === 'this-week') {
+    const day = td.getDay();
+    const mon = new Date(td); mon.setDate(td.getDate() - (day === 0 ? 6 : day - 1));
+    const sun = new Date(mon); sun.setDate(mon.getDate() + 6);
+    return d >= mon && d <= sun;
+  }
+  if (filter === 'next-week') {
+    const day = td.getDay();
+    const mon = new Date(td); mon.setDate(td.getDate() - (day === 0 ? 6 : day - 1) + 7);
+    const sun = new Date(mon); sun.setDate(mon.getDate() + 6);
+    return d >= mon && d <= sun;
+  }
+  if (filter === 'next-2-weeks') {
+    const end = new Date(td); end.setDate(td.getDate() + 14);
+    return d >= td && d <= end;
+  }
+  if (filter === 'this-month') {
+    return d.getMonth() === td.getMonth() && d.getFullYear() === td.getFullYear();
+  }
+  if (filter === 'custom') {
+    const from = fromStr ? new Date(fromStr + 'T00:00:00') : null;
+    const to   = toStr   ? new Date(toStr   + 'T00:00:00') : null;
+    return (!from || d >= from) && (!to || d <= to);
+  }
+  return true;
 }
 
 // ── Load data ─────────────────────────────────────────────────────────────────
 
 async function loadAll() {
-  const [tasks, projects] = await Promise.all([
+  const [tasks, projects, templates] = await Promise.all([
     api('GET', '/api/tasks'),
-    api('GET', '/api/projects')
+    api('GET', '/api/projects'),
+    api('GET', '/api/templates')
   ]);
-  state.tasks = tasks;
-  state.projects = projects;
+  state.tasks     = tasks;
+  state.projects  = projects;
+  state.templates = templates;
   renderSidebar();
   renderTaskList();
   populateProjectSelect();
@@ -836,9 +1019,7 @@ function renderSidebar() {
   const counts = {};
   CATEGORIES.forEach(c => counts['cat:' + c] = 0);
   counts.inbox = 0; counts.all = 0;
-  counts['status:pending'] = 0; counts['status:in-progress'] = 0;
-  counts['status:needs-review'] = 0; counts['status:on-hold'] = 0;
-  counts['status:complete'] = 0;
+  ['pending','in-progress','needs-review','on-hold','complete'].forEach(s => counts['status:' + s] = 0);
   state.projects.forEach(p => counts['proj:' + p.id] = 0);
 
   state.tasks.forEach(t => {
@@ -846,14 +1027,15 @@ function renderSidebar() {
     if (t.is_inbox) counts.inbox++;
     if (counts['status:' + t.status] !== undefined) counts['status:' + t.status]++;
     if (t.category) counts['cat:' + t.category] = (counts['cat:' + t.category] || 0) + 1;
-    if (t.project) {
+    // Project counts exclude complete tasks
+    if (t.project && t.status !== 'complete') {
       const p = state.projects.find(p => p.name === t.project);
       if (p) counts['proj:' + p.id] = (counts['proj:' + p.id] || 0) + 1;
     }
   });
 
   document.getElementById('cnt-inbox').textContent = counts.inbox;
-  document.getElementById('cnt-all').textContent = counts.all;
+  document.getElementById('cnt-all').textContent   = counts.all;
   ['pending','in-progress','needs-review','on-hold','complete'].forEach(s => {
     document.getElementById('cnt-' + s).textContent = counts['status:' + s] || 0;
   });
@@ -881,9 +1063,20 @@ function renderSidebar() {
 
 function setView(view) {
   state.view = view;
-  state.filters = { priority: '', status: '' };
+  state.filters = { priority: '', status: '', search: '', due: '', dueFrom: '', dueTo: '' };
   document.getElementById('filter-priority').value = '';
-  document.getElementById('filter-status').value = '';
+  document.getElementById('filter-status').value   = '';
+  document.getElementById('filter-due').value      = '';
+  document.getElementById('filter-from').value     = '';
+  document.getElementById('filter-to').value       = '';
+  document.getElementById('search').value          = '';
+  document.getElementById('custom-date-range').classList.remove('visible');
+
+  const isCalendar = view === 'calendar';
+  document.getElementById('search-wrap').style.display   = isCalendar ? 'none' : '';
+  document.getElementById('filter-bar').style.display    = isCalendar ? 'none' : '';
+  document.getElementById('quick-add-bar').style.display = isCalendar ? 'none' : '';
+
   document.getElementById('view-title').textContent = viewTitle(view);
   renderSidebar();
   renderTaskList();
@@ -892,6 +1085,14 @@ function setView(view) {
 function applyFilters() {
   state.filters.priority = document.getElementById('filter-priority').value;
   state.filters.status   = document.getElementById('filter-status').value;
+  state.filters.search   = document.getElementById('search').value.toLowerCase().trim();
+  state.filters.due      = document.getElementById('filter-due').value;
+  state.filters.dueFrom  = document.getElementById('filter-from').value;
+  state.filters.dueTo    = document.getElementById('filter-to').value;
+
+  const isCustom = state.filters.due === 'custom';
+  document.getElementById('custom-date-range').classList.toggle('visible', isCustom);
+
   renderTaskList();
 }
 
@@ -899,25 +1100,29 @@ function getVisibleTasks() {
   let tasks = [...state.tasks];
   const v = state.view;
 
-  if (v === 'inbox')         tasks = tasks.filter(t => t.is_inbox);
-  else if (v === 'all')      tasks = tasks;
-  else if (v.startsWith('status:'))   tasks = tasks.filter(t => t.status === v.slice(7));
+  if (v === 'inbox')               tasks = tasks.filter(t => t.is_inbox);
+  else if (v === 'all')            tasks = tasks;
+  else if (v.startsWith('status:'))   tasks = tasks.filter(t => t.status   === v.slice(7));
   else if (v.startsWith('category:')) tasks = tasks.filter(t => t.category === v.slice(9));
   else if (v.startsWith('project:')) {
-    const pid = v.slice(8);
-    const proj = state.projects.find(p => p.id == pid);
+    const proj = state.projects.find(p => p.id == v.slice(8));
     tasks = proj ? tasks.filter(t => t.project === proj.name) : [];
   }
 
-  if (state.filters.priority) tasks = tasks.filter(t => t.priority === state.filters.priority);
-  if (state.filters.status)   tasks = tasks.filter(t => t.status   === state.filters.status);
+  const { priority, status, search, due, dueFrom, dueTo } = state.filters;
+  if (priority) tasks = tasks.filter(t => t.priority === priority);
+  if (status)   tasks = tasks.filter(t => t.status   === status);
+  if (search)   tasks = tasks.filter(t => t.title.toLowerCase().includes(search));
+  if (due)      tasks = tasks.filter(t => dueDateMatches(t.due_date, due, dueFrom, dueTo));
 
   return tasks;
 }
 
 function renderTaskList() {
+  if (state.view === 'calendar') { renderCalendar(); return; }
+
   const tasks = getVisibleTasks();
-  const list = document.getElementById('task-list');
+  const list  = document.getElementById('task-list');
 
   if (!tasks.length) {
     list.innerHTML = `<div class="empty-state"><div class="icon">✅</div><p>Nothing here</p></div>`;
@@ -948,11 +1153,84 @@ function renderTaskList() {
   }).join('');
 }
 
+// ── Calendar View ─────────────────────────────────────────────────────────────
+
+function renderCalendar() {
+  const list  = document.getElementById('task-list');
+  const tasks = state.tasks.filter(t => t.status !== 'complete');
+
+  const groups = {};
+  const noDue  = [];
+  tasks.forEach(t => {
+    if (t.due_date) {
+      (groups[t.due_date] = groups[t.due_date] || []).push(t);
+    } else {
+      noDue.push(t);
+    }
+  });
+
+  const dates = Object.keys(groups).sort();
+
+  if (!dates.length && !noDue.length) {
+    list.innerHTML = `<div class="empty-state"><div class="icon">🗓️</div><p>No open tasks</p></div>`;
+    return;
+  }
+
+  const td = today0();
+  let html = '';
+
+  dates.forEach(date => {
+    const dayTasks  = groups[date];
+    const totalMins = dayTasks.reduce((s, t) => s + (t.estimated_minutes || 0), 0);
+    const overload  = totalMins > 480;
+    const isPast    = new Date(date + 'T00:00:00') < td;
+
+    html += `
+      <div class="cal-day">
+        <div class="cal-day-header${overload ? ' overload' : ''}">
+          <span class="cal-day-label${isPast ? ' overdue' : ''}">${fmtDateLong(date)}${isPast ? ' — overdue' : ''}</span>
+          <span class="cal-day-total">${totalMins ? fmtMins(totalMins) : dayTasks.length + ' task' + (dayTasks.length !== 1 ? 's' : '')}${overload ? ' ⚠ overloaded' : ''}</span>
+        </div>
+        ${dayTasks.map(calTaskRow).join('')}
+      </div>`;
+  });
+
+  if (noDue.length) {
+    const totalMins = noDue.reduce((s, t) => s + (t.estimated_minutes || 0), 0);
+    html += `
+      <div class="cal-day">
+        <div class="cal-day-header">
+          <span class="cal-day-label cal-no-due">No due date</span>
+          <span class="cal-day-total">${totalMins ? fmtMins(totalMins) : noDue.length + ' task' + (noDue.length !== 1 ? 's' : '')}</span>
+        </div>
+        ${noDue.map(calTaskRow).join('')}
+      </div>`;
+  }
+
+  list.innerHTML = html;
+}
+
+function calTaskRow(t) {
+  return `
+    <div class="cal-task-row" data-priority="${t.priority}" onclick="openDetail(${t.id})">
+      <div class="cal-task-body">
+        <span class="cal-task-title">${esc(t.title)}</span>
+        <div class="cal-task-meta">
+          <span class="pill pill-priority-${t.priority}">${t.priority}</span>
+          <span class="pill pill-status-${t.status}">${t.status.replace('-',' ')}</span>
+          ${t.project ? `<span class="pill pill-proj">${esc(t.project)}</span>` : ''}
+          ${t.category ? `<span class="pill pill-cat">${t.category}</span>` : ''}
+        </div>
+      </div>
+      ${t.estimated_minutes ? `<span class="cal-task-time">${fmtMins(t.estimated_minutes)}</span>` : ''}
+    </div>`;
+}
+
 // ── Quick Add ─────────────────────────────────────────────────────────────────
 
 async function quickAdd() {
   const titleEl = document.getElementById('quick-title');
-  const title = titleEl.value.trim();
+  const title   = titleEl.value.trim();
   if (!title) return;
 
   const priority = document.getElementById('quick-priority').value;
@@ -979,11 +1257,12 @@ async function quickAdd() {
 document.getElementById('quick-title').addEventListener('keydown', e => {
   if (e.key === 'Enter') quickAdd();
 });
+document.getElementById('search').addEventListener('input', applyFilters);
 
 // ── Detail Panel ──────────────────────────────────────────────────────────────
 
 function populateProjectSelect() {
-  const sel = document.getElementById('d-project');
+  const sel     = document.getElementById('d-project');
   const current = sel.value;
   sel.innerHTML = `<option value="">None</option>` +
     state.projects.map(p => `<option value="${esc(p.name)}">${esc(p.name)}</option>`).join('');
@@ -995,17 +1274,17 @@ async function openDetail(id) {
   const task = state.tasks.find(t => t.id === id);
   if (!task) return;
 
-  document.getElementById('detail-heading').textContent = task.title.length > 30 ? task.title.slice(0,30)+'…' : task.title;
-  document.getElementById('d-title').value = task.title;
-  document.getElementById('d-priority').value = task.priority;
-  document.getElementById('d-status').value = task.status;
-  document.getElementById('d-category').value = task.category || '';
-  document.getElementById('d-project').value = task.project || '';
-  document.getElementById('d-due').value = task.due_date || '';
-  document.getElementById('d-notes').value = task.notes || '';
-  document.getElementById('d-estimated-mins').value = task.estimated_minutes || '';
-  document.getElementById('d-est').textContent = task.estimated_minutes ? fmtMins(task.estimated_minutes) : '—';
-  document.getElementById('d-actual').textContent = fmtMins(task.actual_minutes);
+  document.getElementById('detail-heading').textContent    = task.title.length > 30 ? task.title.slice(0,30)+'…' : task.title;
+  document.getElementById('d-title').value                 = task.title;
+  document.getElementById('d-priority').value              = task.priority;
+  document.getElementById('d-status').value                = task.status;
+  document.getElementById('d-category').value              = task.category || '';
+  document.getElementById('d-project').value               = task.project  || '';
+  document.getElementById('d-due').value                   = task.due_date || '';
+  document.getElementById('d-notes').value                 = task.notes    || '';
+  document.getElementById('d-estimated-mins').value        = task.estimated_minutes || '';
+  document.getElementById('d-est').textContent             = task.estimated_minutes ? fmtMins(task.estimated_minutes) : '—';
+  document.getElementById('d-actual').textContent          = fmtMins(task.actual_minutes);
 
   document.getElementById('detail-panel').classList.add('open');
   renderTaskList();
@@ -1021,14 +1300,14 @@ function closeDetail() {
 async function saveDetail() {
   if (!state.selectedId) return;
   const payload = {
-    title:              document.getElementById('d-title').value.trim(),
-    priority:           document.getElementById('d-priority').value,
-    status:             document.getElementById('d-status').value,
-    category:           document.getElementById('d-category').value || null,
-    project:            document.getElementById('d-project').value || null,
-    due_date:           document.getElementById('d-due').value || null,
-    notes:              document.getElementById('d-notes').value || null,
-    estimated_minutes:  document.getElementById('d-estimated-mins').value || null
+    title:             document.getElementById('d-title').value.trim(),
+    priority:          document.getElementById('d-priority').value,
+    status:            document.getElementById('d-status').value,
+    category:          document.getElementById('d-category').value  || null,
+    project:           document.getElementById('d-project').value   || null,
+    due_date:          document.getElementById('d-due').value       || null,
+    notes:             document.getElementById('d-notes').value     || null,
+    estimated_minutes: document.getElementById('d-estimated-mins').value || null
   };
   if (!payload.title) { toast('Title is required'); return; }
 
@@ -1055,8 +1334,7 @@ async function deleteCurrentTask() {
 // ── Time Logs ─────────────────────────────────────────────────────────────────
 
 async function loadTimeLogs(taskId) {
-  const logs = await api('GET', `/api/tasks/${taskId}/time-logs`);
-  state.timeLogs = logs;
+  state.timeLogs = await api('GET', `/api/tasks/${taskId}/time-logs`);
   renderTimeLogs();
 }
 
@@ -1085,14 +1363,11 @@ async function addTimeLog() {
 
   const log = await api('POST', `/api/tasks/${state.selectedId}/time-logs`, { minutes: mins, description: desc || null });
   state.timeLogs.unshift(log);
-
-  // Update actual_minutes in local state and header
   const task = state.tasks.find(t => t.id === state.selectedId);
   if (task) {
     task.actual_minutes = (task.actual_minutes || 0) + mins;
     document.getElementById('d-actual').textContent = fmtMins(task.actual_minutes);
   }
-
   document.getElementById('log-mins').value = '';
   document.getElementById('log-desc').value = '';
   renderTimeLogs();
@@ -1104,13 +1379,11 @@ async function deleteTimeLog(logId) {
   const log = state.timeLogs.find(l => l.id === logId);
   await api('DELETE', `/api/time-logs/${logId}`);
   state.timeLogs = state.timeLogs.filter(l => l.id !== logId);
-
   const task = state.tasks.find(t => t.id === state.selectedId);
   if (task && log) {
     task.actual_minutes = Math.max(0, (task.actual_minutes || 0) - log.minutes);
     document.getElementById('d-actual').textContent = fmtMins(task.actual_minutes);
   }
-
   renderTimeLogs();
   renderTaskList();
 }
@@ -1122,10 +1395,7 @@ function openAddProject() {
   document.getElementById('proj-modal').classList.add('open');
   setTimeout(() => document.getElementById('new-proj-name').focus(), 50);
 }
-
-function closeAddProject() {
-  document.getElementById('proj-modal').classList.remove('open');
-}
+function closeAddProject() { document.getElementById('proj-modal').classList.remove('open'); }
 
 document.getElementById('new-proj-name').addEventListener('keydown', e => {
   if (e.key === 'Enter') createProject();
@@ -1143,14 +1413,86 @@ async function createProject() {
     populateProjectSelect();
     renderSidebar();
     toast(`Project "${name}" created`);
-  } catch (e) {
-    toast(e.message);
-  }
+  } catch (e) { toast(e.message); }
 }
 
 document.getElementById('proj-modal').addEventListener('click', e => {
   if (e.target === e.currentTarget) closeAddProject();
 });
+
+// ── Templates ─────────────────────────────────────────────────────────────────
+
+function openSaveAsTemplate() {
+  if (!state.selectedId) return;
+  document.getElementById('new-tmpl-name').value = '';
+  document.getElementById('tmpl-save-modal').classList.add('open');
+  setTimeout(() => document.getElementById('new-tmpl-name').focus(), 50);
+}
+function closeSaveAsTemplate() { document.getElementById('tmpl-save-modal').classList.remove('open'); }
+
+document.getElementById('new-tmpl-name').addEventListener('keydown', e => {
+  if (e.key === 'Enter') saveAsTemplate();
+  if (e.key === 'Escape') closeSaveAsTemplate();
+});
+
+async function saveAsTemplate() {
+  const name = document.getElementById('new-tmpl-name').value.trim();
+  if (!name) return;
+  const task = state.tasks.find(t => t.id === state.selectedId);
+  if (!task) return;
+  try {
+    const tmpl = await api('POST', '/api/templates', {
+      name,
+      tasks: [{ title: task.title, category: task.category, priority: task.priority, estimated_minutes: task.estimated_minutes }]
+    });
+    state.templates.push(tmpl);
+    state.templates.sort((a,b) => a.name.localeCompare(b.name));
+    closeSaveAsTemplate();
+    toast(`Template "${name}" saved`);
+  } catch (e) { toast(e.message); }
+}
+
+document.getElementById('tmpl-save-modal').addEventListener('click', e => {
+  if (e.target === e.currentTarget) closeSaveAsTemplate();
+});
+
+function openProjectFromTemplate() {
+  if (!state.templates.length) { toast('No templates yet — save a task as a template first'); return; }
+  document.getElementById('new-tmpl-proj-name').value = '';
+  populateTemplateSelect();
+  document.getElementById('tmpl-proj-modal').classList.add('open');
+  setTimeout(() => document.getElementById('new-tmpl-proj-name').focus(), 50);
+}
+function closeProjectFromTemplate() { document.getElementById('tmpl-proj-modal').classList.remove('open'); }
+
+function populateTemplateSelect() {
+  document.getElementById('tmpl-select').innerHTML = state.templates.map(t =>
+    `<option value="${t.id}">${esc(t.name)} (${t.tasks.length} task${t.tasks.length !== 1 ? 's' : ''})</option>`
+  ).join('');
+}
+
+document.getElementById('tmpl-proj-modal').addEventListener('click', e => {
+  if (e.target === e.currentTarget) closeProjectFromTemplate();
+});
+
+async function createProjectFromTemplate() {
+  const name       = document.getElementById('new-tmpl-proj-name').value.trim();
+  const templateId = document.getElementById('tmpl-select').value;
+  if (!name)       { toast('Enter a project name'); return; }
+  if (!templateId) { toast('Select a template'); return; }
+  try {
+    const proj     = await api('POST', '/api/projects', { name });
+    const newTasks = await api('POST', `/api/templates/${templateId}/apply`, { project: name });
+    state.projects.push(proj);
+    state.projects.sort((a,b) => a.name.localeCompare(b.name));
+    state.tasks.push(...newTasks);
+    closeProjectFromTemplate();
+    populateProjectSelect();
+    renderSidebar();
+    setView(`project:${proj.id}`);
+    toast(`"${name}" created with ${newTasks.length} task${newTasks.length !== 1 ? 's' : ''}`);
+  } catch (e) { toast(e.message); }
+}
 
 // ── Init ──────────────────────────────────────────────────────────────────────
 

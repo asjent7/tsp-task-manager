@@ -42,6 +42,21 @@ db.exec(`
     name TEXT NOT NULL UNIQUE,
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
   );
+
+  CREATE TABLE IF NOT EXISTS templates (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL UNIQUE,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+
+  CREATE TABLE IF NOT EXISTS template_tasks (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    template_id INTEGER NOT NULL REFERENCES templates(id) ON DELETE CASCADE,
+    title TEXT NOT NULL,
+    category TEXT,
+    priority TEXT NOT NULL DEFAULT 'medium',
+    estimated_minutes INTEGER
+  );
 `);
 
 app.use(express.json());
@@ -209,6 +224,67 @@ app.delete('/api/projects/:id', (req, res) => {
   const result = db.prepare('DELETE FROM projects WHERE id = ?').run(req.params.id);
   if (!result.changes) return res.status(404).json({ error: 'Project not found' });
   res.status(204).end();
+});
+
+// ── Templates ─────────────────────────────────────────────────────────────────
+
+app.get('/api/templates', (req, res) => {
+  const templates = db.prepare('SELECT * FROM templates ORDER BY name ASC').all();
+  res.json(templates.map(t => ({
+    ...t,
+    tasks: db.prepare('SELECT * FROM template_tasks WHERE template_id = ?').all(t.id)
+  })));
+});
+
+app.post('/api/templates', (req, res) => {
+  const { name, tasks = [] } = req.body;
+  if (!name?.trim()) return res.status(400).json({ error: 'Name is required' });
+  try {
+    const tmpl = db.transaction(() => {
+      const r = db.prepare('INSERT INTO templates (name) VALUES (?)').run(name.trim());
+      const id = r.lastInsertRowid;
+      tasks.forEach(t => {
+        db.prepare(`
+          INSERT INTO template_tasks (template_id, title, category, priority, estimated_minutes)
+          VALUES (?, ?, ?, ?, ?)
+        `).run(id, t.title, t.category || null, t.priority || 'medium', t.estimated_minutes || null);
+      });
+      return {
+        ...db.prepare('SELECT * FROM templates WHERE id = ?').get(id),
+        tasks: db.prepare('SELECT * FROM template_tasks WHERE template_id = ?').all(id)
+      };
+    })();
+    res.status(201).json(tmpl);
+  } catch (e) {
+    if (e.message.includes('UNIQUE')) return res.status(409).json({ error: 'Template name already exists' });
+    throw e;
+  }
+});
+
+app.delete('/api/templates/:id', (req, res) => {
+  const result = db.prepare('DELETE FROM templates WHERE id = ?').run(req.params.id);
+  if (!result.changes) return res.status(404).json({ error: 'Template not found' });
+  res.status(204).end();
+});
+
+app.post('/api/templates/:id/apply', (req, res) => {
+  const template = db.prepare('SELECT id FROM templates WHERE id = ?').get(req.params.id);
+  if (!template) return res.status(404).json({ error: 'Template not found' });
+  const { project } = req.body;
+  if (!project?.trim()) return res.status(400).json({ error: 'Project name is required' });
+
+  const templateTasks = db.prepare('SELECT * FROM template_tasks WHERE template_id = ?').all(req.params.id);
+  const created = db.transaction(() =>
+    templateTasks.map(tt => {
+      const r = db.prepare(`
+        INSERT INTO tasks (title, priority, category, project, status, estimated_minutes, is_inbox)
+        VALUES (?, ?, ?, ?, 'pending', ?, 0)
+      `).run(tt.title, tt.priority, tt.category || null, project.trim(), tt.estimated_minutes || null);
+      return db.prepare('SELECT * FROM tasks WHERE id = ?').get(r.lastInsertRowid);
+    })
+  )();
+
+  res.status(201).json(created);
 });
 
 // ── Start ─────────────────────────────────────────────────────────────────────
