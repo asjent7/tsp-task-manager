@@ -43,6 +43,8 @@ db.exec(`
 `);
 
 app.use(express.json());
+app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'public', 'app.html')));
+app.get('/index.html', (req, res) => res.redirect(301, '/'));
 app.use(express.static(path.join(__dirname, 'public')));
 
 // ── Tasks ────────────────────────────────────────────────────────────────────
