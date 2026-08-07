@@ -65,7 +65,20 @@ db.exec(`
     completed INTEGER NOT NULL DEFAULT 0,
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
   );
+
+  CREATE TABLE IF NOT EXISTS project_links (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    label TEXT NOT NULL,
+    url TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );
 `);
+
+// Migrate: add meeting_notes_url if it doesn't exist yet
+try { db.exec('ALTER TABLE tasks ADD COLUMN meeting_notes_url TEXT'); } catch (e) {
+  if (!e.message.includes('duplicate column name')) throw e;
+}
 
 app.use(express.json());
 app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'public', 'app.html')));
@@ -111,21 +124,21 @@ app.get('/api/tasks/:id', (req, res) => {
 app.post('/api/tasks', (req, res) => {
   const {
     title, priority = 'medium', category, project,
-    status = 'pending', due_date, estimated_minutes, notes
+    status = 'pending', due_date, estimated_minutes, notes, meeting_notes_url
   } = req.body;
 
   if (!title?.trim()) return res.status(400).json({ error: 'Title is required' });
 
   const is_inbox = (!category && !project) ? 1 : 0;
   const result = db.prepare(`
-    INSERT INTO tasks (title, priority, category, project, status, due_date, estimated_minutes, notes, is_inbox)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO tasks (title, priority, category, project, status, due_date, estimated_minutes, notes, meeting_notes_url, is_inbox)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     title.trim(), priority,
     category || null, project || null,
     status, due_date || null,
     estimated_minutes ? Number(estimated_minutes) : null,
-    notes || null, is_inbox
+    notes || null, meeting_notes_url || null, is_inbox
   );
 
   res.status(201).json(db.prepare('SELECT * FROM tasks WHERE id = ?').get(result.lastInsertRowid));
@@ -145,16 +158,17 @@ app.put('/api/tasks/:id', (req, res) => {
   const estimated_minutes = body.estimated_minutes !== undefined
     ? (body.estimated_minutes ? Number(body.estimated_minutes) : null)
     : task.estimated_minutes;
-  const notes = body.notes !== undefined ? (body.notes || null) : task.notes;
+  const notes             = body.notes              !== undefined ? (body.notes              || null) : task.notes;
+  const meeting_notes_url = body.meeting_notes_url  !== undefined ? (body.meeting_notes_url  || null) : task.meeting_notes_url;
   const is_inbox = (!category && !project) ? 1 : 0;
 
   db.prepare(`
     UPDATE tasks SET
       title = ?, priority = ?, category = ?, project = ?, status = ?,
-      due_date = ?, estimated_minutes = ?, notes = ?, is_inbox = ?,
+      due_date = ?, estimated_minutes = ?, notes = ?, meeting_notes_url = ?, is_inbox = ?,
       updated_at = datetime('now')
     WHERE id = ?
-  `).run(title, priority, category, project, status, due_date, estimated_minutes, notes, is_inbox, req.params.id);
+  `).run(title, priority, category, project, status, due_date, estimated_minutes, notes, meeting_notes_url, is_inbox, req.params.id);
 
   res.json(db.prepare('SELECT * FROM tasks WHERE id = ?').get(req.params.id));
 });
@@ -248,8 +262,13 @@ app.delete('/api/subtasks/:id', (req, res) => {
 
 // ── Projects ──────────────────────────────────────────────────────────────────
 
+const withLinks = (proj) => ({
+  ...proj,
+  links: db.prepare('SELECT * FROM project_links WHERE project_id = ? ORDER BY created_at ASC').all(proj.id)
+});
+
 app.get('/api/projects', (req, res) => {
-  res.json(db.prepare('SELECT * FROM projects ORDER BY name ASC').all());
+  res.json(db.prepare('SELECT * FROM projects ORDER BY name ASC').all().map(withLinks));
 });
 
 app.post('/api/projects', (req, res) => {
@@ -257,7 +276,7 @@ app.post('/api/projects', (req, res) => {
   if (!name?.trim()) return res.status(400).json({ error: 'Project name is required' });
   try {
     const result = db.prepare('INSERT INTO projects (name) VALUES (?)').run(name.trim());
-    res.status(201).json(db.prepare('SELECT * FROM projects WHERE id = ?').get(result.lastInsertRowid));
+    res.status(201).json(withLinks(db.prepare('SELECT * FROM projects WHERE id = ?').get(result.lastInsertRowid)));
   } catch (e) {
     if (e.message.includes('UNIQUE')) return res.status(409).json({ error: 'Project already exists' });
     throw e;
@@ -274,7 +293,7 @@ app.put('/api/projects/:id', (req, res) => {
       db.prepare('UPDATE projects SET name = ? WHERE id = ?').run(name.trim(), req.params.id);
       db.prepare('UPDATE tasks SET project = ?, updated_at = datetime(\'now\') WHERE project = ?').run(name.trim(), proj.name);
     })();
-    res.json(db.prepare('SELECT * FROM projects WHERE id = ?').get(req.params.id));
+    res.json(withLinks(db.prepare('SELECT * FROM projects WHERE id = ?').get(req.params.id)));
   } catch (e) {
     if (e.message.includes('UNIQUE')) return res.status(409).json({ error: 'Project name already exists' });
     throw e;
@@ -301,6 +320,30 @@ app.post('/api/projects/:id/merge', (req, res) => {
 app.delete('/api/projects/:id', (req, res) => {
   const result = db.prepare('DELETE FROM projects WHERE id = ?').run(req.params.id);
   if (!result.changes) return res.status(404).json({ error: 'Project not found' });
+  res.status(204).end();
+});
+
+// ── Project Links ─────────────────────────────────────────────────────────────
+
+app.get('/api/projects/:id/links', (req, res) => {
+  const proj = db.prepare('SELECT id FROM projects WHERE id = ?').get(req.params.id);
+  if (!proj) return res.status(404).json({ error: 'Project not found' });
+  res.json(db.prepare('SELECT * FROM project_links WHERE project_id = ? ORDER BY created_at ASC').all(req.params.id));
+});
+
+app.post('/api/projects/:id/links', (req, res) => {
+  const proj = db.prepare('SELECT id FROM projects WHERE id = ?').get(req.params.id);
+  if (!proj) return res.status(404).json({ error: 'Project not found' });
+  const { label, url } = req.body;
+  if (!label?.trim()) return res.status(400).json({ error: 'Label is required' });
+  if (!url?.trim())   return res.status(400).json({ error: 'URL is required' });
+  const r = db.prepare('INSERT INTO project_links (project_id, label, url) VALUES (?, ?, ?)').run(req.params.id, label.trim(), url.trim());
+  res.status(201).json(db.prepare('SELECT * FROM project_links WHERE id = ?').get(r.lastInsertRowid));
+});
+
+app.delete('/api/project-links/:id', (req, res) => {
+  const result = db.prepare('DELETE FROM project_links WHERE id = ?').run(req.params.id);
+  if (!result.changes) return res.status(404).json({ error: 'Link not found' });
   res.status(204).end();
 });
 

@@ -204,6 +204,16 @@
     .log-del:hover { color: var(--urgent); background: #fef2f2; }
     .detail-footer { padding: 12px 16px; border-top: 1px solid var(--border); display: flex; gap: 6px; flex-wrap: wrap; flex-shrink: 0; }
 
+    /* ── Project header (asset links) ── */
+    .project-header { margin-bottom: 12px; }
+    .project-links-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+    .project-link-chip { display: inline-flex; align-items: center; gap: 5px; padding: 4px 10px; background: white; border: 1px solid var(--border); border-radius: 20px; font-size: 12px; color: var(--accent); text-decoration: none; transition: background .1s, border-color .1s; }
+    .project-link-chip:hover { background: #eff6ff; border-color: var(--accent); }
+    .proj-link-del { background: none; border: none; color: #94a3b8; cursor: pointer; font-size: 11px; padding: 0; line-height: 1; margin-left: 2px; }
+    .proj-link-del:hover { color: var(--urgent); }
+    .meeting-notes-link { display: inline-flex; align-items: center; gap: 3px; font-size: 11px; color: var(--accent); text-decoration: none; padding: 1px 6px; background: #eff6ff; border-radius: 100px; }
+    .meeting-notes-link:hover { background: #dbeafe; }
+
     /* ── Subtasks ── */
     .subtask-item { display: flex; align-items: center; gap: 8px; padding: 6px 8px; background: var(--bg); border-radius: 5px; margin-bottom: 4px; }
     .subtask-item input[type="checkbox"] { flex-shrink: 0; cursor: pointer; width: 15px; height: 15px; }
@@ -436,6 +446,10 @@
         <label>Notes</label>
         <textarea id="d-notes" placeholder="Add notes…"></textarea>
       </div>
+      <div class="field">
+        <label>Meeting Notes URL</label>
+        <input type="url" id="d-meeting-url" placeholder="https://…">
+      </div>
 
       <hr style="border:none;border-top:1px solid var(--border);margin:16px 0;">
 
@@ -543,6 +557,20 @@
   </div>
 </div>
 
+<!-- Add Project Link Modal -->
+<div class="overlay" id="add-link-modal">
+  <div class="modal">
+    <h3>Add Project Link</h3>
+    <div class="modal-sub">Attach a named URL to this project (e.g. Production Bible, Budget)</div>
+    <input type="text" id="new-link-label" placeholder="Label (e.g. Production Bible)">
+    <input type="url" id="new-link-url" placeholder="https://…">
+    <div class="modal-btns">
+      <button class="btn btn-ghost btn-sm" onclick="closeAddProjectLink()">Cancel</button>
+      <button class="btn btn-primary btn-sm" onclick="createProjectLink()">Add Link</button>
+    </div>
+  </div>
+</div>
+
 <div id="toast"></div>
 
 <script>
@@ -572,9 +600,10 @@ let state = {
   calSelectedDay: null,
 };
 
-let draggedTaskId = null;
-let renameProjId  = null;
-let mergeProjId   = null;
+let draggedTaskId  = null;
+let renameProjId   = null;
+let mergeProjId    = null;
+let addLinkProjId  = null;
 
 // ── API ───────────────────────────────────────────────────────────────────────
 
@@ -829,20 +858,45 @@ function getVisibleTasks() {
   return tasks;
 }
 
+function renderProjectHeader(proj) {
+  const links = proj.links || [];
+  return `<div class="project-header">
+    <div class="project-links-bar">
+      ${links.map(l => `
+        <a href="${esc(l.url)}" target="_blank" rel="noopener" class="project-link-chip" onclick="event.stopPropagation()">
+          🔗 ${esc(l.label)}
+        </a>
+        <button class="proj-link-del" onclick="deleteProjectLink(${proj.id},${l.id})" title="Remove link">✕</button>
+      `).join('')}
+      <button class="btn btn-ghost btn-sm" onclick="openAddProjectLink(${proj.id})" style="font-size:11px;padding:3px 8px;">+ Add link</button>
+    </div>
+  </div>`;
+}
+
 function renderTaskList() {
   if (state.view === 'calendar') { renderCalendar(); return; }
 
-  const tasks = getVisibleTasks();
-  const list  = document.getElementById('task-list');
+  const list = document.getElementById('task-list');
+  let html = '';
 
+  if (state.view.startsWith('project:')) {
+    const proj = state.projects.find(p => p.id == state.view.slice(8));
+    if (proj) html += renderProjectHeader(proj);
+  }
+
+  const tasks = getVisibleTasks();
   if (!tasks.length) {
-    list.innerHTML = `<div class="empty-state"><div class="icon">✅</div><p>Nothing here</p></div>`;
+    html += `<div class="empty-state"><div class="icon">✅</div><p>Nothing here</p></div>`;
+    list.innerHTML = html;
     return;
   }
 
-  list.innerHTML = tasks.map(t => {
+  html += tasks.map(t => {
     const overdue = isOverdue(t.due_date) && t.status !== 'complete';
     const badge   = t.subtask_count ? `<span class="subtask-badge">${t.subtask_done || 0}/${t.subtask_count}</span>` : '';
+    const notesLink = t.meeting_notes_url
+      ? `<a href="${esc(t.meeting_notes_url)}" target="_blank" rel="noopener" class="meeting-notes-link" onclick="event.stopPropagation()">📝 Notes</a>`
+      : '';
     return `
     <div class="task-card${t.id === state.selectedId ? ' selected' : ''}"
          data-id="${t.id}" data-priority="${t.priority}" onclick="openDetail(${t.id})">
@@ -855,6 +909,7 @@ function renderTaskList() {
           ${t.project  ? `<span class="pill pill-proj">${esc(t.project)}</span>` : ''}
           ${t.due_date ? `<span class="${overdue?'overdue':''}">Due ${fmtDate(t.due_date)}</span>` : ''}
           ${badge}
+          ${notesLink}
         </div>
       </div>
       ${(t.estimated_minutes || t.actual_minutes) ? `
@@ -863,6 +918,8 @@ function renderTaskList() {
         </div>` : ''}
     </div>`;
   }).join('');
+
+  list.innerHTML = html;
 }
 
 // ── Calendar ──────────────────────────────────────────────────────────────────
@@ -1157,6 +1214,7 @@ async function openDetail(id) {
   document.getElementById('d-due').value                    = task.due_date || '';
   document.getElementById('d-notes').value                  = task.notes    || '';
   document.getElementById('d-estimated-mins').value         = task.estimated_minutes || '';
+  document.getElementById('d-meeting-url').value            = task.meeting_notes_url || '';
   document.getElementById('d-est').textContent              = task.estimated_minutes ? fmtMins(task.estimated_minutes) : '—';
   document.getElementById('d-actual').textContent           = fmtMins(task.actual_minutes);
   document.getElementById('detail-panel').classList.add('open');
@@ -1178,9 +1236,10 @@ async function saveDetail() {
     status:            document.getElementById('d-status').value,
     category:          document.getElementById('d-category').value  || null,
     project:           document.getElementById('d-project').value   || null,
-    due_date:          document.getElementById('d-due').value       || null,
-    notes:             document.getElementById('d-notes').value     || null,
-    estimated_minutes: document.getElementById('d-estimated-mins').value || null
+    due_date:           document.getElementById('d-due').value          || null,
+    notes:              document.getElementById('d-notes').value        || null,
+    meeting_notes_url:  document.getElementById('d-meeting-url').value  || null,
+    estimated_minutes:  document.getElementById('d-estimated-mins').value || null
   };
   if (!payload.title) { toast('Title is required'); return; }
   const updated = await api('PUT', `/api/tasks/${state.selectedId}`, payload);
@@ -1374,6 +1433,42 @@ async function confirmMergeProject() {
     populateProjectSelect(); renderSidebar();
     toast(`Merged into "${tgtProj.name}"`);
   } catch(e) { toast(e.message); }
+}
+
+// ── Project Links ─────────────────────────────────────────────────────────────
+
+function openAddProjectLink(projId) {
+  addLinkProjId = projId;
+  document.getElementById('new-link-label').value = '';
+  document.getElementById('new-link-url').value   = '';
+  document.getElementById('add-link-modal').classList.add('open');
+  setTimeout(() => document.getElementById('new-link-label').focus(), 50);
+}
+function closeAddProjectLink() { document.getElementById('add-link-modal').classList.remove('open'); }
+document.getElementById('add-link-modal').addEventListener('click', e => { if (e.target===e.currentTarget) closeAddProjectLink(); });
+document.getElementById('new-link-url').addEventListener('keydown', e => { if (e.key==='Enter') createProjectLink(); if (e.key==='Escape') closeAddProjectLink(); });
+
+async function createProjectLink() {
+  const label = document.getElementById('new-link-label').value.trim();
+  const url   = document.getElementById('new-link-url').value.trim();
+  if (!label) { toast('Enter a label'); return; }
+  if (!url)   { toast('Enter a URL'); return; }
+  try {
+    const link = await api('POST', `/api/projects/${addLinkProjId}/links`, { label, url });
+    const proj = state.projects.find(p => p.id === addLinkProjId);
+    if (proj) { proj.links = proj.links || []; proj.links.push(link); }
+    closeAddProjectLink();
+    renderTaskList();
+    toast('Link added');
+  } catch(e) { toast(e.message); }
+}
+
+async function deleteProjectLink(projId, linkId) {
+  await api('DELETE', `/api/project-links/${linkId}`);
+  const proj = state.projects.find(p => p.id === projId);
+  if (proj) proj.links = (proj.links || []).filter(l => l.id !== linkId);
+  renderTaskList();
+  toast('Link removed');
 }
 
 // ── Templates ─────────────────────────────────────────────────────────────────
