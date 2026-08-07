@@ -57,6 +57,14 @@ db.exec(`
     priority TEXT NOT NULL DEFAULT 'medium',
     estimated_minutes INTEGER
   );
+
+  CREATE TABLE IF NOT EXISTS subtasks (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    task_id INTEGER NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+    title TEXT NOT NULL,
+    completed INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );
 `);
 
 app.use(express.json());
@@ -87,7 +95,11 @@ app.get('/api/tasks', (req, res) => {
       due_date ASC,
       created_at DESC`;
 
-  res.json(db.prepare(sql).all(...params));
+  const tasks = db.prepare(sql).all(...params);
+  const rows  = db.prepare('SELECT task_id, COUNT(*) AS total, SUM(completed) AS done FROM subtasks GROUP BY task_id').all();
+  const cmap  = {};
+  rows.forEach(r => { cmap[r.task_id] = r; });
+  res.json(tasks.map(t => ({ ...t, subtask_count: cmap[t.id]?.total || 0, subtask_done: cmap[t.id]?.done || 0 })));
 });
 
 app.get('/api/tasks/:id', (req, res) => {
@@ -202,6 +214,38 @@ app.delete('/api/time-logs/:id', (req, res) => {
   res.status(204).end();
 });
 
+// ── Subtasks ──────────────────────────────────────────────────────────────────
+
+app.get('/api/tasks/:id/subtasks', (req, res) => {
+  const task = db.prepare('SELECT id FROM tasks WHERE id = ?').get(req.params.id);
+  if (!task) return res.status(404).json({ error: 'Task not found' });
+  res.json(db.prepare('SELECT * FROM subtasks WHERE task_id = ? ORDER BY created_at ASC').all(req.params.id));
+});
+
+app.post('/api/tasks/:id/subtasks', (req, res) => {
+  const task = db.prepare('SELECT id FROM tasks WHERE id = ?').get(req.params.id);
+  if (!task) return res.status(404).json({ error: 'Task not found' });
+  const { title } = req.body;
+  if (!title?.trim()) return res.status(400).json({ error: 'Title is required' });
+  const r = db.prepare('INSERT INTO subtasks (task_id, title) VALUES (?, ?)').run(req.params.id, title.trim());
+  res.status(201).json(db.prepare('SELECT * FROM subtasks WHERE id = ?').get(r.lastInsertRowid));
+});
+
+app.patch('/api/subtasks/:id', (req, res) => {
+  const sub = db.prepare('SELECT * FROM subtasks WHERE id = ?').get(req.params.id);
+  if (!sub) return res.status(404).json({ error: 'Subtask not found' });
+  const title     = req.body.title     !== undefined ? (req.body.title?.trim() || sub.title) : sub.title;
+  const completed = req.body.completed !== undefined ? (req.body.completed ? 1 : 0)           : sub.completed;
+  db.prepare('UPDATE subtasks SET title = ?, completed = ? WHERE id = ?').run(title, completed, req.params.id);
+  res.json(db.prepare('SELECT * FROM subtasks WHERE id = ?').get(req.params.id));
+});
+
+app.delete('/api/subtasks/:id', (req, res) => {
+  const result = db.prepare('DELETE FROM subtasks WHERE id = ?').run(req.params.id);
+  if (!result.changes) return res.status(404).json({ error: 'Subtask not found' });
+  res.status(204).end();
+});
+
 // ── Projects ──────────────────────────────────────────────────────────────────
 
 app.get('/api/projects', (req, res) => {
@@ -218,6 +262,40 @@ app.post('/api/projects', (req, res) => {
     if (e.message.includes('UNIQUE')) return res.status(409).json({ error: 'Project already exists' });
     throw e;
   }
+});
+
+app.put('/api/projects/:id', (req, res) => {
+  const proj = db.prepare('SELECT * FROM projects WHERE id = ?').get(req.params.id);
+  if (!proj) return res.status(404).json({ error: 'Project not found' });
+  const { name } = req.body;
+  if (!name?.trim()) return res.status(400).json({ error: 'Project name is required' });
+  try {
+    db.transaction(() => {
+      db.prepare('UPDATE projects SET name = ? WHERE id = ?').run(name.trim(), req.params.id);
+      db.prepare('UPDATE tasks SET project = ?, updated_at = datetime(\'now\') WHERE project = ?').run(name.trim(), proj.name);
+    })();
+    res.json(db.prepare('SELECT * FROM projects WHERE id = ?').get(req.params.id));
+  } catch (e) {
+    if (e.message.includes('UNIQUE')) return res.status(409).json({ error: 'Project name already exists' });
+    throw e;
+  }
+});
+
+app.post('/api/projects/:id/merge', (req, res) => {
+  const source = db.prepare('SELECT * FROM projects WHERE id = ?').get(req.params.id);
+  if (!source) return res.status(404).json({ error: 'Source project not found' });
+  const { targetProjectId } = req.body;
+  if (!targetProjectId) return res.status(400).json({ error: 'targetProjectId is required' });
+  const target = db.prepare('SELECT * FROM projects WHERE id = ?').get(targetProjectId);
+  if (!target) return res.status(404).json({ error: 'Target project not found' });
+  if (source.id === target.id) return res.status(400).json({ error: 'Cannot merge project into itself' });
+
+  db.transaction(() => {
+    db.prepare('UPDATE tasks SET project = ?, updated_at = datetime(\'now\') WHERE project = ?').run(target.name, source.name);
+    db.prepare('DELETE FROM projects WHERE id = ?').run(source.id);
+  })();
+
+  res.json({ merged: true, target });
 });
 
 app.delete('/api/projects/:id', (req, res) => {
