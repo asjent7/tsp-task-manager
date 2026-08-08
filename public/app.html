@@ -204,6 +204,22 @@
     .log-del:hover { color: var(--urgent); background: #fef2f2; }
     .detail-footer { padding: 12px 16px; border-top: 1px solid var(--border); display: flex; gap: 6px; flex-wrap: wrap; flex-shrink: 0; }
 
+    /* ── Focus Lists ── */
+    .focus-stat-badge { font-size: 10px; color: #94a3b8; background: rgba(255,255,255,.1); border-radius: 5px; padding: 1px 5px; white-space: nowrap; }
+    .nav-item.active .focus-stat-badge { color: var(--sidebar-active-text); background: rgba(59,130,246,.2); }
+    .focus-header { background: #f5f3ff; border: 1px solid #e9d5ff; border-radius: 8px; padding: 10px 14px; margin-bottom: 12px; display: flex; align-items: center; justify-content: space-between; }
+    .focus-header-stats { font-size: 13px; font-weight: 600; color: #6d28d9; }
+    .focus-header-cap  { font-size: 11px; color: #7c3aed; opacity: .7; }
+    .focus-chip { display: inline-flex; align-items: center; padding: 1px 7px; background: rgba(139,92,246,.12); color: #6d28d9; border-radius: 100px; font-size: 11px; font-weight: 500; gap: 3px; }
+    .fl-add-btn { background: none; border: none; color: #cbd5e1; cursor: pointer; font-size: 13px; padding: 2px 4px; line-height: 1; border-radius: 3px; flex-shrink: 0; transition: color .1s; }
+    .fl-add-btn:hover { color: #7c3aed; background: rgba(139,92,246,.1); }
+    .d-focus-chip { display: inline-flex; align-items: center; gap: 5px; padding: 4px 10px; background: rgba(139,92,246,.1); color: #6d28d9; border-radius: 100px; font-size: 12px; margin: 0 4px 4px 0; }
+    .d-focus-chip button { background: none; border: none; cursor: pointer; color: #7c3aed; font-size: 12px; padding: 0; line-height: 1; opacity: .7; }
+    .d-focus-chip button:hover { opacity: 1; }
+    .focus-select-row { display: flex; gap: 6px; margin-top: 8px; }
+    .focus-select-row select { flex: 1; padding: 6px 8px; border: 1px solid var(--border); border-radius: 6px; font-size: 12px; outline: none; font-family: inherit; color: var(--text); background: var(--bg); }
+    .focus-select-row select:focus { border-color: #8b5cf6; }
+
     /* ── Project header (asset links) ── */
     .project-header { margin-bottom: 12px; }
     .project-links-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
@@ -333,6 +349,14 @@
       <div class="sidebar-action-btn" onclick="openAddProject()"><span>＋</span> New Project</div>
       <div class="sidebar-action-btn" onclick="openProjectFromTemplate()"><span>⊞</span> From Template</div>
     </div>
+
+    <hr class="sidebar-divider">
+
+    <div class="sidebar-section">
+      <div class="sidebar-label">Focus Lists</div>
+      <div id="focus-nav"></div>
+      <div class="sidebar-action-btn" onclick="openNewFocusList()"><span>＋</span> New Focus List</div>
+    </div>
   </aside>
 
   <!-- Main -->
@@ -458,6 +482,15 @@
 
       <hr style="border:none;border-top:1px solid var(--border);margin:16px 0;">
 
+      <div class="sidebar-label" style="margin-bottom:8px;">Focus Lists</div>
+      <div id="d-focus-list"></div>
+      <div class="focus-select-row">
+        <select id="d-focus-select"><option value="">Add to a focus list…</option></select>
+        <button class="btn btn-ghost btn-sm" onclick="addToFocusListFromDetail()">Add</button>
+      </div>
+
+      <hr style="border:none;border-top:1px solid var(--border);margin:16px 0;">
+
       <div class="sidebar-label" style="margin-bottom:8px;">Meeting Notes</div>
       <div id="mn-list"></div>
       <div id="mn-add-form" style="display:none;">
@@ -576,6 +609,44 @@
   </div>
 </div>
 
+<!-- New Focus List Modal -->
+<div class="overlay" id="focus-new-modal">
+  <div class="modal">
+    <h3>New Focus List</h3>
+    <div class="modal-sub">Ad-hoc grouping for internal prioritization (max 7 tasks · 10h)</div>
+    <input type="text" id="focus-new-name" placeholder="e.g. This week's push">
+    <div class="modal-btns">
+      <button class="btn btn-ghost btn-sm" onclick="closeFocusNewModal()">Cancel</button>
+      <button class="btn btn-primary btn-sm" onclick="createFocusList()">Create</button>
+    </div>
+  </div>
+</div>
+
+<!-- Rename Focus List Modal -->
+<div class="overlay" id="focus-rename-modal">
+  <div class="modal">
+    <h3>Rename Focus List</h3>
+    <input type="text" id="focus-rename-input" placeholder="New name">
+    <div class="modal-btns">
+      <button class="btn btn-ghost btn-sm" onclick="closeFocusRenameModal()">Cancel</button>
+      <button class="btn btn-primary btn-sm" onclick="confirmRenameFocusList()">Rename</button>
+    </div>
+  </div>
+</div>
+
+<!-- Add Task to Focus List Modal (from card) -->
+<div class="overlay" id="focus-add-modal">
+  <div class="modal">
+    <h3>Add to Focus List</h3>
+    <div class="modal-sub" id="focus-add-task-name" style="font-weight:500;color:var(--text);"></div>
+    <select id="focus-add-select" style="margin-top:10px;"></select>
+    <div class="modal-btns">
+      <button class="btn btn-ghost btn-sm" onclick="closeFocusAddModal()">Cancel</button>
+      <button class="btn btn-primary btn-sm" onclick="confirmAddToFocusList()">Add</button>
+    </div>
+  </div>
+</div>
+
 <!-- Add Project Link Modal -->
 <div class="overlay" id="add-link-modal">
   <div class="modal">
@@ -614,6 +685,7 @@ let state = {
   timeLogs: [],
   subtasks: [],
   meetingNotes: [],
+  focusLists: [],
   calMode: 'week',
   calWeekStart: getWeekStart(),
   calMonth: { year: new Date().getFullYear(), month: new Date().getMonth() },
@@ -624,6 +696,8 @@ let draggedTaskId  = null;
 let renameProjId   = null;
 let mergeProjId    = null;
 let addLinkProjId  = null;
+let focusRenameId  = null;
+let focusAddTaskId = null;
 
 // ── API ───────────────────────────────────────────────────────────────────────
 
@@ -694,6 +768,7 @@ function viewTitle(view) {
   if (type === 'due') {
     return { 'past-due': 'Past Due', 'today': 'Due Today', 'this-week': 'Due This Week', 'next-week': 'Due Next Week' }[val] || val;
   }
+  if (type === 'focus') return state.focusLists.find(f => f.id == val)?.name ?? 'Focus List';
   return view;
 }
 
@@ -726,10 +801,12 @@ function dueDateMatches(dueDate, filter, fromStr, toStr) {
 // ── Load data ─────────────────────────────────────────────────────────────────
 
 async function loadAll() {
-  const [tasks, projects, templates] = await Promise.all([
-    api('GET', '/api/tasks'), api('GET', '/api/projects'), api('GET', '/api/templates')
+  const [tasks, projects, templates, focusLists] = await Promise.all([
+    api('GET', '/api/tasks'), api('GET', '/api/projects'),
+    api('GET', '/api/templates'), api('GET', '/api/focus-lists')
   ]);
-  state.tasks = tasks; state.projects = projects; state.templates = templates;
+  state.tasks = tasks; state.projects = projects;
+  state.templates = templates; state.focusLists = focusLists;
   renderSidebar(); renderTaskList(); populateProjectSelect();
 }
 
@@ -795,6 +872,17 @@ function renderSidebar() {
       </div>
     </div>`).join('');
 
+  document.getElementById('focus-nav').innerHTML = state.focusLists.map(fl => `
+    <div class="nav-item" data-view="focus:${fl.id}" onclick="setView('focus:${fl.id}')">
+      <span class="nav-label"><span class="nav-icon" style="color:#8b5cf6;">◈</span> ${esc(fl.name)}</span>
+      <div class="nav-right">
+        <span class="focus-stat-badge">${fl.task_count}/7</span>
+        ${fl.estimated_minutes ? `<span class="focus-stat-badge">${fmtMins(fl.estimated_minutes)}</span>` : ''}
+        <button class="proj-action-btn" onclick="event.stopPropagation();openRenameFocusList(${fl.id},'${esc(fl.name)}')" title="Rename">✏️</button>
+        <button class="proj-action-btn" onclick="event.stopPropagation();deleteFocusList(${fl.id},'${esc(fl.name)}')" title="Delete">🗑</button>
+      </div>
+    </div>`).join('');
+
   document.querySelectorAll('.nav-item').forEach(el => {
     el.classList.toggle('active', el.dataset.view === state.view);
   });
@@ -848,6 +936,9 @@ function getVisibleTasks() {
   else if (v.startsWith('project:')) {
     const proj = state.projects.find(p => p.id == v.slice(8));
     tasks = proj ? tasks.filter(t => t.project === proj.name) : [];
+  } else if (v.startsWith('focus:')) {
+    const flId = parseInt(v.slice(6));
+    tasks = tasks.filter(t => (t.focus_list_ids || []).includes(flId));
   } else if (v.startsWith('due:')) {
     const shortcut = v.slice(4);
     if (shortcut === 'past-due') {
@@ -904,6 +995,20 @@ function renderTaskList() {
     if (proj) html += renderProjectHeader(proj);
   }
 
+  if (state.view.startsWith('focus:')) {
+    const fl = state.focusLists.find(f => f.id == state.view.slice(6));
+    if (fl) {
+      const visibleTasks = getVisibleTasks();
+      const estMins = visibleTasks.reduce((s, t) => s + (t.estimated_minutes || 0), 0);
+      const slotsLeft = 7 - fl.task_count;
+      const hrsLeft   = 10 - (fl.estimated_minutes / 60);
+      html += `<div class="focus-header">
+        <span class="focus-header-stats">${fl.task_count}/7 tasks · ${fmtMins(fl.estimated_minutes || 0)} / 10h est.</span>
+        <span class="focus-header-cap">${slotsLeft} slot${slotsLeft!==1?'s':''} · ${hrsLeft.toFixed(1)}h remaining</span>
+      </div>`;
+    }
+  }
+
   const tasks = getVisibleTasks();
   if (!tasks.length) {
     html += `<div class="empty-state"><div class="icon">✅</div><p>Nothing here</p></div>`;
@@ -916,6 +1021,14 @@ function renderTaskList() {
     const badge   = t.subtask_count ? `<span class="subtask-badge">${t.subtask_done || 0}/${t.subtask_count}</span>` : '';
     const notesLink = t.meeting_notes_count
       ? `<a href="${esc(t.meeting_notes_latest_url)}" target="_blank" rel="noopener" class="meeting-notes-badge" onclick="event.stopPropagation()" title="Open most recent meeting note">📝 ${t.meeting_notes_count} note${t.meeting_notes_count !== 1 ? 's' : ''}</a>`
+      : '';
+    const flChips = (t.focus_list_ids || []).map(fid => {
+      const fl = state.focusLists.find(f => f.id === fid);
+      return fl ? `<span class="focus-chip">◈ ${esc(fl.name)}</span>` : '';
+    }).join('');
+    const availableFl = state.focusLists.filter(f => !(t.focus_list_ids||[]).includes(f.id));
+    const flBtn = availableFl.length
+      ? `<button class="fl-add-btn" onclick="event.stopPropagation();openFocusAddModal(${t.id})" title="Add to focus list">◈+</button>`
       : '';
     return `
     <div class="task-card${t.id === state.selectedId ? ' selected' : ''}"
@@ -930,6 +1043,8 @@ function renderTaskList() {
           ${t.due_date ? `<span class="${overdue?'overdue':''}">Due ${fmtDate(t.due_date)}</span>` : ''}
           ${badge}
           ${notesLink}
+          ${flChips}
+          ${flBtn}
         </div>
       </div>
       ${(t.estimated_minutes || t.actual_minutes) ? `
@@ -1237,6 +1352,7 @@ async function openDetail(id) {
   document.getElementById('d-est').textContent              = task.estimated_minutes ? fmtMins(task.estimated_minutes) : '—';
   document.getElementById('d-actual').textContent           = fmtMins(task.actual_minutes);
   document.getElementById('detail-panel').classList.add('open');
+  renderDetailFocusList(task);
   renderTaskList();
   await Promise.all([loadTimeLogs(id), loadSubtasks(id), loadMeetingNotes(id)]);
 }
@@ -1611,6 +1727,153 @@ async function createProjectFromTemplate() {
     closeProjectFromTemplate(); populateProjectSelect(); renderSidebar();
     setView(`project:${proj.id}`);
     toast(`"${name}" created with ${newTasks.length} task${newTasks.length!==1?'s':''}`);
+  } catch(e) { toast(e.message); }
+}
+
+// ── Focus Lists ───────────────────────────────────────────────────────────────
+
+function renderDetailFocusList(task) {
+  const ids = task.focus_list_ids || [];
+  const el = document.getElementById('d-focus-list');
+  if (ids.length) {
+    el.innerHTML = ids.map(fid => {
+      const fl = state.focusLists.find(f => f.id === fid);
+      return fl ? `<span class="d-focus-chip">◈ ${esc(fl.name)}<button onclick="removeFromFocusList(${task.id},${fid})" title="Remove">×</button></span>` : '';
+    }).join('');
+  } else {
+    el.innerHTML = `<div style="font-size:12px;color:var(--muted);padding:2px 0;">Not in any focus list</div>`;
+  }
+  const sel = document.getElementById('d-focus-select');
+  const available = state.focusLists.filter(f => !ids.includes(f.id));
+  sel.innerHTML = `<option value="">Add to a focus list…</option>` +
+    available.map(f => `<option value="${f.id}">${esc(f.name)} (${f.task_count}/7)</option>`).join('');
+}
+
+async function addToFocusListFromDetail() {
+  const flId = parseInt(document.getElementById('d-focus-select').value);
+  if (!flId) { toast('Select a focus list'); return; }
+  try {
+    await api('POST', `/api/tasks/${state.selectedId}/focus-lists/${flId}`);
+    const task = state.tasks.find(t => t.id === state.selectedId);
+    if (task) task.focus_list_ids = [...(task.focus_list_ids || []), flId];
+    const fl = state.focusLists.find(f => f.id === flId);
+    if (fl && task) {
+      fl.task_count = (fl.task_count || 0) + 1;
+      fl.estimated_minutes = (fl.estimated_minutes || 0) + (task.estimated_minutes || 0);
+    }
+    if (task) renderDetailFocusList(task);
+    renderSidebar(); renderTaskList();
+    toast('Added to focus list');
+  } catch(e) { toast(e.message); }
+}
+
+async function removeFromFocusList(taskId, focusListId) {
+  await api('DELETE', `/api/tasks/${taskId}/focus-lists/${focusListId}`);
+  const task = state.tasks.find(t => t.id === taskId);
+  if (task) task.focus_list_ids = (task.focus_list_ids || []).filter(id => id !== focusListId);
+  const fl = state.focusLists.find(f => f.id === focusListId);
+  if (fl && task) {
+    fl.task_count = Math.max(0, (fl.task_count || 1) - 1);
+    fl.estimated_minutes = Math.max(0, (fl.estimated_minutes || 0) - (task.estimated_minutes || 0));
+  }
+  if (task) renderDetailFocusList(task);
+  renderSidebar(); renderTaskList();
+  toast('Removed from focus list');
+}
+
+// Card-level add modal
+function openFocusAddModal(taskId) {
+  focusAddTaskId = taskId;
+  const task = state.tasks.find(t => t.id === taskId);
+  document.getElementById('focus-add-task-name').textContent = task?.title || '';
+  const available = state.focusLists.filter(f => !(task?.focus_list_ids || []).includes(f.id));
+  document.getElementById('focus-add-select').innerHTML =
+    `<option value="">Select a focus list…</option>` +
+    available.map(f => `<option value="${f.id}">${esc(f.name)} (${f.task_count}/7)</option>`).join('');
+  document.getElementById('focus-add-modal').classList.add('open');
+}
+function closeFocusAddModal() { document.getElementById('focus-add-modal').classList.remove('open'); }
+document.getElementById('focus-add-modal').addEventListener('click', e => { if (e.target===e.currentTarget) closeFocusAddModal(); });
+
+async function confirmAddToFocusList() {
+  const flId = parseInt(document.getElementById('focus-add-select').value);
+  if (!flId) { toast('Select a focus list'); return; }
+  try {
+    await api('POST', `/api/tasks/${focusAddTaskId}/focus-lists/${flId}`);
+    const task = state.tasks.find(t => t.id === focusAddTaskId);
+    if (task) task.focus_list_ids = [...(task.focus_list_ids || []), flId];
+    const fl = state.focusLists.find(f => f.id === flId);
+    if (fl && task) {
+      fl.task_count = (fl.task_count || 0) + 1;
+      fl.estimated_minutes = (fl.estimated_minutes || 0) + (task.estimated_minutes || 0);
+    }
+    closeFocusAddModal();
+    if (state.selectedId === focusAddTaskId && task) renderDetailFocusList(task);
+    renderSidebar(); renderTaskList();
+    toast('Added to focus list');
+  } catch(e) { closeFocusAddModal(); toast(e.message); }
+}
+
+// New focus list
+function openNewFocusList() {
+  document.getElementById('focus-new-name').value = '';
+  document.getElementById('focus-new-modal').classList.add('open');
+  setTimeout(() => document.getElementById('focus-new-name').focus(), 50);
+}
+function closeFocusNewModal() { document.getElementById('focus-new-modal').classList.remove('open'); }
+document.getElementById('focus-new-name').addEventListener('keydown', e => { if (e.key==='Enter') createFocusList(); if (e.key==='Escape') closeFocusNewModal(); });
+document.getElementById('focus-new-modal').addEventListener('click', e => { if (e.target===e.currentTarget) closeFocusNewModal(); });
+
+async function createFocusList() {
+  const name = document.getElementById('focus-new-name').value.trim();
+  if (!name) return;
+  try {
+    const fl = await api('POST', '/api/focus-lists', { name });
+    state.focusLists.push({ ...fl, task_count: 0, estimated_minutes: 0 });
+    closeFocusNewModal();
+    renderSidebar();
+    toast(`Focus list "${name}" created`);
+  } catch(e) { toast(e.message); }
+}
+
+// Rename focus list
+function openRenameFocusList(id, name) {
+  focusRenameId = id;
+  document.getElementById('focus-rename-input').value = name;
+  document.getElementById('focus-rename-modal').classList.add('open');
+  setTimeout(() => document.getElementById('focus-rename-input').focus(), 50);
+}
+function closeFocusRenameModal() { document.getElementById('focus-rename-modal').classList.remove('open'); }
+document.getElementById('focus-rename-input').addEventListener('keydown', e => { if (e.key==='Enter') confirmRenameFocusList(); if (e.key==='Escape') closeFocusRenameModal(); });
+document.getElementById('focus-rename-modal').addEventListener('click', e => { if (e.target===e.currentTarget) closeFocusRenameModal(); });
+
+async function confirmRenameFocusList() {
+  const name = document.getElementById('focus-rename-input').value.trim();
+  if (!name) return;
+  try {
+    const updated = await api('PATCH', `/api/focus-lists/${focusRenameId}`, { name });
+    state.focusLists = state.focusLists.map(f => f.id === focusRenameId ? { ...f, name: updated.name } : f);
+    closeFocusRenameModal();
+    if (state.view === `focus:${focusRenameId}`) {
+      document.getElementById('view-title').textContent = name;
+    }
+    renderSidebar();
+    toast(`Renamed to "${name}"`);
+  } catch(e) { toast(e.message); }
+}
+
+// Delete focus list
+async function deleteFocusList(id, name) {
+  if (!confirm(`Delete focus list "${name}"?\n\nTasks will not be deleted — only this grouping will be removed.`)) return;
+  try {
+    await api('DELETE', `/api/focus-lists/${id}`);
+    state.focusLists = state.focusLists.filter(f => f.id !== id);
+    state.tasks = state.tasks.map(t => ({
+      ...t, focus_list_ids: (t.focus_list_ids || []).filter(fid => fid !== id)
+    }));
+    if (state.view === `focus:${id}`) setView('all');
+    else { renderSidebar(); renderTaskList(); }
+    toast(`"${name}" deleted`);
   } catch(e) { toast(e.message); }
 }
 
