@@ -821,6 +821,8 @@ let calMoveBlockId    = null;
 let calMoveStartY     = null;
 let calMoveStartTop   = null;
 let calMoveMoved      = false;
+let calPanelPriority  = '';
+let calPanelProject   = '';
 
 // ── API ───────────────────────────────────────────────────────────────────────
 
@@ -1994,20 +1996,6 @@ function renderCalendarDay() {
     </div>`;
   });
 
-  // Unscheduled panel
-  const blockedIds = new Set(state.timeBlocks.map(b => b.task_id));
-  const unscheduled = state.tasks.filter(t =>
-    t.status !== 'complete' && !blockedIds.has(t.id) &&
-    t.due_date && t.due_date <= state.calDayStr
-  );
-  const panelHtml = `
-    <div class="cal-day-panel-hdr">Unscheduled</div>
-    ${unscheduled.length ? unscheduled.map(t => `
-      <div class="cal-day-panel-task" data-priority="${t.priority}"
-        draggable="true" ondragstart="calDayTaskDragStart(event,${t.id})">
-        <div style="font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${esc(t.title)}</div>
-        <div style="font-size:10px;color:var(--muted);margin-top:2px;">Due ${fmtDate(t.due_date)}</div>
-      </div>`).join('') : '<div class="cal-day-panel-empty">All tasks blocked ✓</div>'}`;
 
   const dropAttrs = isSun ? '' :
     `ondragover="calDayDragOver(event)" ondragleave="calDayDragLeave(event)" ondrop="calDayDrop(event)"`;
@@ -2045,9 +2033,87 @@ function renderCalendarDay() {
           </div>
         </div>
       </div>
-      <div class="cal-day-panel">${panelHtml}</div>
+      <div class="cal-day-panel"></div>
     </div>`;
   document.getElementById('task-list').innerHTML = html;
+  renderDayPanel();
+}
+
+function renderDayPanel() {
+  const el = document.querySelector('.cal-day-panel');
+  if (!el) return;
+  const today = state.calDayStr;
+  const eowDate = new Date(today + 'T00:00:00');
+  eowDate.setDate(eowDate.getDate() + 6);
+  const eow = eowDate.toISOString().slice(0, 10);
+
+  function bucket(t) {
+    if (!t.due_date) return 3;
+    if (t.due_date < today) return 0;
+    if (t.due_date === today) return 1;
+    if (t.due_date <= eow) return 2;
+    return 3;
+  }
+
+  const blockedIds = new Set(state.timeBlocks.map(b => b.task_id));
+  let tasks = state.tasks.filter(t => t.status !== 'complete' && !blockedIds.has(t.id));
+  if (calPanelPriority) tasks = tasks.filter(t => t.priority === calPanelPriority);
+  if (calPanelProject)  tasks = tasks.filter(t => t.project === calPanelProject);
+  tasks = [...tasks].sort((a, b) => {
+    const db = bucket(a) - bucket(b);
+    if (db !== 0) return db;
+    if (a.due_date && b.due_date) return a.due_date.localeCompare(b.due_date);
+    return a.due_date ? -1 : b.due_date ? 1 : 0;
+  });
+
+  const BUCKET_LABELS = ['Overdue', 'Today', 'This Week', 'Later'];
+  const projects = [...new Set(state.tasks.filter(t => t.project).map(t => t.project))].sort();
+
+  let html = `<div class="cal-day-panel-hdr" style="padding-bottom:4px;">
+    Unscheduled <span style="font-weight:400;color:var(--muted);">(${tasks.length})</span>
+  </div>
+  <div style="display:flex;gap:4px;margin-bottom:8px;position:sticky;top:28px;background:var(--surface);padding-bottom:4px;">
+    <select onchange="setDayPanelFilter('priority',this.value)" style="flex:1;min-width:0;font-size:11px;padding:3px 4px;border:1px solid var(--border);border-radius:4px;background:var(--bg);color:var(--text);">
+      <option value="" ${!calPanelPriority?'selected':''}>All priority</option>
+      <option value="urgent" ${calPanelPriority==='urgent'?'selected':''}>Urgent</option>
+      <option value="high"   ${calPanelPriority==='high'  ?'selected':''}>High</option>
+      <option value="medium" ${calPanelPriority==='medium'?'selected':''}>Medium</option>
+      <option value="low"    ${calPanelPriority==='low'   ?'selected':''}>Low</option>
+    </select>
+    <select onchange="setDayPanelFilter('project',this.value)" style="flex:1;min-width:0;font-size:11px;padding:3px 4px;border:1px solid var(--border);border-radius:4px;background:var(--bg);color:var(--text);">
+      <option value="" ${!calPanelProject?'selected':''}>All projects</option>
+      ${projects.map(p => `<option value="${esc(p)}" ${calPanelProject===p?'selected':''}>${esc(p)}</option>`).join('')}
+    </select>
+  </div>`;
+
+  if (!tasks.length) {
+    html += '<div class="cal-day-panel-empty">No unscheduled tasks</div>';
+  } else {
+    let lastBucket = -1;
+    tasks.forEach(t => {
+      const b = bucket(t);
+      if (b !== lastBucket) {
+        html += `<div style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);padding:${lastBucket===-1?'0':'8px'} 0 4px;">${BUCKET_LABELS[b]}</div>`;
+        lastBucket = b;
+      }
+      const overdue = t.due_date && t.due_date < today;
+      const dueLine = t.due_date
+        ? `<div style="font-size:10px;color:${overdue?'var(--urgent)':'var(--muted)'};margin-top:2px;">${t.due_date===today?'Due today':'Due '+fmtDate(t.due_date)}</div>`
+        : '';
+      html += `<div class="cal-day-panel-task" data-priority="${t.priority}" draggable="true" ondragstart="calDayTaskDragStart(event,${t.id})">
+        <div style="font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${esc(t.title)}</div>
+        ${dueLine}
+      </div>`;
+    });
+  }
+
+  el.innerHTML = html;
+}
+
+function setDayPanelFilter(type, val) {
+  if (type === 'priority') calPanelPriority = val;
+  if (type === 'project')  calPanelProject  = val;
+  renderDayPanel();
 }
 
 function calDayNav(dir) {
