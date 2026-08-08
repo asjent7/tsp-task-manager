@@ -211,8 +211,17 @@
     .project-link-chip:hover { background: #eff6ff; border-color: var(--accent); }
     .proj-link-del { background: none; border: none; color: #94a3b8; cursor: pointer; font-size: 11px; padding: 0; line-height: 1; margin-left: 2px; }
     .proj-link-del:hover { color: var(--urgent); }
-    .meeting-notes-link { display: inline-flex; align-items: center; gap: 3px; font-size: 11px; color: var(--accent); text-decoration: none; padding: 1px 6px; background: #eff6ff; border-radius: 100px; }
-    .meeting-notes-link:hover { background: #dbeafe; }
+    .meeting-notes-badge { display: inline-flex; align-items: center; gap: 3px; font-size: 11px; color: var(--accent); text-decoration: none; padding: 1px 6px; background: #eff6ff; border-radius: 100px; }
+    .meeting-notes-badge:hover { background: #dbeafe; }
+    .mn-entry { display: flex; align-items: center; gap: 8px; padding: 6px 8px; background: var(--bg); border-radius: 5px; margin-bottom: 4px; font-size: 12px; }
+    .mn-entry-date { color: var(--muted); white-space: nowrap; flex-shrink: 0; }
+    .mn-entry-link { flex: 1; color: var(--accent); text-decoration: none; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .mn-entry-link:hover { text-decoration: underline; }
+    .mn-add-form { display: flex; gap: 6px; margin-top: 6px; flex-wrap: wrap; }
+    .mn-add-form input { padding: 6px 10px; border: 1px solid var(--border); border-radius: 6px; font-size: 12px; outline: none; font-family: inherit; }
+    .mn-add-form input:focus { border-color: var(--accent); }
+    .mn-add-form input[type="date"] { width: 130px; flex-shrink: 0; }
+    .mn-add-form input[type="url"] { flex: 1; min-width: 140px; }
 
     /* ── Subtasks ── */
     .subtask-item { display: flex; align-items: center; gap: 8px; padding: 6px 8px; background: var(--bg); border-radius: 5px; margin-bottom: 4px; }
@@ -446,10 +455,20 @@
         <label>Notes</label>
         <textarea id="d-notes" placeholder="Add notes…"></textarea>
       </div>
-      <div class="field">
-        <label>Meeting Notes URL</label>
-        <input type="url" id="d-meeting-url" placeholder="https://…">
+
+      <hr style="border:none;border-top:1px solid var(--border);margin:16px 0;">
+
+      <div class="sidebar-label" style="margin-bottom:8px;">Meeting Notes</div>
+      <div id="mn-list"></div>
+      <div id="mn-add-form" style="display:none;">
+        <div class="mn-add-form">
+          <input type="date" id="mn-date">
+          <input type="url" id="mn-url" placeholder="https://…">
+          <button class="btn btn-primary btn-sm" onclick="addMeetingNote()">Add</button>
+          <button class="btn btn-ghost btn-sm" onclick="hideMeetingNoteForm()">Cancel</button>
+        </div>
       </div>
+      <button class="btn btn-ghost btn-sm" id="mn-add-btn" onclick="showMeetingNoteForm()" style="margin-top:6px;font-size:12px;">+ Add meeting note</button>
 
       <hr style="border:none;border-top:1px solid var(--border);margin:16px 0;">
 
@@ -594,6 +613,7 @@ let state = {
   selectedId: null,
   timeLogs: [],
   subtasks: [],
+  meetingNotes: [],
   calMode: 'week',
   calWeekStart: getWeekStart(),
   calMonth: { year: new Date().getFullYear(), month: new Date().getMonth() },
@@ -894,8 +914,8 @@ function renderTaskList() {
   html += tasks.map(t => {
     const overdue = isOverdue(t.due_date) && t.status !== 'complete';
     const badge   = t.subtask_count ? `<span class="subtask-badge">${t.subtask_done || 0}/${t.subtask_count}</span>` : '';
-    const notesLink = t.meeting_notes_url
-      ? `<a href="${esc(t.meeting_notes_url)}" target="_blank" rel="noopener" class="meeting-notes-link" onclick="event.stopPropagation()">📝 Notes</a>`
+    const notesLink = t.meeting_notes_count
+      ? `<a href="${esc(t.meeting_notes_latest_url)}" target="_blank" rel="noopener" class="meeting-notes-badge" onclick="event.stopPropagation()" title="Open most recent meeting note">📝 ${t.meeting_notes_count} note${t.meeting_notes_count !== 1 ? 's' : ''}</a>`
       : '';
     return `
     <div class="task-card${t.id === state.selectedId ? ' selected' : ''}"
@@ -1214,12 +1234,11 @@ async function openDetail(id) {
   document.getElementById('d-due').value                    = task.due_date || '';
   document.getElementById('d-notes').value                  = task.notes    || '';
   document.getElementById('d-estimated-mins').value         = task.estimated_minutes || '';
-  document.getElementById('d-meeting-url').value            = task.meeting_notes_url || '';
   document.getElementById('d-est').textContent              = task.estimated_minutes ? fmtMins(task.estimated_minutes) : '—';
   document.getElementById('d-actual').textContent           = fmtMins(task.actual_minutes);
   document.getElementById('detail-panel').classList.add('open');
   renderTaskList();
-  await Promise.all([loadTimeLogs(id), loadSubtasks(id)]);
+  await Promise.all([loadTimeLogs(id), loadSubtasks(id), loadMeetingNotes(id)]);
 }
 
 function closeDetail() {
@@ -1236,10 +1255,9 @@ async function saveDetail() {
     status:            document.getElementById('d-status').value,
     category:          document.getElementById('d-category').value  || null,
     project:           document.getElementById('d-project').value   || null,
-    due_date:           document.getElementById('d-due').value          || null,
-    notes:              document.getElementById('d-notes').value        || null,
-    meeting_notes_url:  document.getElementById('d-meeting-url').value  || null,
-    estimated_minutes:  document.getElementById('d-estimated-mins').value || null
+    due_date:          document.getElementById('d-due').value          || null,
+    notes:             document.getElementById('d-notes').value        || null,
+    estimated_minutes: document.getElementById('d-estimated-mins').value || null
   };
   if (!payload.title) { toast('Title is required'); return; }
   const updated = await api('PUT', `/api/tasks/${state.selectedId}`, payload);
@@ -1433,6 +1451,76 @@ async function confirmMergeProject() {
     populateProjectSelect(); renderSidebar();
     toast(`Merged into "${tgtProj.name}"`);
   } catch(e) { toast(e.message); }
+}
+
+// ── Meeting Notes ─────────────────────────────────────────────────────────────
+
+async function loadMeetingNotes(taskId) {
+  state.meetingNotes = await api('GET', `/api/tasks/${taskId}/meeting-notes`);
+  renderMeetingNotes();
+}
+
+function renderMeetingNotes() {
+  const list = document.getElementById('mn-list');
+  if (!state.meetingNotes.length) {
+    list.innerHTML = `<div style="font-size:12px;color:var(--muted);padding:2px 0;">No meeting notes yet</div>`;
+    return;
+  }
+  list.innerHTML = state.meetingNotes.map(mn => `
+    <div class="mn-entry">
+      <span class="mn-entry-date">${fmtDate(mn.date)}</span>
+      <span style="color:var(--muted);">→</span>
+      <a href="${esc(mn.url)}" target="_blank" rel="noopener" class="mn-entry-link">${esc(mn.url)}</a>
+      <button class="log-del" onclick="deleteMeetingNote(${mn.id})" title="Remove">✕</button>
+    </div>`).join('');
+}
+
+function showMeetingNoteForm() {
+  document.getElementById('mn-add-form').style.display = '';
+  document.getElementById('mn-add-btn').style.display  = 'none';
+  document.getElementById('mn-date').value = new Date().toISOString().slice(0, 10);
+  document.getElementById('mn-url').value  = '';
+  document.getElementById('mn-url').focus();
+}
+
+function hideMeetingNoteForm() {
+  document.getElementById('mn-add-form').style.display = 'none';
+  document.getElementById('mn-add-btn').style.display  = '';
+}
+
+async function addMeetingNote() {
+  const date = document.getElementById('mn-date').value;
+  const url  = document.getElementById('mn-url').value.trim();
+  if (!date) { toast('Pick a date'); return; }
+  if (!url)  { toast('Enter a URL'); return; }
+  const mn = await api('POST', `/api/tasks/${state.selectedId}/meeting-notes`, { date, url });
+  state.meetingNotes.unshift(mn);
+  const task = state.tasks.find(t => t.id === state.selectedId);
+  if (task) {
+    task.meeting_notes_count = (task.meeting_notes_count || 0) + 1;
+    // Keep latest_url pointing to most recent (sorted desc by date)
+    if (!task.meeting_notes_latest_url || date >= (state.meetingNotes[1]?.date || '')) {
+      task.meeting_notes_latest_url = url;
+    }
+  }
+  hideMeetingNoteForm();
+  renderMeetingNotes();
+  renderTaskList();
+  toast('Meeting note added');
+}
+
+document.getElementById('mn-url').addEventListener('keydown', e => { if (e.key === 'Enter') addMeetingNote(); });
+
+async function deleteMeetingNote(id) {
+  await api('DELETE', `/api/meeting-notes/${id}`);
+  state.meetingNotes = state.meetingNotes.filter(mn => mn.id !== id);
+  const task = state.tasks.find(t => t.id === state.selectedId);
+  if (task) {
+    task.meeting_notes_count = Math.max(0, (task.meeting_notes_count || 1) - 1);
+    task.meeting_notes_latest_url = state.meetingNotes[0]?.url || null;
+  }
+  renderMeetingNotes();
+  renderTaskList();
 }
 
 // ── Project Links ─────────────────────────────────────────────────────────────

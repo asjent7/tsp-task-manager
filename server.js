@@ -73,12 +73,15 @@ db.exec(`
     url TEXT NOT NULL,
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
   );
-`);
 
-// Migrate: add meeting_notes_url if it doesn't exist yet
-try { db.exec('ALTER TABLE tasks ADD COLUMN meeting_notes_url TEXT'); } catch (e) {
-  if (!e.message.includes('duplicate column name')) throw e;
-}
+  CREATE TABLE IF NOT EXISTS task_meeting_notes (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    task_id INTEGER NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+    date TEXT NOT NULL,
+    url TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+`);
 
 app.use(express.json());
 app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'public', 'app.html')));
@@ -109,10 +112,25 @@ app.get('/api/tasks', (req, res) => {
       created_at DESC`;
 
   const tasks = db.prepare(sql).all(...params);
-  const rows  = db.prepare('SELECT task_id, COUNT(*) AS total, SUM(completed) AS done FROM subtasks GROUP BY task_id').all();
-  const cmap  = {};
-  rows.forEach(r => { cmap[r.task_id] = r; });
-  res.json(tasks.map(t => ({ ...t, subtask_count: cmap[t.id]?.total || 0, subtask_done: cmap[t.id]?.done || 0 })));
+
+  const subRows = db.prepare('SELECT task_id, COUNT(*) AS total, SUM(completed) AS done FROM subtasks GROUP BY task_id').all();
+  const cmap = {};
+  subRows.forEach(r => { cmap[r.task_id] = r; });
+
+  const mnCounts = {};
+  db.prepare('SELECT task_id, COUNT(*) AS cnt FROM task_meeting_notes GROUP BY task_id').all()
+    .forEach(r => { mnCounts[r.task_id] = { cnt: r.cnt }; });
+  db.prepare(`SELECT mn.task_id, mn.url FROM task_meeting_notes mn
+    WHERE mn.id = (SELECT id FROM task_meeting_notes WHERE task_id = mn.task_id ORDER BY date DESC, id DESC LIMIT 1)`).all()
+    .forEach(r => { if (mnCounts[r.task_id]) mnCounts[r.task_id].latest_url = r.url; });
+
+  res.json(tasks.map(t => ({
+    ...t,
+    subtask_count: cmap[t.id]?.total || 0,
+    subtask_done:  cmap[t.id]?.done  || 0,
+    meeting_notes_count:      mnCounts[t.id]?.cnt        || 0,
+    meeting_notes_latest_url: mnCounts[t.id]?.latest_url || null,
+  })));
 });
 
 app.get('/api/tasks/:id', (req, res) => {
@@ -124,21 +142,21 @@ app.get('/api/tasks/:id', (req, res) => {
 app.post('/api/tasks', (req, res) => {
   const {
     title, priority = 'medium', category, project,
-    status = 'pending', due_date, estimated_minutes, notes, meeting_notes_url
+    status = 'pending', due_date, estimated_minutes, notes
   } = req.body;
 
   if (!title?.trim()) return res.status(400).json({ error: 'Title is required' });
 
   const is_inbox = (!category && !project) ? 1 : 0;
   const result = db.prepare(`
-    INSERT INTO tasks (title, priority, category, project, status, due_date, estimated_minutes, notes, meeting_notes_url, is_inbox)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO tasks (title, priority, category, project, status, due_date, estimated_minutes, notes, is_inbox)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     title.trim(), priority,
     category || null, project || null,
     status, due_date || null,
     estimated_minutes ? Number(estimated_minutes) : null,
-    notes || null, meeting_notes_url || null, is_inbox
+    notes || null, is_inbox
   );
 
   res.status(201).json(db.prepare('SELECT * FROM tasks WHERE id = ?').get(result.lastInsertRowid));
@@ -158,17 +176,16 @@ app.put('/api/tasks/:id', (req, res) => {
   const estimated_minutes = body.estimated_minutes !== undefined
     ? (body.estimated_minutes ? Number(body.estimated_minutes) : null)
     : task.estimated_minutes;
-  const notes             = body.notes              !== undefined ? (body.notes              || null) : task.notes;
-  const meeting_notes_url = body.meeting_notes_url  !== undefined ? (body.meeting_notes_url  || null) : task.meeting_notes_url;
+  const notes    = body.notes !== undefined ? (body.notes || null) : task.notes;
   const is_inbox = (!category && !project) ? 1 : 0;
 
   db.prepare(`
     UPDATE tasks SET
       title = ?, priority = ?, category = ?, project = ?, status = ?,
-      due_date = ?, estimated_minutes = ?, notes = ?, meeting_notes_url = ?, is_inbox = ?,
+      due_date = ?, estimated_minutes = ?, notes = ?, is_inbox = ?,
       updated_at = datetime('now')
     WHERE id = ?
-  `).run(title, priority, category, project, status, due_date, estimated_minutes, notes, meeting_notes_url, is_inbox, req.params.id);
+  `).run(title, priority, category, project, status, due_date, estimated_minutes, notes, is_inbox, req.params.id);
 
   res.json(db.prepare('SELECT * FROM tasks WHERE id = ?').get(req.params.id));
 });
@@ -257,6 +274,30 @@ app.patch('/api/subtasks/:id', (req, res) => {
 app.delete('/api/subtasks/:id', (req, res) => {
   const result = db.prepare('DELETE FROM subtasks WHERE id = ?').run(req.params.id);
   if (!result.changes) return res.status(404).json({ error: 'Subtask not found' });
+  res.status(204).end();
+});
+
+// ── Meeting Notes ─────────────────────────────────────────────────────────────
+
+app.get('/api/tasks/:id/meeting-notes', (req, res) => {
+  const task = db.prepare('SELECT id FROM tasks WHERE id = ?').get(req.params.id);
+  if (!task) return res.status(404).json({ error: 'Task not found' });
+  res.json(db.prepare('SELECT * FROM task_meeting_notes WHERE task_id = ? ORDER BY date DESC, id DESC').all(req.params.id));
+});
+
+app.post('/api/tasks/:id/meeting-notes', (req, res) => {
+  const task = db.prepare('SELECT id FROM tasks WHERE id = ?').get(req.params.id);
+  if (!task) return res.status(404).json({ error: 'Task not found' });
+  const { date, url } = req.body;
+  if (!date?.trim()) return res.status(400).json({ error: 'Date is required' });
+  if (!url?.trim())  return res.status(400).json({ error: 'URL is required' });
+  const r = db.prepare('INSERT INTO task_meeting_notes (task_id, date, url) VALUES (?, ?, ?)').run(req.params.id, date.trim(), url.trim());
+  res.status(201).json(db.prepare('SELECT * FROM task_meeting_notes WHERE id = ?').get(r.lastInsertRowid));
+});
+
+app.delete('/api/meeting-notes/:id', (req, res) => {
+  const result = db.prepare('DELETE FROM task_meeting_notes WHERE id = ?').run(req.params.id);
+  if (!result.changes) return res.status(404).json({ error: 'Meeting note not found' });
   res.status(204).end();
 });
 
