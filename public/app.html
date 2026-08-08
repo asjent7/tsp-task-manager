@@ -637,14 +637,24 @@
   </div>
 </div>
 
-<!-- Rename Focus List Modal -->
+<!-- Edit Focus List Modal -->
 <div class="overlay" id="focus-rename-modal">
   <div class="modal">
-    <h3>Rename Focus List</h3>
-    <input type="text" id="focus-rename-input" placeholder="New name">
+    <h3>Edit Focus List</h3>
+    <input type="text" id="focus-rename-input" placeholder="Name">
+    <div class="field-row" style="margin-bottom:10px;">
+      <div>
+        <label style="display:block;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin-bottom:4px;">Max Tasks</label>
+        <input type="number" id="focus-max-tasks" min="1" max="100" style="width:100%;padding:9px 12px;border:1px solid var(--border);border-radius:7px;font-size:14px;font-family:inherit;outline:none;color:var(--text);background:var(--bg);">
+      </div>
+      <div>
+        <label style="display:block;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin-bottom:4px;">Max Hours</label>
+        <input type="number" id="focus-max-hours" min="1" max="1000" style="width:100%;padding:9px 12px;border:1px solid var(--border);border-radius:7px;font-size:14px;font-family:inherit;outline:none;color:var(--text);background:var(--bg);">
+      </div>
+    </div>
     <div class="modal-btns">
       <button class="btn btn-ghost btn-sm" onclick="closeFocusRenameModal()">Cancel</button>
-      <button class="btn btn-primary btn-sm" onclick="confirmRenameFocusList()">Rename</button>
+      <button class="btn btn-primary btn-sm" onclick="confirmRenameFocusList()">Save</button>
     </div>
   </div>
 </div>
@@ -893,16 +903,19 @@ function renderSidebar() {
       </div>
     </div>`).join('');
 
-  document.getElementById('focus-nav').innerHTML = state.focusLists.map(fl => `
+  document.getElementById('focus-nav').innerHTML = state.focusLists.map(fl => {
+    const estHrs = ((fl.estimated_minutes || 0) / 60).toFixed(1);
+    return `
     <div class="nav-item" data-view="focus:${fl.id}" onclick="setView('focus:${fl.id}')">
       <span class="nav-label"><span class="nav-icon" style="color:#8b5cf6;">◈</span> ${esc(fl.name)}</span>
       <div class="nav-right">
-        <span class="focus-stat-badge">${fl.task_count}/7</span>
-        ${fl.estimated_minutes ? `<span class="focus-stat-badge">${fmtMins(fl.estimated_minutes)}</span>` : ''}
-        <button class="proj-action-btn" onclick="event.stopPropagation();openRenameFocusList(${fl.id},'${esc(fl.name)}')" title="Rename">✏️</button>
+        <span class="focus-stat-badge">${fl.task_count}/${fl.max_tasks}</span>
+        <span class="focus-stat-badge">${estHrs}h/${fl.max_hours}h</span>
+        <button class="proj-action-btn" onclick="event.stopPropagation();openRenameFocusList(${fl.id},'${esc(fl.name)}',${fl.max_tasks},${fl.max_hours})" title="Edit">⚙️</button>
         <button class="proj-action-btn" onclick="event.stopPropagation();deleteFocusList(${fl.id},'${esc(fl.name)}')" title="Delete">🗑</button>
       </div>
-    </div>`).join('');
+    </div>`;
+  }).join('');
 
   document.querySelectorAll('.nav-item').forEach(el => {
     el.classList.toggle('active', el.dataset.view === state.view);
@@ -1025,13 +1038,14 @@ function renderTaskList() {
   if (state.view.startsWith('focus:')) {
     const fl = state.focusLists.find(f => f.id == state.view.slice(6));
     if (fl) {
-      const visibleTasks = getVisibleTasks();
-      const estMins = visibleTasks.reduce((s, t) => s + (t.estimated_minutes || 0), 0);
-      const slotsLeft = 7 - fl.task_count;
-      const hrsLeft   = 10 - (fl.estimated_minutes / 60);
+      const maxTasks  = fl.max_tasks || 7;
+      const maxHours  = fl.max_hours || 40;
+      const estHrs    = ((fl.estimated_minutes || 0) / 60).toFixed(1);
+      const slotsLeft = maxTasks - fl.task_count;
+      const hrsLeft   = (maxHours - (fl.estimated_minutes || 0) / 60).toFixed(1);
       html += `<div class="focus-header">
-        <span class="focus-header-stats">${fl.task_count}/7 tasks · ${fmtMins(fl.estimated_minutes || 0)} / 10h est.</span>
-        <span class="focus-header-cap">${slotsLeft} slot${slotsLeft!==1?'s':''} · ${hrsLeft.toFixed(1)}h remaining</span>
+        <span class="focus-header-stats">${fl.task_count}/${maxTasks} tasks · ${estHrs}h / ${maxHours}h est.</span>
+        <span class="focus-header-cap">${slotsLeft} slot${slotsLeft!==1?'s':''} · ${hrsLeft}h remaining</span>
       </div>`;
     }
   }
@@ -1790,7 +1804,7 @@ function renderDetailFocusList(task) {
   const sel = document.getElementById('d-focus-select');
   const available = state.focusLists.filter(f => !ids.includes(f.id));
   sel.innerHTML = `<option value="">Add to a focus list…</option>` +
-    available.map(f => `<option value="${f.id}">${esc(f.name)} (${f.task_count}/7)</option>`).join('');
+    available.map(f => `<option value="${f.id}">${esc(f.name)} (${f.task_count}/${f.max_tasks})</option>`).join('');
 }
 
 async function addToFocusListFromDetail() {
@@ -1833,7 +1847,7 @@ function openFocusAddModal(taskId) {
   const available = state.focusLists.filter(f => !(task?.focus_list_ids || []).includes(f.id));
   document.getElementById('focus-add-select').innerHTML =
     `<option value="">Select a focus list…</option>` +
-    available.map(f => `<option value="${f.id}">${esc(f.name)} (${f.task_count}/7)</option>`).join('');
+    available.map(f => `<option value="${f.id}">${esc(f.name)} (${f.task_count}/${f.max_tasks})</option>`).join('');
   document.getElementById('focus-add-modal').classList.add('open');
 }
 function closeFocusAddModal() { document.getElementById('focus-add-modal').classList.remove('open'); }
@@ -1880,29 +1894,35 @@ async function createFocusList() {
   } catch(e) { toast(e.message); }
 }
 
-// Rename focus list
-function openRenameFocusList(id, name) {
+// Edit focus list (name + caps)
+function openRenameFocusList(id, name, maxTasks, maxHours) {
   focusRenameId = id;
   document.getElementById('focus-rename-input').value = name;
+  document.getElementById('focus-max-tasks').value    = maxTasks || 7;
+  document.getElementById('focus-max-hours').value    = maxHours || 40;
   document.getElementById('focus-rename-modal').classList.add('open');
   setTimeout(() => document.getElementById('focus-rename-input').focus(), 50);
 }
 function closeFocusRenameModal() { document.getElementById('focus-rename-modal').classList.remove('open'); }
-document.getElementById('focus-rename-input').addEventListener('keydown', e => { if (e.key==='Enter') confirmRenameFocusList(); if (e.key==='Escape') closeFocusRenameModal(); });
+document.getElementById('focus-rename-input').addEventListener('keydown', e => { if (e.key==='Escape') closeFocusRenameModal(); });
 document.getElementById('focus-rename-modal').addEventListener('click', e => { if (e.target===e.currentTarget) closeFocusRenameModal(); });
 
 async function confirmRenameFocusList() {
-  const name = document.getElementById('focus-rename-input').value.trim();
+  const name      = document.getElementById('focus-rename-input').value.trim();
+  const max_tasks = parseInt(document.getElementById('focus-max-tasks').value) || 7;
+  const max_hours = parseInt(document.getElementById('focus-max-hours').value) || 40;
   if (!name) return;
   try {
-    const updated = await api('PATCH', `/api/focus-lists/${focusRenameId}`, { name });
-    state.focusLists = state.focusLists.map(f => f.id === focusRenameId ? { ...f, name: updated.name } : f);
+    const updated = await api('PATCH', `/api/focus-lists/${focusRenameId}`, { name, max_tasks, max_hours });
+    state.focusLists = state.focusLists.map(f => f.id === focusRenameId
+      ? { ...f, name: updated.name, max_tasks: updated.max_tasks, max_hours: updated.max_hours }
+      : f);
     closeFocusRenameModal();
     if (state.view === `focus:${focusRenameId}`) {
-      document.getElementById('view-title').textContent = name;
+      document.getElementById('view-title').textContent = updated.name;
     }
-    renderSidebar();
-    toast(`Renamed to "${name}"`);
+    renderSidebar(); renderTaskList();
+    toast(`Saved`);
   } catch(e) { toast(e.message); }
 }
 

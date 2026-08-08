@@ -85,6 +85,8 @@ db.exec(`
   CREATE TABLE IF NOT EXISTS focus_lists (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT NOT NULL UNIQUE,
+    max_tasks INTEGER NOT NULL DEFAULT 7,
+    max_hours INTEGER NOT NULL DEFAULT 40,
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
   );
 
@@ -97,6 +99,8 @@ db.exec(`
 
 // Idempotent migrations
 try { db.prepare('ALTER TABLE tasks ADD COLUMN blocked_by_task_id INTEGER').run(); } catch(e) {}
+try { db.prepare('ALTER TABLE focus_lists ADD COLUMN max_tasks INTEGER NOT NULL DEFAULT 7').run(); } catch(e) {}
+try { db.prepare('ALTER TABLE focus_lists ADD COLUMN max_hours INTEGER NOT NULL DEFAULT 40').run(); } catch(e) {}
 
 app.use(express.json());
 app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'public', 'app.html')));
@@ -446,10 +450,14 @@ app.post('/api/focus-lists', (req, res) => {
 app.patch('/api/focus-lists/:id', (req, res) => {
   const fl = db.prepare('SELECT * FROM focus_lists WHERE id = ?').get(req.params.id);
   if (!fl) return res.status(404).json({ error: 'Focus list not found' });
-  const { name } = req.body;
-  if (!name?.trim()) return res.status(400).json({ error: 'Name is required' });
+  const name      = req.body.name      !== undefined ? req.body.name.trim()      : fl.name;
+  const max_tasks = req.body.max_tasks !== undefined ? Number(req.body.max_tasks) : fl.max_tasks;
+  const max_hours = req.body.max_hours !== undefined ? Number(req.body.max_hours) : fl.max_hours;
+  if (!name)         return res.status(400).json({ error: 'Name is required' });
+  if (max_tasks < 1) return res.status(400).json({ error: 'max_tasks must be at least 1' });
+  if (max_hours < 1) return res.status(400).json({ error: 'max_hours must be at least 1' });
   try {
-    db.prepare('UPDATE focus_lists SET name = ? WHERE id = ?').run(name.trim(), req.params.id);
+    db.prepare('UPDATE focus_lists SET name = ?, max_tasks = ?, max_hours = ? WHERE id = ?').run(name, max_tasks, max_hours, req.params.id);
     const updated = db.prepare('SELECT * FROM focus_lists WHERE id = ?').get(req.params.id);
     res.json({ ...updated, ...focusListStats(req.params.id) });
   } catch (e) {
@@ -467,20 +475,20 @@ app.delete('/api/focus-lists/:id', (req, res) => {
 app.post('/api/tasks/:taskId/focus-lists/:focusListId', (req, res) => {
   const task = db.prepare('SELECT id, estimated_minutes FROM tasks WHERE id = ?').get(req.params.taskId);
   if (!task) return res.status(404).json({ error: 'Task not found' });
-  const fl = db.prepare('SELECT id FROM focus_lists WHERE id = ?').get(req.params.focusListId);
+  const fl = db.prepare('SELECT * FROM focus_lists WHERE id = ?').get(req.params.focusListId);
   if (!fl) return res.status(404).json({ error: 'Focus list not found' });
 
   const already = db.prepare('SELECT 1 FROM task_focus_lists WHERE task_id = ? AND focus_list_id = ?').get(req.params.taskId, req.params.focusListId);
   if (already) return res.status(409).json({ error: 'Task is already in this focus list' });
 
   const { cnt } = db.prepare('SELECT COUNT(*) AS cnt FROM task_focus_lists WHERE focus_list_id = ?').get(req.params.focusListId);
-  if (cnt >= 7) return res.status(400).json({ error: 'Focus list is full — max 7 tasks. Remove one first.' });
+  if (cnt >= fl.max_tasks) return res.status(400).json({ error: `Focus list is full — max ${fl.max_tasks} tasks. Remove one or raise the limit first.` });
 
   const { total } = db.prepare(`SELECT COALESCE(SUM(t.estimated_minutes), 0) AS total
     FROM tasks t JOIN task_focus_lists tfl ON t.id = tfl.task_id
     WHERE tfl.focus_list_id = ?`).get(req.params.focusListId);
-  if ((total || 0) + (task.estimated_minutes || 0) > 600) {
-    return res.status(400).json({ error: 'Adding this task would put the focus list over the 10 hour cap.' });
+  if ((total || 0) + (task.estimated_minutes || 0) > fl.max_hours * 60) {
+    return res.status(400).json({ error: `Adding this task would put the focus list over its ${fl.max_hours} hour cap.` });
   }
 
   db.prepare('INSERT INTO task_focus_lists (task_id, focus_list_id) VALUES (?, ?)').run(req.params.taskId, req.params.focusListId);
