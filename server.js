@@ -81,7 +81,22 @@ db.exec(`
     url TEXT NOT NULL,
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
   );
+
+  CREATE TABLE IF NOT EXISTS focus_lists (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL UNIQUE,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+
+  CREATE TABLE IF NOT EXISTS task_focus_lists (
+    task_id      INTEGER NOT NULL REFERENCES tasks(id)       ON DELETE CASCADE,
+    focus_list_id INTEGER NOT NULL REFERENCES focus_lists(id) ON DELETE CASCADE,
+    PRIMARY KEY (task_id, focus_list_id)
+  );
 `);
+
+// Idempotent migrations
+try { db.prepare('ALTER TABLE tasks ADD COLUMN blocked_by_task_id INTEGER').run(); } catch(e) {}
 
 app.use(express.json());
 app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'public', 'app.html')));
@@ -124,12 +139,17 @@ app.get('/api/tasks', (req, res) => {
     WHERE mn.id = (SELECT id FROM task_meeting_notes WHERE task_id = mn.task_id ORDER BY date DESC, id DESC LIMIT 1)`).all()
     .forEach(r => { if (mnCounts[r.task_id]) mnCounts[r.task_id].latest_url = r.url; });
 
+  const flRows = db.prepare('SELECT task_id, focus_list_id FROM task_focus_lists').all();
+  const flMap  = {};
+  flRows.forEach(r => { (flMap[r.task_id] = flMap[r.task_id] || []).push(r.focus_list_id); });
+
   res.json(tasks.map(t => ({
     ...t,
     subtask_count: cmap[t.id]?.total || 0,
     subtask_done:  cmap[t.id]?.done  || 0,
     meeting_notes_count:      mnCounts[t.id]?.cnt        || 0,
     meeting_notes_latest_url: mnCounts[t.id]?.latest_url || null,
+    focus_list_ids: flMap[t.id] || [],
   })));
 });
 
@@ -178,20 +198,26 @@ app.put('/api/tasks/:id', (req, res) => {
     : task.estimated_minutes;
   const notes    = body.notes !== undefined ? (body.notes || null) : task.notes;
   const is_inbox = (!category && !project) ? 1 : 0;
+  const blocked_by_task_id = body.blocked_by_task_id !== undefined
+    ? (body.blocked_by_task_id ? Number(body.blocked_by_task_id) : null)
+    : task.blocked_by_task_id;
 
   db.prepare(`
     UPDATE tasks SET
       title = ?, priority = ?, category = ?, project = ?, status = ?,
       due_date = ?, estimated_minutes = ?, notes = ?, is_inbox = ?,
-      updated_at = datetime('now')
+      blocked_by_task_id = ?, updated_at = datetime('now')
     WHERE id = ?
-  `).run(title, priority, category, project, status, due_date, estimated_minutes, notes, is_inbox, req.params.id);
+  `).run(title, priority, category, project, status, due_date, estimated_minutes, notes, is_inbox, blocked_by_task_id, req.params.id);
 
   res.json(db.prepare('SELECT * FROM tasks WHERE id = ?').get(req.params.id));
 });
 
 app.delete('/api/tasks/:id', (req, res) => {
-  const result = db.prepare('DELETE FROM tasks WHERE id = ?').run(req.params.id);
+  const result = db.transaction(() => {
+    db.prepare('UPDATE tasks SET blocked_by_task_id = NULL WHERE blocked_by_task_id = ?').run(req.params.id);
+    return db.prepare('DELETE FROM tasks WHERE id = ?').run(req.params.id);
+  })();
   if (!result.changes) return res.status(404).json({ error: 'Task not found' });
   res.status(204).end();
 });
@@ -385,6 +411,85 @@ app.post('/api/projects/:id/links', (req, res) => {
 app.delete('/api/project-links/:id', (req, res) => {
   const result = db.prepare('DELETE FROM project_links WHERE id = ?').run(req.params.id);
   if (!result.changes) return res.status(404).json({ error: 'Link not found' });
+  res.status(204).end();
+});
+
+// ── Focus Lists ───────────────────────────────────────────────────────────────
+
+const focusListStats = (id) => {
+  const { task_count } = db.prepare('SELECT COUNT(*) AS task_count FROM task_focus_lists WHERE focus_list_id = ?').get(id);
+  const { estimated_minutes } = db.prepare(`
+    SELECT COALESCE(SUM(t.estimated_minutes), 0) AS estimated_minutes
+    FROM tasks t JOIN task_focus_lists tfl ON t.id = tfl.task_id
+    WHERE tfl.focus_list_id = ?`).get(id);
+  return { task_count, estimated_minutes };
+};
+
+app.get('/api/focus-lists', (req, res) => {
+  const lists = db.prepare('SELECT * FROM focus_lists ORDER BY name ASC').all();
+  res.json(lists.map(fl => ({ ...fl, ...focusListStats(fl.id) })));
+});
+
+app.post('/api/focus-lists', (req, res) => {
+  const { name } = req.body;
+  if (!name?.trim()) return res.status(400).json({ error: 'Name is required' });
+  try {
+    const r = db.prepare('INSERT INTO focus_lists (name) VALUES (?)').run(name.trim());
+    const fl = db.prepare('SELECT * FROM focus_lists WHERE id = ?').get(r.lastInsertRowid);
+    res.status(201).json({ ...fl, task_count: 0, estimated_minutes: 0 });
+  } catch (e) {
+    if (e.message.includes('UNIQUE')) return res.status(409).json({ error: 'Focus list name already exists' });
+    throw e;
+  }
+});
+
+app.patch('/api/focus-lists/:id', (req, res) => {
+  const fl = db.prepare('SELECT * FROM focus_lists WHERE id = ?').get(req.params.id);
+  if (!fl) return res.status(404).json({ error: 'Focus list not found' });
+  const { name } = req.body;
+  if (!name?.trim()) return res.status(400).json({ error: 'Name is required' });
+  try {
+    db.prepare('UPDATE focus_lists SET name = ? WHERE id = ?').run(name.trim(), req.params.id);
+    const updated = db.prepare('SELECT * FROM focus_lists WHERE id = ?').get(req.params.id);
+    res.json({ ...updated, ...focusListStats(req.params.id) });
+  } catch (e) {
+    if (e.message.includes('UNIQUE')) return res.status(409).json({ error: 'Focus list name already exists' });
+    throw e;
+  }
+});
+
+app.delete('/api/focus-lists/:id', (req, res) => {
+  const result = db.prepare('DELETE FROM focus_lists WHERE id = ?').run(req.params.id);
+  if (!result.changes) return res.status(404).json({ error: 'Focus list not found' });
+  res.status(204).end();
+});
+
+app.post('/api/tasks/:taskId/focus-lists/:focusListId', (req, res) => {
+  const task = db.prepare('SELECT id, estimated_minutes FROM tasks WHERE id = ?').get(req.params.taskId);
+  if (!task) return res.status(404).json({ error: 'Task not found' });
+  const fl = db.prepare('SELECT id FROM focus_lists WHERE id = ?').get(req.params.focusListId);
+  if (!fl) return res.status(404).json({ error: 'Focus list not found' });
+
+  const already = db.prepare('SELECT 1 FROM task_focus_lists WHERE task_id = ? AND focus_list_id = ?').get(req.params.taskId, req.params.focusListId);
+  if (already) return res.status(409).json({ error: 'Task is already in this focus list' });
+
+  const { cnt } = db.prepare('SELECT COUNT(*) AS cnt FROM task_focus_lists WHERE focus_list_id = ?').get(req.params.focusListId);
+  if (cnt >= 7) return res.status(400).json({ error: 'Focus list is full — max 7 tasks. Remove one first.' });
+
+  const { total } = db.prepare(`SELECT COALESCE(SUM(t.estimated_minutes), 0) AS total
+    FROM tasks t JOIN task_focus_lists tfl ON t.id = tfl.task_id
+    WHERE tfl.focus_list_id = ?`).get(req.params.focusListId);
+  if ((total || 0) + (task.estimated_minutes || 0) > 600) {
+    return res.status(400).json({ error: 'Adding this task would put the focus list over the 10 hour cap.' });
+  }
+
+  db.prepare('INSERT INTO task_focus_lists (task_id, focus_list_id) VALUES (?, ?)').run(req.params.taskId, req.params.focusListId);
+  res.status(201).json({ task_id: Number(req.params.taskId), focus_list_id: Number(req.params.focusListId) });
+});
+
+app.delete('/api/tasks/:taskId/focus-lists/:focusListId', (req, res) => {
+  const result = db.prepare('DELETE FROM task_focus_lists WHERE task_id = ? AND focus_list_id = ?').run(req.params.taskId, req.params.focusListId);
+  if (!result.changes) return res.status(404).json({ error: 'Task is not in this focus list' });
   res.status(204).end();
 });
 
