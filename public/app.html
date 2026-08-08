@@ -823,6 +823,7 @@ let calMoveStartTop   = null;
 let calMoveMoved      = false;
 let calPanelPriority  = '';
 let calPanelProject   = '';
+let calPanelFocusList = '';
 
 // ── API ───────────────────────────────────────────────────────────────────────
 
@@ -2057,8 +2058,9 @@ function renderDayPanel() {
 
   const blockedIds = new Set(state.timeBlocks.map(b => b.task_id));
   let tasks = state.tasks.filter(t => t.status !== 'complete' && !blockedIds.has(t.id));
-  if (calPanelPriority) tasks = tasks.filter(t => t.priority === calPanelPriority);
-  if (calPanelProject)  tasks = tasks.filter(t => t.project === calPanelProject);
+  if (calPanelFocusList) tasks = tasks.filter(t => (t.focus_list_ids||[]).includes(Number(calPanelFocusList)));
+  if (calPanelPriority)  tasks = tasks.filter(t => t.priority === calPanelPriority);
+  if (calPanelProject)   tasks = tasks.filter(t => t.project === calPanelProject);
   tasks = [...tasks].sort((a, b) => {
     const db = bucket(a) - bucket(b);
     if (db !== 0) return db;
@@ -2068,22 +2070,29 @@ function renderDayPanel() {
 
   const BUCKET_LABELS = ['Overdue', 'Today', 'This Week', 'Later'];
   const projects = [...new Set(state.tasks.filter(t => t.project).map(t => t.project))].sort();
+  const SEL = 'flex:1;min-width:0;font-size:11px;padding:3px 4px;border:1px solid var(--border);border-radius:4px;background:var(--bg);color:var(--text);';
 
   let html = `<div class="cal-day-panel-hdr" style="padding-bottom:4px;">
     Unscheduled <span style="font-weight:400;color:var(--muted);">(${tasks.length})</span>
   </div>
-  <div style="display:flex;gap:4px;margin-bottom:8px;position:sticky;top:28px;background:var(--surface);padding-bottom:4px;">
-    <select onchange="setDayPanelFilter('priority',this.value)" style="flex:1;min-width:0;font-size:11px;padding:3px 4px;border:1px solid var(--border);border-radius:4px;background:var(--bg);color:var(--text);">
-      <option value="" ${!calPanelPriority?'selected':''}>All priority</option>
-      <option value="urgent" ${calPanelPriority==='urgent'?'selected':''}>Urgent</option>
-      <option value="high"   ${calPanelPriority==='high'  ?'selected':''}>High</option>
-      <option value="medium" ${calPanelPriority==='medium'?'selected':''}>Medium</option>
-      <option value="low"    ${calPanelPriority==='low'   ?'selected':''}>Low</option>
-    </select>
-    <select onchange="setDayPanelFilter('project',this.value)" style="flex:1;min-width:0;font-size:11px;padding:3px 4px;border:1px solid var(--border);border-radius:4px;background:var(--bg);color:var(--text);">
-      <option value="" ${!calPanelProject?'selected':''}>All projects</option>
-      ${projects.map(p => `<option value="${esc(p)}" ${calPanelProject===p?'selected':''}>${esc(p)}</option>`).join('')}
-    </select>
+  <div style="display:flex;flex-direction:column;gap:4px;margin-bottom:8px;position:sticky;top:28px;background:var(--surface);padding-bottom:4px;">
+    <div style="display:flex;gap:4px;">
+      <select onchange="setDayPanelFilter('priority',this.value)" style="${SEL}">
+        <option value="" ${!calPanelPriority?'selected':''}>All priority</option>
+        <option value="urgent" ${calPanelPriority==='urgent'?'selected':''}>Urgent</option>
+        <option value="high"   ${calPanelPriority==='high'  ?'selected':''}>High</option>
+        <option value="medium" ${calPanelPriority==='medium'?'selected':''}>Medium</option>
+        <option value="low"    ${calPanelPriority==='low'   ?'selected':''}>Low</option>
+      </select>
+      <select onchange="setDayPanelFilter('project',this.value)" style="${SEL}">
+        <option value="" ${!calPanelProject?'selected':''}>All projects</option>
+        ${projects.map(p => `<option value="${esc(p)}" ${calPanelProject===p?'selected':''}>${esc(p)}</option>`).join('')}
+      </select>
+    </div>
+    ${state.focusLists.length ? `<select onchange="setDayPanelFilter('focuslist',this.value)" style="${SEL}width:100%;">
+      <option value="" ${!calPanelFocusList?'selected':''}>All focus lists</option>
+      ${state.focusLists.map(fl => `<option value="${fl.id}" ${calPanelFocusList==fl.id?'selected':''}>${esc(fl.name)}</option>`).join('')}
+    </select>` : ''}
   </div>`;
 
   if (!tasks.length) {
@@ -2111,8 +2120,9 @@ function renderDayPanel() {
 }
 
 function setDayPanelFilter(type, val) {
-  if (type === 'priority') calPanelPriority = val;
-  if (type === 'project')  calPanelProject  = val;
+  if (type === 'priority')  calPanelPriority  = val;
+  if (type === 'project')   calPanelProject   = val;
+  if (type === 'focuslist') calPanelFocusList = val;
   renderDayPanel();
 }
 
