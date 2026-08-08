@@ -95,12 +95,31 @@ db.exec(`
     focus_list_id INTEGER NOT NULL REFERENCES focus_lists(id) ON DELETE CASCADE,
     PRIMARY KEY (task_id, focus_list_id)
   );
+
+  CREATE TABLE IF NOT EXISTS time_blocks (
+    id               INTEGER PRIMARY KEY AUTOINCREMENT,
+    task_id          INTEGER NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+    date             TEXT NOT NULL,
+    start_time       TEXT NOT NULL,
+    duration_minutes INTEGER NOT NULL DEFAULT 60,
+    logged           INTEGER NOT NULL DEFAULT 0,
+    created_at       TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+
+  CREATE TABLE IF NOT EXISTS settings (
+    key   TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+  );
 `);
 
 // Idempotent migrations
 try { db.prepare('ALTER TABLE tasks ADD COLUMN blocked_by_task_id INTEGER').run(); } catch(e) {}
 try { db.prepare('ALTER TABLE focus_lists ADD COLUMN max_tasks INTEGER NOT NULL DEFAULT 7').run(); } catch(e) {}
 try { db.prepare('ALTER TABLE focus_lists ADD COLUMN max_hours INTEGER NOT NULL DEFAULT 40').run(); } catch(e) {}
+
+// Default settings
+[['daily_capacity_minutes','480'],['day_start_hour','7'],['day_end_hour','21']]
+  .forEach(([k,v]) => db.prepare('INSERT OR IGNORE INTO settings (key,value) VALUES (?,?)').run(k,v));
 
 app.use(express.json());
 app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'public', 'app.html')));
@@ -499,6 +518,90 @@ app.delete('/api/tasks/:taskId/focus-lists/:focusListId', (req, res) => {
   const result = db.prepare('DELETE FROM task_focus_lists WHERE task_id = ? AND focus_list_id = ?').run(req.params.taskId, req.params.focusListId);
   if (!result.changes) return res.status(404).json({ error: 'Task is not in this focus list' });
   res.status(204).end();
+});
+
+// ── Settings ─────────────────────────────────────────────────────────────────
+
+app.get('/api/settings', (req, res) => {
+  const s = {};
+  db.prepare('SELECT key, value FROM settings').all().forEach(r => { s[r.key] = r.value; });
+  res.json(s);
+});
+
+app.patch('/api/settings', (req, res) => {
+  const allowed = ['daily_capacity_minutes','day_start_hour','day_end_hour'];
+  const stmt = db.prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?,?)');
+  Object.entries(req.body).filter(([k]) => allowed.includes(k)).forEach(([k,v]) => stmt.run(k, String(v)));
+  const s = {};
+  db.prepare('SELECT key, value FROM settings').all().forEach(r => { s[r.key] = r.value; });
+  res.json(s);
+});
+
+// ── Time Blocks ───────────────────────────────────────────────────────────────
+
+const blockWithTask = (id) => db.prepare(`
+  SELECT tb.*, t.title AS task_title, t.category AS task_category,
+         t.priority AS task_priority, t.status AS task_status
+  FROM time_blocks tb JOIN tasks t ON tb.task_id = t.id WHERE tb.id = ?
+`).get(id);
+
+app.get('/api/time-blocks', (req, res) => {
+  const { date } = req.query;
+  if (!date) return res.status(400).json({ error: 'date is required' });
+  res.json(db.prepare(`
+    SELECT tb.*, t.title AS task_title, t.category AS task_category,
+           t.priority AS task_priority, t.status AS task_status
+    FROM time_blocks tb JOIN tasks t ON tb.task_id = t.id
+    WHERE tb.date = ? ORDER BY tb.start_time ASC
+  `).all(date));
+});
+
+app.post('/api/time-blocks', (req, res) => {
+  const { task_id, date, start_time, duration_minutes = 60 } = req.body;
+  if (!task_id || !date || !start_time)
+    return res.status(400).json({ error: 'task_id, date, and start_time are required' });
+  if (new Date(date + 'T00:00:00').getDay() === 0)
+    return res.status(400).json({ error: 'No time blocks on Sundays' });
+  if (!db.prepare('SELECT id FROM tasks WHERE id = ?').get(task_id))
+    return res.status(404).json({ error: 'Task not found' });
+  const r = db.prepare(
+    'INSERT INTO time_blocks (task_id, date, start_time, duration_minutes) VALUES (?,?,?,?)'
+  ).run(Number(task_id), date, start_time, Number(duration_minutes));
+  res.status(201).json(blockWithTask(r.lastInsertRowid));
+});
+
+app.patch('/api/time-blocks/:id', (req, res) => {
+  const block = db.prepare('SELECT * FROM time_blocks WHERE id = ?').get(req.params.id);
+  if (!block) return res.status(404).json({ error: 'Time block not found' });
+  const date             = req.body.date             ?? block.date;
+  const start_time       = req.body.start_time       ?? block.start_time;
+  const duration_minutes = req.body.duration_minutes !== undefined
+    ? Number(req.body.duration_minutes) : block.duration_minutes;
+  if (new Date(date + 'T00:00:00').getDay() === 0)
+    return res.status(400).json({ error: 'No time blocks on Sundays' });
+  db.prepare('UPDATE time_blocks SET date=?, start_time=?, duration_minutes=? WHERE id=?')
+    .run(date, start_time, duration_minutes, req.params.id);
+  res.json(blockWithTask(req.params.id));
+});
+
+app.delete('/api/time-blocks/:id', (req, res) => {
+  if (!db.prepare('DELETE FROM time_blocks WHERE id=?').run(req.params.id).changes)
+    return res.status(404).json({ error: 'Time block not found' });
+  res.status(204).end();
+});
+
+app.post('/api/time-blocks/:id/log', (req, res) => {
+  const block = db.prepare('SELECT * FROM time_blocks WHERE id=?').get(req.params.id);
+  if (!block) return res.status(404).json({ error: 'Time block not found' });
+  if (block.logged) return res.status(409).json({ error: 'Already logged' });
+  const log = db.transaction(() => {
+    const r = db.prepare('INSERT INTO time_logs (task_id, minutes, description) VALUES (?,?,?)')
+      .run(block.task_id, block.duration_minutes, `Time block on ${block.date}`);
+    syncActualMinutes(block.task_id);
+    db.prepare('UPDATE time_blocks SET logged=1 WHERE id=?').run(block.id);
+    return db.prepare('SELECT * FROM time_logs WHERE id=?').get(r.lastInsertRowid);
+  })();
+  res.status(201).json({ time_log: log });
 });
 
 // ── Templates ─────────────────────────────────────────────────────────────────

@@ -157,6 +157,42 @@
     .cal-month-detail-hdr { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
     .cal-month-detail-hdr span { font-size: 14px; font-weight: 600; }
 
+    /* ── Calendar Day View ── */
+    .cal-day-cap-bar { margin-bottom: 8px; }
+    .cal-day-cap-label { display: flex; justify-content: space-between; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin-bottom: 4px; }
+    .cal-day-cap-track { height: 8px; background: #e2e8f0; border-radius: 100px; overflow: hidden; }
+    .cal-day-cap-fill { height: 100%; border-radius: 100px; transition: width .3s, background .3s; }
+    .cal-day-body { display: flex; gap: 0; height: 560px; }
+    .cal-day-grid-outer { flex: 1; overflow-y: auto; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); }
+    .cal-day-grid { display: flex; position: relative; }
+    .cal-day-times { width: 52px; flex-shrink: 0; padding-top: 0; }
+    .cal-day-time-label { font-size: 10px; color: var(--muted); text-align: right; padding-right: 8px; display: flex; align-items: flex-start; padding-top: 3px; }
+    .cal-day-content { flex: 1; position: relative; border-left: 1px solid var(--border); user-select: none; }
+    .cal-day-hour-line { position: absolute; left: 0; right: 0; border-top: 1px solid #e9ecef; pointer-events: none; }
+    .cal-day-half-line { position: absolute; left: 0; right: 0; border-top: 1px dashed #f1f5f9; pointer-events: none; }
+    .cal-day-now-line { position: absolute; left: 0; right: 0; z-index: 5; pointer-events: none; }
+    .cal-day-now-line::before { content: ''; position: absolute; left: -5px; top: -5px; width: 10px; height: 10px; background: #ef4444; border-radius: 50%; }
+    .cal-day-now-line::after  { content: ''; position: absolute; left: 0; right: 0; top: 0; border-top: 2px solid #ef4444; }
+    .cal-drop-indicator { position: absolute; left: 4px; right: 4px; background: rgba(59,130,246,.15); border: 2px dashed var(--accent); border-radius: 6px; z-index: 20; pointer-events: none; display: none; min-height: 24px; }
+    .cal-day-block { position: absolute; left: 4px; right: 4px; border-radius: 6px; padding: 4px 7px 10px; overflow: hidden; cursor: grab; z-index: 10; box-shadow: 0 1px 4px rgba(0,0,0,.18); transition: box-shadow .1s, opacity .1s; }
+    .cal-day-block:hover { box-shadow: 0 3px 10px rgba(0,0,0,.25); }
+    .cal-day-block.logged { opacity: 0.5; }
+    .cal-day-block.dragging { opacity: 0.4; cursor: grabbing; }
+    .cal-day-block-title { font-size: 11px; font-weight: 600; color: white; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .cal-day-block-sub { font-size: 10px; color: rgba(255,255,255,.8); margin-top: 1px; }
+    .cal-day-block-log { font-size: 9px; background: rgba(255,255,255,.22); color: white; border: none; border-radius: 3px; padding: 1px 5px; cursor: pointer; margin-top: 3px; display: inline-block; }
+    .cal-day-block-log:hover { background: rgba(255,255,255,.38); }
+    .cal-day-resize { position: absolute; bottom: 0; left: 0; right: 0; height: 9px; cursor: ns-resize; display: flex; align-items: flex-end; justify-content: center; padding-bottom: 2px; }
+    .cal-day-resize::after { content: ''; display: block; width: 22px; height: 2px; background: rgba(255,255,255,.45); border-radius: 1px; }
+    .cal-day-panel { width: 186px; flex-shrink: 0; border-left: 1px solid var(--border); padding: 0 10px; overflow-y: auto; background: var(--surface); border-radius: 0 8px 8px 0; }
+    .cal-day-panel-hdr { font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); padding: 10px 0 7px; position: sticky; top: 0; background: var(--surface); }
+    .cal-day-panel-task { padding: 7px 8px; background: var(--bg); border: 1px solid var(--border); border-left: 3px solid var(--low); border-radius: 5px; margin-bottom: 5px; cursor: grab; font-size: 12px; user-select: none; }
+    .cal-day-panel-task:active { cursor: grabbing; opacity: .7; }
+    .cal-day-panel-task[data-priority="urgent"] { border-left-color: var(--urgent); }
+    .cal-day-panel-task[data-priority="high"]   { border-left-color: var(--high); }
+    .cal-day-panel-task[data-priority="medium"] { border-left-color: var(--medium); }
+    .cal-day-panel-empty { font-size: 12px; color: var(--muted); padding: 6px 0; }
+
     /* ── Old calendar list (kept for reference, unused) ── */
     .cal-day { margin-bottom: 20px; }
     .cal-day-header { display: flex; align-items: center; justify-content: space-between; padding: 8px 12px; background: #f1f5f9; border-radius: 8px 8px 0 0; border: 1px solid var(--border); border-bottom: none; }
@@ -686,11 +722,62 @@
   </div>
 </div>
 
+<!-- Block Edit Modal -->
+<div class="overlay" id="block-edit-modal">
+  <div class="modal">
+    <h3>Edit Block</h3>
+    <div class="modal-sub" id="block-edit-title" style="font-weight:500;color:var(--text);max-height:40px;overflow:hidden;"></div>
+    <div class="field-row" style="margin-top:6px;">
+      <div>
+        <label style="display:block;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin-bottom:4px;">Date</label>
+        <input type="date" id="block-edit-date">
+      </div>
+      <div>
+        <label style="display:block;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin-bottom:4px;">Start</label>
+        <input type="time" id="block-edit-start">
+      </div>
+    </div>
+    <label style="display:block;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin:8px 0 4px;">Duration (minutes)</label>
+    <input type="number" id="block-edit-duration" min="15" step="15" placeholder="60">
+    <div class="modal-btns">
+      <button class="btn btn-danger btn-sm" id="block-edit-delete-btn">Delete</button>
+      <button class="btn btn-ghost btn-sm" onclick="closeBlockEdit()">Cancel</button>
+      <button class="btn btn-primary btn-sm" onclick="saveBlockEdit()">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- Day Settings Modal -->
+<div class="overlay" id="day-settings-modal">
+  <div class="modal">
+    <h3>Day View Settings</h3>
+    <div class="modal-sub">Customize capacity and visible hours</div>
+    <label style="display:block;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin-bottom:4px;">Daily Capacity (hours)</label>
+    <input type="number" id="day-cap-input" min="1" max="24" step="0.5">
+    <div class="field-row">
+      <div>
+        <label style="display:block;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin-bottom:4px;">Day Start (0–23)</label>
+        <input type="number" id="day-start-input" min="0" max="23">
+      </div>
+      <div>
+        <label style="display:block;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin-bottom:4px;">Day End (1–24)</label>
+        <input type="number" id="day-end-input" min="1" max="24">
+      </div>
+    </div>
+    <div class="modal-btns">
+      <button class="btn btn-ghost btn-sm" onclick="closeDaySettings()">Cancel</button>
+      <button class="btn btn-primary btn-sm" onclick="saveDaySettings()">Save</button>
+    </div>
+  </div>
+</div>
+
 <div id="toast"></div>
 
 <script>
-const CATEGORIES = ['admin','ops','accounting','marketing','sales','pm','hr','personal'];
-const CAT_ICONS  = { admin:'🗂', ops:'⚙️', accounting:'💰', marketing:'📣', sales:'💼', pm:'📐', hr:'👥', personal:'🏠' };
+const CATEGORIES  = ['admin','ops','accounting','marketing','sales','pm','hr','personal'];
+const CAT_ICONS   = { admin:'🗂', ops:'⚙️', accounting:'💰', marketing:'📣', sales:'💼', pm:'📐', hr:'👥', personal:'🏠' };
+const CAT_COLORS  = { admin:'#6366f1', ops:'#0ea5e9', accounting:'#10b981', marketing:'#ec4899', sales:'#14b8a6', pm:'#8b5cf6', hr:'#f59e0b', personal:'#ef4444' };
+const PX_PER_HOUR = 80;
 
 // ── State ─────────────────────────────────────────────────────────────────────
 
@@ -703,18 +790,18 @@ function getWeekStart(date) {
 }
 
 let state = {
-  tasks: [], projects: [], templates: [],
+  tasks: [], projects: [], templates: [], focusLists: [],
   view: 'inbox',
   filters: { priority: '', status: '', search: '', due: '', dueFrom: '', dueTo: '' },
   selectedId: null,
-  timeLogs: [],
-  subtasks: [],
-  meetingNotes: [],
-  focusLists: [],
+  timeLogs: [], subtasks: [], meetingNotes: [],
   calMode: 'week',
   calWeekStart: getWeekStart(),
   calMonth: { year: new Date().getFullYear(), month: new Date().getMonth() },
   calSelectedDay: null,
+  calDayStr: dateStr(new Date()),
+  timeBlocks: [],
+  daySettings: { capacityMinutes: 480, startHour: 7, endHour: 21 },
 };
 
 let draggedTaskId  = null;
@@ -723,6 +810,17 @@ let mergeProjId    = null;
 let addLinkProjId  = null;
 let focusRenameId  = null;
 let focusAddTaskId = null;
+// Day-view drag/resize
+let calDragType       = null; // 'task' | 'block'
+let calDragTaskId     = null;
+let calDragBlockId    = null;
+let calResizeBlockId  = null;
+let calResizeStartY   = null;
+let calResizeStartDur = null;
+let calMoveBlockId    = null;
+let calMoveStartY     = null;
+let calMoveStartTop   = null;
+let calMoveMoved      = false;
 
 // ── API ───────────────────────────────────────────────────────────────────────
 
@@ -827,12 +925,18 @@ function dueDateMatches(dueDate, filter, fromStr, toStr) {
 // ── Load data ─────────────────────────────────────────────────────────────────
 
 async function loadAll() {
-  const [tasks, projects, templates, focusLists] = await Promise.all([
+  const [tasks, projects, templates, focusLists, settings] = await Promise.all([
     api('GET', '/api/tasks'), api('GET', '/api/projects'),
-    api('GET', '/api/templates'), api('GET', '/api/focus-lists')
+    api('GET', '/api/templates'), api('GET', '/api/focus-lists'),
+    api('GET', '/api/settings')
   ]);
   state.tasks = tasks; state.projects = projects;
   state.templates = templates; state.focusLists = focusLists;
+  state.daySettings = {
+    capacityMinutes: parseInt(settings.daily_capacity_minutes || 480),
+    startHour:       parseInt(settings.day_start_hour || 7),
+    endHour:         parseInt(settings.day_end_hour || 21),
+  };
   renderSidebar(); renderTaskList(); populateProjectSelect();
 }
 
@@ -1110,8 +1214,9 @@ function renderTaskList() {
 // ── Calendar ──────────────────────────────────────────────────────────────────
 
 function renderCalendar() {
-  if (state.calMode === 'week') renderCalendarWeek();
-  else renderCalendarMonth();
+  if (state.calMode === 'week')       renderCalendarWeek();
+  else if (state.calMode === 'month') renderCalendarMonth();
+  else                                renderCalendarDay();
 }
 
 function calNav(dir) {
@@ -1128,7 +1233,15 @@ function calNav(dir) {
   renderCalendar();
 }
 
-function setCalMode(mode) { state.calMode = mode; state.calSelectedDay = null; renderCalendar(); }
+function setCalMode(mode) {
+  state.calMode = mode;
+  state.calSelectedDay = null;
+  if (mode === 'day') {
+    loadTimeBlocks(state.calDayStr).then(() => { if (state.view === 'calendar') renderCalendarDay(); });
+  } else {
+    renderCalendar();
+  }
+}
 
 // Week view ───────────────────────────────────────────────────────────────────
 
@@ -1155,6 +1268,7 @@ function renderCalendarWeek() {
       <span class="cal-nav-label">${label}</span>
       <button class="btn btn-ghost btn-sm" onclick="calNav(1)">Next →</button>
       <div class="cal-mode-btns">
+        <button class="btn btn-sm ${state.calMode==='day'?'btn-primary':'btn-ghost'}" onclick="setCalMode('day')">Day</button>
         <button class="btn btn-sm ${state.calMode==='week'?'btn-primary':'btn-ghost'}" onclick="setCalMode('week')">Week</button>
         <button class="btn btn-sm ${state.calMode==='month'?'btn-primary':'btn-ghost'}" onclick="setCalMode('month')">Month</button>
       </div>
@@ -1225,6 +1339,7 @@ function renderCalendarMonth() {
       <span class="cal-nav-label">${monthName}</span>
       <button class="btn btn-ghost btn-sm" onclick="calNav(1)">Next →</button>
       <div class="cal-mode-btns">
+        <button class="btn btn-sm ${state.calMode==='day'?'btn-primary':'btn-ghost'}" onclick="setCalMode('day')">Day</button>
         <button class="btn btn-sm ${state.calMode==='week'?'btn-primary':'btn-ghost'}" onclick="setCalMode('week')">Week</button>
         <button class="btn btn-sm ${state.calMode==='month'?'btn-primary':'btn-ghost'}" onclick="setCalMode('month')">Month</button>
       </div>
@@ -1786,6 +1901,355 @@ async function createProjectFromTemplate() {
     setView(`project:${proj.id}`);
     toast(`"${name}" created with ${newTasks.length} task${newTasks.length!==1?'s':''}`);
   } catch(e) { toast(e.message); }
+}
+
+// ── Day View (Time Blocking) ──────────────────────────────────────────────────
+
+// Helpers
+function timeToY(timeStr) {
+  const [h, m] = timeStr.split(':').map(Number);
+  return ((h - state.daySettings.startHour) * 60 + m) / 60 * PX_PER_HOUR;
+}
+function snapY(rawY) {
+  const totalMins = (state.daySettings.endHour - state.daySettings.startHour) * 60;
+  const mins = Math.round(rawY / PX_PER_HOUR * 60 / 15) * 15;
+  return Math.max(0, Math.min(totalMins - 15, mins)) / 60 * PX_PER_HOUR;
+}
+function yToTimeStr(snappedY) {
+  const mins = state.daySettings.startHour * 60 + snappedY / PX_PER_HOUR * 60;
+  const h = Math.floor(mins / 60), m = mins % 60;
+  return `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}`;
+}
+function fmt12(t) {
+  if (!t) return '';
+  const [h, m] = t.split(':').map(Number);
+  return (m ? `${h%12||12}:${String(m).padStart(2,'0')}` : `${h%12||12}`) + (h>=12?'pm':'am');
+}
+function gridY(clientY) {
+  const content = document.getElementById('cal-day-content');
+  const outer   = document.getElementById('cal-day-grid-outer');
+  if (!content || !outer) return 0;
+  return clientY - content.getBoundingClientRect().top + outer.scrollTop;
+}
+
+// Load/render
+async function loadTimeBlocks(date) {
+  state.timeBlocks = await api('GET', `/api/time-blocks?date=${date}`);
+}
+
+function renderCalendarDay() {
+  const { startHour, endHour, capacityMinutes } = state.daySettings;
+  const totalH  = endHour - startHour;
+  const totalPx = totalH * PX_PER_HOUR;
+  const d = new Date(state.calDayStr + 'T00:00:00');
+  const isSun = d.getDay() === 0;
+  const label = fmtDateLong(state.calDayStr);
+  const isToday = state.calDayStr === dateStr(new Date());
+
+  const scheduledMins = state.timeBlocks.reduce((s,b) => s + b.duration_minutes, 0);
+  const capPct  = Math.min(100, Math.round(scheduledMins / capacityMinutes * 100));
+  const capOver = scheduledMins > capacityMinutes;
+
+  // Time labels and grid lines
+  let timesHtml = '', linesHtml = '';
+  for (let h = startHour; h <= endHour; h++) {
+    const y = (h - startHour) * PX_PER_HOUR;
+    timesHtml += `<div class="cal-day-time-label" style="height:${PX_PER_HOUR}px;">${fmt12(`${String(h).padStart(2,'0')}:00`)}</div>`;
+    if (h < endHour) {
+      linesHtml += `<div class="cal-day-hour-line" style="top:${y}px;"></div>`;
+      linesHtml += `<div class="cal-day-half-line" style="top:${y + PX_PER_HOUR/2}px;"></div>`;
+    }
+  }
+
+  // Current-time line
+  let nowHtml = '';
+  if (isToday) {
+    const now = new Date();
+    const nowY = ((now.getHours() - startHour) * 60 + now.getMinutes()) / 60 * PX_PER_HOUR;
+    if (nowY >= 0 && nowY <= totalPx) nowHtml = `<div class="cal-day-now-line" style="top:${nowY}px;"></div>`;
+  }
+
+  // Blocks
+  let blocksHtml = '';
+  const now = new Date();
+  state.timeBlocks.forEach(b => {
+    const y    = timeToY(b.start_time);
+    const h    = Math.max(b.duration_minutes / 60 * PX_PER_HOUR, 24);
+    const col  = CAT_COLORS[b.task_category] || '#64748b';
+    const endDt = new Date(`${b.date}T${b.start_time}`);
+    endDt.setMinutes(endDt.getMinutes() + b.duration_minutes);
+    const isPast = endDt < now;
+    const logBtn = !b.logged && isPast
+      ? `<button class="cal-day-block-log" onclick="event.stopPropagation();calDayLogBlock(${b.id})">⏱ Log ${fmtMins(b.duration_minutes)}</button>`
+      : b.logged ? `<span style="font-size:9px;color:rgba(255,255,255,.65);">✓ logged</span>` : '';
+
+    blocksHtml += `<div class="cal-day-block${b.logged?' logged':''}"
+      data-block-id="${b.id}"
+      style="top:${y}px;height:${h}px;background:${col};"
+      onmousedown="calDayBlockMouseDown(event,${b.id},${y})">
+      <div class="cal-day-block-title">${esc(b.task_title)}</div>
+      ${h >= 36 ? `<div class="cal-day-block-sub">${fmt12(b.start_time)} · ${fmtMins(b.duration_minutes)}</div>` : ''}
+      ${h >= 50 ? logBtn : ''}
+      <div class="cal-day-resize" onmousedown="calDayResizeStart(event,${b.id},${b.duration_minutes})"></div>
+    </div>`;
+  });
+
+  // Unscheduled panel
+  const blockedIds = new Set(state.timeBlocks.map(b => b.task_id));
+  const unscheduled = state.tasks.filter(t =>
+    t.status !== 'complete' && !blockedIds.has(t.id) &&
+    t.due_date && t.due_date <= state.calDayStr
+  );
+  const panelHtml = `
+    <div class="cal-day-panel-hdr">Unscheduled</div>
+    ${unscheduled.length ? unscheduled.map(t => `
+      <div class="cal-day-panel-task" data-priority="${t.priority}"
+        draggable="true" ondragstart="calDayTaskDragStart(event,${t.id})">
+        <div style="font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${esc(t.title)}</div>
+        <div style="font-size:10px;color:var(--muted);margin-top:2px;">Due ${fmtDate(t.due_date)}</div>
+      </div>`).join('') : '<div class="cal-day-panel-empty">All tasks blocked ✓</div>'}`;
+
+  const dropAttrs = isSun ? '' :
+    `ondragover="calDayDragOver(event)" ondragleave="calDayDragLeave(event)" ondrop="calDayDrop(event)"`;
+
+  const html = `
+    <div class="cal-toolbar">
+      <button class="btn btn-ghost btn-sm" onclick="calDayNav(-1)">← Prev</button>
+      <span class="cal-nav-label">${label}${isSun ? ' <span style="font-size:11px;color:#94a3b8;font-weight:400;">(Sunday — blocked)</span>' : ''}</span>
+      <button class="btn btn-ghost btn-sm" onclick="calDayNav(1)">Next →</button>
+      <div class="cal-mode-btns">
+        <button class="btn btn-sm btn-primary" onclick="setCalMode('day')">Day</button>
+        <button class="btn btn-sm btn-ghost" onclick="setCalMode('week')">Week</button>
+        <button class="btn btn-sm btn-ghost" onclick="setCalMode('month')">Month</button>
+      </div>
+      <button class="btn btn-ghost btn-sm" onclick="openDaySettings()" title="Day settings">⚙️</button>
+    </div>
+    <div class="cal-day-cap-bar">
+      <div class="cal-day-cap-label">
+        <span>Daily Capacity</span>
+        <span>${(scheduledMins/60).toFixed(1)}h / ${(capacityMinutes/60).toFixed(0)}h scheduled</span>
+      </div>
+      <div class="cal-day-cap-track">
+        <div class="cal-day-cap-fill" style="width:${capPct}%;background:${capOver?'#ef4444':'#3b82f6'};"></div>
+      </div>
+    </div>
+    <div class="cal-day-body">
+      <div class="cal-day-grid-outer" id="cal-day-grid-outer">
+        <div class="cal-day-grid">
+          <div class="cal-day-times">${timesHtml}</div>
+          <div class="cal-day-content" id="cal-day-content" style="height:${totalPx}px;" ${dropAttrs}>
+            ${linesHtml}
+            ${nowHtml}
+            <div class="cal-drop-indicator" id="cal-drop-indicator"></div>
+            ${isSun ? `<div style="display:flex;align-items:center;justify-content:center;height:100%;font-size:13px;color:#94a3b8;font-style:italic;">Sundays are blocked — no time blocks.</div>` : blocksHtml}
+          </div>
+        </div>
+      </div>
+      <div class="cal-day-panel">${panelHtml}</div>
+    </div>`;
+  document.getElementById('task-list').innerHTML = html;
+}
+
+function calDayNav(dir) {
+  const d = new Date(state.calDayStr + 'T00:00:00');
+  d.setDate(d.getDate() + dir);
+  state.calDayStr = dateStr(d);
+  loadTimeBlocks(state.calDayStr).then(() => renderCalendarDay());
+}
+
+// Drag: task from panel → grid
+function calDayTaskDragStart(e, taskId) {
+  calDragType = 'task'; calDragTaskId = taskId;
+  e.dataTransfer.effectAllowed = 'copy';
+}
+function calDayDragOver(e) {
+  e.preventDefault();
+  const y  = snapY(gridY(e.clientY));
+  const dur = calDragType === 'block'
+    ? (state.timeBlocks.find(b => b.id === calDragBlockId)?.duration_minutes || 60)
+    : 60;
+  const ind = document.getElementById('cal-drop-indicator');
+  if (ind) { ind.style.top = y + 'px'; ind.style.height = Math.max(dur/60*PX_PER_HOUR, 24)+'px'; ind.style.display = 'block'; }
+  e.dataTransfer.dropEffect = 'copy';
+}
+function calDayDragLeave(e) {
+  if (!e.currentTarget.contains(e.relatedTarget)) {
+    const ind = document.getElementById('cal-drop-indicator');
+    if (ind) ind.style.display = 'none';
+  }
+}
+async function calDayDrop(e) {
+  e.preventDefault();
+  const ind = document.getElementById('cal-drop-indicator');
+  if (ind) ind.style.display = 'none';
+  const time = yToTimeStr(snapY(gridY(e.clientY)));
+  if (calDragType === 'task') {
+    await calDayCreateBlock(calDragTaskId, state.calDayStr, time);
+  } else if (calDragType === 'block') {
+    await calDayMoveBlock(calDragBlockId, state.calDayStr, time);
+  }
+  calDragType = null; calDragTaskId = null; calDragBlockId = null;
+}
+
+// Drag: block → move within day
+function calDayBlockMouseDown(e, blockId, blockTop) {
+  if (e.target.classList.contains('cal-day-resize')) return;
+  e.preventDefault();
+  calMoveBlockId = blockId; calMoveStartY = e.clientY;
+  calMoveStartTop = blockTop; calMoveMoved = false;
+  const el = document.querySelector(`[data-block-id="${blockId}"]`);
+  if (el) el.style.cursor = 'grabbing';
+}
+
+document.addEventListener('mousemove', e => {
+  if (calResizeBlockId) {
+    const delta = e.clientY - calResizeStartY;
+    const deltaMins = Math.round(delta / PX_PER_HOUR * 60 / 15) * 15;
+    const newDur = Math.max(15, calResizeStartDur + deltaMins);
+    const el = document.querySelector(`[data-block-id="${calResizeBlockId}"]`);
+    if (el) el.style.height = Math.max(newDur / 60 * PX_PER_HOUR, 24) + 'px';
+  }
+  if (calMoveBlockId) {
+    const delta = e.clientY - calMoveStartY;
+    if (Math.abs(delta) > 6) calMoveMoved = true;
+    if (calMoveMoved) {
+      const el = document.querySelector(`[data-block-id="${calMoveBlockId}"]`);
+      if (el) { el.style.top = Math.max(0, calMoveStartTop + delta) + 'px'; el.classList.add('dragging'); }
+    }
+  }
+});
+
+document.addEventListener('mouseup', e => {
+  if (calResizeBlockId) {
+    const delta = e.clientY - calResizeStartY;
+    const deltaMins = Math.round(delta / PX_PER_HOUR * 60 / 15) * 15;
+    const newDur = Math.max(15, calResizeStartDur + deltaMins);
+    const bid = calResizeBlockId;
+    calResizeBlockId = null; calResizeStartY = null; calResizeStartDur = null;
+    if (deltaMins !== 0) calDayResizeBlock(bid, newDur);
+  }
+  if (calMoveBlockId) {
+    const bid = calMoveBlockId; const moved = calMoveMoved;
+    calMoveBlockId = null; calMoveStartY = null; calMoveMoved = false;
+    if (moved) {
+      const rawY = calMoveStartTop + (e.clientY - calMoveStartY);
+      calDayMoveBlock(bid, state.calDayStr, yToTimeStr(snapY(rawY)));
+    } else {
+      openBlockEdit(bid);
+    }
+  }
+});
+
+function calDayResizeStart(e, blockId, dur) {
+  e.preventDefault(); e.stopPropagation();
+  calResizeBlockId = blockId; calResizeStartY = e.clientY; calResizeStartDur = dur;
+}
+
+// Block CRUD
+async function calDayCreateBlock(taskId, date, startTime, durMins = 60) {
+  try {
+    const b = await api('POST', '/api/time-blocks', { task_id: taskId, date, start_time: startTime, duration_minutes: durMins });
+    state.timeBlocks.push(b);
+    state.timeBlocks.sort((a,b) => a.start_time.localeCompare(b.start_time));
+    renderCalendarDay();
+    toast(`Block at ${fmt12(startTime)}`);
+  } catch(err) { toast(err.message); }
+}
+async function calDayMoveBlock(blockId, date, startTime) {
+  try {
+    const updated = await api('PATCH', `/api/time-blocks/${blockId}`, { date, start_time: startTime });
+    if (updated.date !== state.calDayStr) {
+      state.timeBlocks = state.timeBlocks.filter(b => b.id !== blockId);
+    } else {
+      state.timeBlocks = state.timeBlocks.map(b => b.id === blockId ? updated : b);
+      state.timeBlocks.sort((a,b) => a.start_time.localeCompare(b.start_time));
+    }
+    renderCalendarDay(); toast('Block moved');
+  } catch(err) { toast(err.message); }
+}
+async function calDayResizeBlock(blockId, durMins) {
+  try {
+    const updated = await api('PATCH', `/api/time-blocks/${blockId}`, { duration_minutes: durMins });
+    state.timeBlocks = state.timeBlocks.map(b => b.id === blockId ? updated : b);
+    renderCalendarDay();
+  } catch(err) { toast(err.message); renderCalendarDay(); }
+}
+async function calDayDeleteBlock(blockId) {
+  await api('DELETE', `/api/time-blocks/${blockId}`);
+  state.timeBlocks = state.timeBlocks.filter(b => b.id !== blockId);
+  closeBlockEdit(); renderCalendarDay(); toast('Block deleted');
+}
+async function calDayLogBlock(blockId) {
+  const b = state.timeBlocks.find(x => x.id === blockId);
+  if (!b) return;
+  if (!confirm(`Log ${fmtMins(b.duration_minutes)} to "${b.task_title}"?`)) return;
+  try {
+    await api('POST', `/api/time-blocks/${blockId}/log`);
+    state.timeBlocks = state.timeBlocks.map(x => x.id === blockId ? {...x, logged: 1} : x);
+    const task = state.tasks.find(t => t.id === b.task_id);
+    if (task) task.actual_minutes = (task.actual_minutes || 0) + b.duration_minutes;
+    renderCalendarDay(); renderTaskList();
+    toast(`Logged ${fmtMins(b.duration_minutes)} to "${b.task_title}"`);
+  } catch(err) { toast(err.message); }
+}
+
+// Block edit modal
+let blockEditId = null;
+function openBlockEdit(blockId) {
+  const b = state.timeBlocks.find(x => x.id === blockId);
+  if (!b) return;
+  blockEditId = blockId;
+  document.getElementById('block-edit-title').textContent = b.task_title;
+  document.getElementById('block-edit-date').value     = b.date;
+  document.getElementById('block-edit-start').value    = b.start_time;
+  document.getElementById('block-edit-duration').value = b.duration_minutes;
+  document.getElementById('block-edit-delete-btn').onclick = () => calDayDeleteBlock(blockId);
+  document.getElementById('block-edit-modal').classList.add('open');
+}
+function closeBlockEdit() { document.getElementById('block-edit-modal').classList.remove('open'); blockEditId = null; }
+document.getElementById('block-edit-modal').addEventListener('click', e => { if (e.target===e.currentTarget) closeBlockEdit(); });
+
+async function saveBlockEdit() {
+  const date     = document.getElementById('block-edit-date').value;
+  const start    = document.getElementById('block-edit-start').value;
+  const dur      = parseInt(document.getElementById('block-edit-duration').value);
+  if (!date || !start || !dur) { toast('Fill all fields'); return; }
+  try {
+    const updated = await api('PATCH', `/api/time-blocks/${blockEditId}`, { date, start_time: start, duration_minutes: dur });
+    if (updated.date !== state.calDayStr) {
+      state.timeBlocks = state.timeBlocks.filter(b => b.id !== blockEditId);
+    } else {
+      state.timeBlocks = state.timeBlocks.map(b => b.id === blockEditId ? updated : b);
+      state.timeBlocks.sort((a,b) => a.start_time.localeCompare(b.start_time));
+    }
+    closeBlockEdit(); renderCalendarDay(); toast('Block updated');
+  } catch(err) { toast(err.message); }
+}
+
+// Day settings modal
+function openDaySettings() {
+  document.getElementById('day-cap-input').value   = state.daySettings.capacityMinutes / 60;
+  document.getElementById('day-start-input').value = state.daySettings.startHour;
+  document.getElementById('day-end-input').value   = state.daySettings.endHour;
+  document.getElementById('day-settings-modal').classList.add('open');
+  setTimeout(() => document.getElementById('day-cap-input').focus(), 50);
+}
+function closeDaySettings() { document.getElementById('day-settings-modal').classList.remove('open'); }
+document.getElementById('day-settings-modal').addEventListener('click', e => { if (e.target===e.currentTarget) closeDaySettings(); });
+
+async function saveDaySettings() {
+  const cap   = parseFloat(document.getElementById('day-cap-input').value)   || 8;
+  const start = parseInt(document.getElementById('day-start-input').value)   || 7;
+  const end   = parseInt(document.getElementById('day-end-input').value)     || 21;
+  if (start >= end) { toast('Start must be before end'); return; }
+  try {
+    const s = await api('PATCH', '/api/settings', {
+      daily_capacity_minutes: Math.round(cap * 60),
+      day_start_hour: start, day_end_hour: end
+    });
+    state.daySettings = { capacityMinutes: parseInt(s.daily_capacity_minutes), startHour: parseInt(s.day_start_hour), endHour: parseInt(s.day_end_hour) };
+    closeDaySettings(); renderCalendarDay(); toast('Settings saved');
+  } catch(err) { toast(err.message); }
 }
 
 // ── Focus Lists ───────────────────────────────────────────────────────────────
