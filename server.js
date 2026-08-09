@@ -774,11 +774,12 @@ app.get('/api/calendar/google-events', async (req, res) => {
     });
     if (data.error) throw new Error(data.error.message);
     res.json((data.items || []).map(e => ({
-      id:      e.id,
-      title:   e.summary || '(No title)',
-      start:   e.start?.dateTime || e.start?.date,
-      end:     e.end?.dateTime   || e.end?.date,
-      all_day: !e.start?.dateTime
+      id:           e.id,
+      title:        e.summary || '(No title)',
+      start:        e.start?.dateTime || e.start?.date,
+      end:          e.end?.dateTime   || e.end?.date,
+      all_day:      !e.start?.dateTime,
+      transparency: e.transparency || 'opaque'
     })));
   } catch(e) {
     console.error('Google Calendar events error:', e.message);

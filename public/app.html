@@ -203,6 +203,14 @@
     .cal-week-gcal-title { font-weight:500; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; display:block; }
     .cal-week-gcal-time { font-size:10px; color:#3b82f6; margin-top:1px; }
     .gcal-g-badge { display:inline-flex; align-items:center; justify-content:center; width:13px; height:13px; background:white; color:#4285f4; border-radius:50%; font-size:8px; font-weight:700; margin-right:3px; flex-shrink:0; vertical-align:middle; line-height:1; }
+    .cal-gcal-block.free { background-color:rgba(66,133,244,.1); background-image:none; border:2px dashed #93c5fd; box-shadow:none; }
+    .cal-gcal-block.free .cal-gcal-block-title { color:#3b82f6; }
+    .cal-gcal-block.free .cal-gcal-block-sub { color:rgba(59,130,246,.7); }
+    .cal-gcal-block.free .gcal-g-badge { background:#3b82f6; color:white; }
+    .cal-week-gcal-event.free { background:transparent; border-style:dashed; }
+    .cal-week-gcal-event.free .cal-week-gcal-title { color:#60a5fa; }
+    .cal-week-gcal-event.free .cal-week-gcal-time { color:#93c5fd; }
+    .cal-week-gcal-event.free .gcal-g-badge { background:#3b82f6; color:white; }
 
     /* ── Settings panel ── */
     .settings-wrap { max-width:560px; padding:24px 0; }
@@ -1378,11 +1386,12 @@ function renderCalendarWeek() {
       dayGEvents.forEach(evt => {
         const startLocal = gcalLocalTime(evt.start);
         const endLocal   = gcalLocalTime(evt.end);
+        const isFreeEvt = evt.transparency === 'transparent';
         const timeStr = evt.all_day
           ? 'All day'
           : (startLocal ? fmt12(startLocal) + (endLocal ? ' – ' + fmt12(endLocal) : '') : '');
-        html += `<div class="cal-week-gcal-event">
-          <span class="cal-week-gcal-title"><span class="gcal-g-badge">G</span>${esc(evt.title)}</span>
+        html += `<div class="cal-week-gcal-event${isFreeEvt ? ' free' : ''}">
+          <span class="cal-week-gcal-title"><span class="gcal-g-badge">G</span>${esc(evt.title)}${isFreeEvt ? ' <em style="font-weight:400;font-style:normal;opacity:.7;">(free)</em>' : ''}</span>
           ${timeStr ? `<div class="cal-week-gcal-time">${timeStr}</div>` : ''}
         </div>`;
       });
@@ -2025,6 +2034,18 @@ function gcalLocalTime(isoStr) {
   return `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
 }
 
+function gcalBusyConflict(date, startTimeStr, durationMins) {
+  if (!state.googleCalConnected || !state.googleEvents?.length) return false;
+  const startMs = new Date(`${date}T${startTimeStr}:00`).getTime();
+  const endMs   = startMs + durationMins * 60000;
+  return state.googleEvents.some(evt => {
+    if (evt.all_day || evt.transparency === 'transparent' || !evt.start || evt.start.length === 10) return false;
+    const evtStart = new Date(evt.start).getTime();
+    const evtEnd   = new Date(evt.end).getTime();
+    return startMs < evtEnd && endMs > evtStart;
+  });
+}
+
 // Load/render
 async function loadTimeBlocks(date) {
   const [blocks, gcalEvts] = await Promise.all([
@@ -2105,10 +2126,11 @@ function renderCalendarDay() {
     const y = timeToY(startLocal);
     const endY = endLocal ? timeToY(endLocal) : y + PX_PER_HOUR;
     const h = Math.max(endY - y, 24);
-    gcalBlocksHtml += `<div class="cal-gcal-block" style="top:${y}px;height:${h}px;"
-      title="${esc(evt.title)} · ${fmt12(startLocal)}${endLocal ? ' – ' + fmt12(endLocal) : ''}">
+    const isFree = evt.transparency === 'transparent';
+    gcalBlocksHtml += `<div class="cal-gcal-block${isFree ? ' free' : ''}" style="top:${y}px;height:${h}px;"
+      title="${esc(evt.title)} · ${fmt12(startLocal)}${endLocal ? ' – ' + fmt12(endLocal) : ''}${isFree ? ' (free)' : ''}">
       <div class="cal-gcal-block-title"><span class="gcal-g-badge">G</span>${esc(evt.title)}</div>
-      ${h >= 36 ? `<div class="cal-gcal-block-sub">${fmt12(startLocal)}${endLocal ? ' – ' + fmt12(endLocal) : ''}</div>` : ''}
+      ${h >= 36 ? `<div class="cal-gcal-block-sub">${fmt12(startLocal)}${endLocal ? ' – ' + fmt12(endLocal) : ''}${isFree ? ' · free' : ''}</div>` : ''}
     </div>`;
   });
 
@@ -2283,9 +2305,20 @@ async function calDayDrop(e) {
   if (ind) ind.style.display = 'none';
   const time = yToTimeStr(snapY(gridY(e.clientY)));
   if (calDragType === 'task') {
-    await calDayCreateBlock(calDragTaskId, state.calDayStr, time);
+    if (gcalBusyConflict(state.calDayStr, time, 60)) {
+      toast("That time is busy on your Google Calendar");
+    } else {
+      await calDayCreateBlock(calDragTaskId, state.calDayStr, time);
+    }
   } else if (calDragType === 'block') {
-    await calDayMoveBlock(calDragBlockId, state.calDayStr, time);
+    const block = state.timeBlocks.find(b => b.id === calDragBlockId);
+    const dur = block?.duration_minutes || 60;
+    if (gcalBusyConflict(state.calDayStr, time, dur)) {
+      toast("That time is busy on your Google Calendar");
+      renderCalendarDay();
+    } else {
+      await calDayMoveBlock(calDragBlockId, state.calDayStr, time);
+    }
   }
   calDragType = null; calDragTaskId = null; calDragBlockId = null;
 }
@@ -2331,8 +2364,16 @@ document.addEventListener('mouseup', e => {
     const bid = calMoveBlockId; const moved = calMoveMoved;
     calMoveBlockId = null; calMoveStartY = null; calMoveMoved = false;
     if (moved) {
-      const rawY = calMoveStartTop + (e.clientY - calMoveStartY);
-      calDayMoveBlock(bid, state.calDayStr, yToTimeStr(snapY(rawY)));
+      const rawY    = calMoveStartTop + (e.clientY - calMoveStartY);
+      const newTime = yToTimeStr(snapY(rawY));
+      const block   = state.timeBlocks.find(b => b.id === bid);
+      const dur     = block?.duration_minutes || 60;
+      if (gcalBusyConflict(state.calDayStr, newTime, dur)) {
+        toast("That time is busy on your Google Calendar");
+        renderCalendarDay();
+      } else {
+        calDayMoveBlock(bid, state.calDayStr, newTime);
+      }
     } else {
       openBlockEdit(bid);
     }
