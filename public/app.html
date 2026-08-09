@@ -193,6 +193,28 @@
     .cal-day-panel-task[data-priority="medium"] { border-left-color: var(--medium); }
     .cal-day-panel-empty { font-size: 12px; color: var(--muted); padding: 6px 0; }
 
+    /* ── Google Calendar overlay ── */
+    .cal-gcal-block { position:absolute; left:4px; right:4px; border-radius:6px; padding:4px 7px; overflow:hidden; z-index:9; pointer-events:none; background-color:#4285f4; background-image:repeating-linear-gradient(45deg,rgba(255,255,255,.2) 0,rgba(255,255,255,.2) 3px,transparent 3px,transparent 9px); border:1px solid rgba(66,133,244,.45); box-shadow:0 1px 4px rgba(66,133,244,.2); }
+    .cal-gcal-block-title { font-size:11px; font-weight:600; color:white; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .cal-gcal-block-sub { font-size:10px; color:rgba(255,255,255,.85); margin-top:1px; }
+    .cal-gcal-allday { display:flex; flex-wrap:wrap; gap:4px; padding:5px 8px; background:#eff6ff; border-bottom:1px solid #bfdbfe; }
+    .cal-gcal-allday-chip { font-size:10px; background:#3b82f6; color:white; border-radius:100px; padding:2px 8px; white-space:nowrap; max-width:200px; overflow:hidden; text-overflow:ellipsis; }
+    .cal-week-gcal-event { padding:4px 6px; background:#eff6ff; border:1px solid #93c5fd; border-left:3px solid #4285f4; border-radius:4px; font-size:11px; color:#1d4ed8; cursor:default; user-select:none; }
+    .cal-week-gcal-title { font-weight:500; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; display:block; }
+    .cal-week-gcal-time { font-size:10px; color:#3b82f6; margin-top:1px; }
+    .gcal-g-badge { display:inline-flex; align-items:center; justify-content:center; width:13px; height:13px; background:white; color:#4285f4; border-radius:50%; font-size:8px; font-weight:700; margin-right:3px; flex-shrink:0; vertical-align:middle; line-height:1; }
+
+    /* ── Settings panel ── */
+    .settings-wrap { max-width:560px; padding:24px 0; }
+    .settings-section { background:var(--surface); border:1px solid var(--border); border-radius:10px; overflow:hidden; margin-bottom:16px; }
+    .settings-section-title { font-size:11px; font-weight:600; text-transform:uppercase; letter-spacing:.06em; color:var(--muted); padding:10px 16px; border-bottom:1px solid var(--border); background:#f8fafc; }
+    .settings-row { display:flex; align-items:center; gap:16px; padding:14px 16px; }
+    .settings-row + .settings-row { border-top:1px solid var(--border); }
+    .settings-row-info { flex:1; min-width:0; }
+    .settings-row-label { font-size:14px; font-weight:500; color:var(--text); }
+    .settings-row-desc { font-size:12px; color:var(--muted); margin-top:3px; line-height:1.45; }
+    .settings-gcal-status { display:inline-flex; align-items:center; gap:5px; font-size:12px; color:#16a34a; font-weight:500; background:#f0fdf4; border:1px solid #bbf7d0; border-radius:100px; padding:4px 10px; white-space:nowrap; }
+
     /* ── Old calendar list (kept for reference, unused) ── */
     .cal-day { margin-bottom: 20px; }
     .cal-day-header { display: flex; align-items: center; justify-content: space-between; padding: 8px 12px; background: #f1f5f9; border-radius: 8px 8px 0 0; border: 1px solid var(--border); border-bottom: none; }
@@ -401,6 +423,14 @@
       <div class="sidebar-label">Focus Lists</div>
       <div id="focus-nav"></div>
       <div class="sidebar-action-btn" onclick="openNewFocusList()"><span>＋</span> New Focus List</div>
+    </div>
+
+    <hr class="sidebar-divider">
+
+    <div class="sidebar-section">
+      <div class="nav-item" data-view="settings" onclick="setView('settings')">
+        <span class="nav-label"><span class="nav-icon">⚙️</span> Settings</span>
+      </div>
     </div>
   </aside>
 
@@ -802,6 +832,10 @@ let state = {
   calDayStr: dateStr(new Date()),
   timeBlocks: [],
   daySettings: { capacityMinutes: 480, startHour: 7, endHour: 21 },
+  googleCalConnected: false,
+  googleCalConnectedAt: null,
+  googleEvents: [],
+  googleWeekEvents: {},
 };
 
 let draggedTaskId  = null;
@@ -888,6 +922,7 @@ function viewTitle(view) {
   if (view === 'all')      return 'All Tasks';
   if (view === 'calendar') return 'Calendar';
   if (view === 'blocked')  return 'Blocked Tasks';
+  if (view === 'settings') return 'Settings';
   const [type, val] = view.split(':');
   if (type === 'status')   return val.replace(/-/g,' ').replace(/\b\w/g, c => c.toUpperCase());
   if (type === 'category') return val.charAt(0).toUpperCase() + val.slice(1);
@@ -928,10 +963,11 @@ function dueDateMatches(dueDate, filter, fromStr, toStr) {
 // ── Load data ─────────────────────────────────────────────────────────────────
 
 async function loadAll() {
-  const [tasks, projects, templates, focusLists, settings] = await Promise.all([
+  const [tasks, projects, templates, focusLists, settings, googleStatus] = await Promise.all([
     api('GET', '/api/tasks'), api('GET', '/api/projects'),
     api('GET', '/api/templates'), api('GET', '/api/focus-lists'),
-    api('GET', '/api/settings')
+    api('GET', '/api/settings'),
+    api('GET', '/api/auth/google/status').catch(() => ({ connected: false, connected_at: null }))
   ]);
   state.tasks = tasks; state.projects = projects;
   state.templates = templates; state.focusLists = focusLists;
@@ -940,6 +976,18 @@ async function loadAll() {
     startHour:       parseInt(settings.day_start_hour || 7),
     endHour:         parseInt(settings.day_end_hour || 21),
   };
+  state.googleCalConnected   = googleStatus.connected;
+  state.googleCalConnectedAt = googleStatus.connected_at;
+
+  const urlParams = new URLSearchParams(window.location.search);
+  if (urlParams.get('google_connected')) {
+    toast('Google Calendar connected');
+    history.replaceState({}, '', '/');
+  } else if (urlParams.get('google_error')) {
+    toast('Google Calendar error: ' + urlParams.get('google_error'));
+    history.replaceState({}, '', '/');
+  }
+
   renderSidebar(); renderTaskList(); populateProjectSelect();
 }
 
@@ -1044,9 +1092,10 @@ function setView(view) {
   document.getElementById('custom-date-range').classList.remove('visible');
 
   const isCalendar = view === 'calendar';
-  document.getElementById('search-wrap').style.display   = isCalendar ? 'none' : '';
-  document.getElementById('filter-bar').style.display    = isCalendar ? 'none' : '';
-  document.getElementById('quick-add-bar').style.display = isCalendar ? 'none' : '';
+  const isSettings = view === 'settings';
+  document.getElementById('search-wrap').style.display   = (isCalendar || isSettings) ? 'none' : '';
+  document.getElementById('filter-bar').style.display    = (isCalendar || isSettings) ? 'none' : '';
+  document.getElementById('quick-add-bar').style.display = (isCalendar || isSettings) ? 'none' : '';
 
   document.getElementById('view-title').textContent = viewTitle(view);
   renderSidebar();
@@ -1133,6 +1182,7 @@ function renderProjectHeader(proj) {
 
 function renderTaskList() {
   if (state.view === 'calendar') { renderCalendar(); return; }
+  if (state.view === 'settings') { renderSettings(); return; }
 
   const list = document.getElementById('task-list');
   let html = '';
@@ -1216,10 +1266,31 @@ function renderTaskList() {
 
 // ── Calendar ──────────────────────────────────────────────────────────────────
 
-function renderCalendar() {
-  if (state.calMode === 'week')       renderCalendarWeek();
-  else if (state.calMode === 'month') renderCalendarMonth();
-  else                                renderCalendarDay();
+async function renderCalendar() {
+  if (state.calMode === 'week') {
+    if (state.googleCalConnected) {
+      const days = [];
+      for (let i = 0; i < 7; i++) {
+        const d = new Date(state.calWeekStart); d.setDate(d.getDate() + i); days.push(d);
+      }
+      const ds0 = dateStr(days[0]), ds6 = dateStr(days[6]);
+      try {
+        const evts = await api('GET', `/api/calendar/google-events?start=${ds0}&end=${ds6}`);
+        state.googleWeekEvents = {};
+        evts.forEach(e => {
+          const d = e.all_day ? e.start.slice(0, 10) : (e.start ? dateStr(new Date(e.start)) : null);
+          if (d) (state.googleWeekEvents[d] = state.googleWeekEvents[d] || []).push(e);
+        });
+      } catch(_) { state.googleWeekEvents = {}; }
+    } else {
+      state.googleWeekEvents = {};
+    }
+    renderCalendarWeek();
+  } else if (state.calMode === 'month') {
+    renderCalendarMonth();
+  } else {
+    renderCalendarDay();
+  }
 }
 
 function calNav(dir) {
@@ -1299,9 +1370,22 @@ function renderCalendarWeek() {
       </div>
       <div class="cal-week-tasks">`;
 
+    const dayGEvents = state.googleWeekEvents[ds] || [];
+
     if (isSun) {
       html += `<div class="cal-sunday-label">No tasks on Sundays</div>`;
-    } else if (dayTasks.length) {
+    } else {
+      dayGEvents.forEach(evt => {
+        const startLocal = gcalLocalTime(evt.start);
+        const endLocal   = gcalLocalTime(evt.end);
+        const timeStr = evt.all_day
+          ? 'All day'
+          : (startLocal ? fmt12(startLocal) + (endLocal ? ' – ' + fmt12(endLocal) : '') : '');
+        html += `<div class="cal-week-gcal-event">
+          <span class="cal-week-gcal-title"><span class="gcal-g-badge">G</span>${esc(evt.title)}</span>
+          ${timeStr ? `<div class="cal-week-gcal-time">${timeStr}</div>` : ''}
+        </div>`;
+      });
       dayTasks.forEach(t => {
         html += `<div class="cal-week-task" data-priority="${t.priority}"
           draggable="true" ondragstart="calDragStart(event,${t.id})" onclick="openDetail(${t.id})">
@@ -1935,9 +2019,22 @@ function gridY(clientY) {
   return clientY - content.getBoundingClientRect().top + outer.scrollTop;
 }
 
+function gcalLocalTime(isoStr) {
+  if (!isoStr || isoStr.length === 10) return null;
+  const d = new Date(isoStr);
+  return `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
+}
+
 // Load/render
 async function loadTimeBlocks(date) {
-  state.timeBlocks = await api('GET', `/api/time-blocks?date=${date}`);
+  const [blocks, gcalEvts] = await Promise.all([
+    api('GET', `/api/time-blocks?date=${date}`),
+    state.googleCalConnected
+      ? api('GET', `/api/calendar/google-events?start=${date}&end=${date}`).catch(() => [])
+      : Promise.resolve([])
+  ]);
+  state.timeBlocks   = blocks;
+  state.googleEvents = gcalEvts;
 }
 
 function renderCalendarDay() {
@@ -1997,6 +2094,31 @@ function renderCalendarDay() {
     </div>`;
   });
 
+  // Google Calendar event blocks (read-only overlay)
+  let gcalBlocksHtml = '';
+  const gcalAllDay = [];
+  (state.googleEvents || []).forEach(evt => {
+    if (evt.all_day) { gcalAllDay.push(evt); return; }
+    const startLocal = gcalLocalTime(evt.start);
+    const endLocal   = gcalLocalTime(evt.end);
+    if (!startLocal) return;
+    const y = timeToY(startLocal);
+    const endY = endLocal ? timeToY(endLocal) : y + PX_PER_HOUR;
+    const h = Math.max(endY - y, 24);
+    gcalBlocksHtml += `<div class="cal-gcal-block" style="top:${y}px;height:${h}px;"
+      title="${esc(evt.title)} · ${fmt12(startLocal)}${endLocal ? ' – ' + fmt12(endLocal) : ''}">
+      <div class="cal-gcal-block-title"><span class="gcal-g-badge">G</span>${esc(evt.title)}</div>
+      ${h >= 36 ? `<div class="cal-gcal-block-sub">${fmt12(startLocal)}${endLocal ? ' – ' + fmt12(endLocal) : ''}</div>` : ''}
+    </div>`;
+  });
+
+  let gcalAllDayHtml = '';
+  if (gcalAllDay.length) {
+    gcalAllDayHtml = `<div class="cal-gcal-allday">` +
+      gcalAllDay.map(e => `<span class="cal-gcal-allday-chip"><span class="gcal-g-badge">G</span>${esc(e.title)}</span>`).join('') +
+      `</div>`;
+  }
+
 
   const dropAttrs = isSun ? '' :
     `ondragover="calDayDragOver(event)" ondragleave="calDayDragLeave(event)" ondrop="calDayDrop(event)"`;
@@ -2013,6 +2135,7 @@ function renderCalendarDay() {
       </div>
       <button class="btn btn-ghost btn-sm" onclick="openDaySettings()" title="Day settings">⚙️</button>
     </div>
+    ${gcalAllDayHtml}
     <div class="cal-day-cap-bar">
       <div class="cal-day-cap-label">
         <span>Daily Capacity</span>
@@ -2030,7 +2153,7 @@ function renderCalendarDay() {
             ${linesHtml}
             ${nowHtml}
             <div class="cal-drop-indicator" id="cal-drop-indicator"></div>
-            ${isSun ? `<div style="display:flex;align-items:center;justify-content:center;height:100%;font-size:13px;color:#94a3b8;font-style:italic;">Sundays are blocked — no time blocks.</div>` : blocksHtml}
+            ${isSun ? `<div style="display:flex;align-items:center;justify-content:center;height:100%;font-size:13px;color:#94a3b8;font-style:italic;">Sundays are blocked — no time blocks.</div>` : blocksHtml + gcalBlocksHtml}
           </div>
         </div>
       </div>
@@ -2478,6 +2601,51 @@ async function deleteFocusList(id, name) {
     if (state.view === `focus:${id}`) setView('all');
     else { renderSidebar(); renderTaskList(); }
     toast(`"${name}" deleted`);
+  } catch(e) { toast(e.message); }
+}
+
+// ── Settings ─────────────────────────────────────────────────────────────────
+
+function renderSettings() {
+  const connectedAt = state.googleCalConnectedAt
+    ? new Date(state.googleCalConnectedAt + (state.googleCalConnectedAt.includes('T') ? '' : 'T00:00:00'))
+        .toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+    : null;
+
+  const statusHtml = state.googleCalConnected
+    ? `<span class="settings-gcal-status">✓ Connected${connectedAt ? ' · ' + connectedAt : ''}</span>
+       <button class="btn btn-ghost btn-sm" style="margin-top:6px;" onclick="disconnectGoogle()">Disconnect</button>`
+    : `<button class="btn btn-primary btn-sm" onclick="connectGoogle()">Connect Google Calendar</button>`;
+
+  document.getElementById('task-list').innerHTML = `
+    <div class="settings-wrap">
+      <div class="settings-section">
+        <div class="settings-section-title">Integrations</div>
+        <div class="settings-row">
+          <div class="settings-row-info">
+            <div class="settings-row-label">Google Calendar</div>
+            <div class="settings-row-desc">Overlay your Google Calendar events in Day and Week views — read-only, so you can see existing commitments when placing task time blocks.</div>
+          </div>
+          <div style="display:flex;flex-direction:column;align-items:flex-end;gap:6px;flex-shrink:0;">${statusHtml}</div>
+        </div>
+      </div>
+    </div>`;
+}
+
+function connectGoogle() {
+  window.location.href = '/api/auth/google';
+}
+
+async function disconnectGoogle() {
+  if (!confirm('Disconnect Google Calendar?\n\nGoogle Calendar events will no longer appear in the calendar views.')) return;
+  try {
+    await api('DELETE', '/api/auth/google');
+    state.googleCalConnected = false;
+    state.googleCalConnectedAt = null;
+    state.googleEvents = [];
+    state.googleWeekEvents = {};
+    renderSettings();
+    toast('Google Calendar disconnected');
   } catch(e) { toast(e.message); }
 }
 

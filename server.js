@@ -2,6 +2,7 @@ const express = require('express');
 const Database = require('better-sqlite3');
 const fs = require('fs');
 const path = require('path');
+const https = require('https');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -109,6 +110,12 @@ db.exec(`
   CREATE TABLE IF NOT EXISTS settings (
     key   TEXT PRIMARY KEY,
     value TEXT NOT NULL
+  );
+
+  CREATE TABLE IF NOT EXISTS google_auth (
+    id            INTEGER PRIMARY KEY CHECK (id = 1),
+    refresh_token TEXT NOT NULL,
+    connected_at  TEXT NOT NULL DEFAULT (datetime('now'))
   );
 `);
 
@@ -663,6 +670,120 @@ app.post('/api/templates/:id/apply', (req, res) => {
   )();
 
   res.status(201).json(created);
+});
+
+// ── Google Calendar ───────────────────────────────────────────────────────────
+
+function httpsReq(options, body) {
+  return new Promise((resolve, reject) => {
+    const req = https.request(options, res => {
+      let data = '';
+      res.on('data', c => { data += c; });
+      res.on('end', () => { try { resolve(JSON.parse(data)); } catch(e) { reject(e); } });
+    });
+    req.on('error', reject);
+    if (body) req.write(body);
+    req.end();
+  });
+}
+
+async function googleAccessToken(refreshToken) {
+  const body = new URLSearchParams({
+    refresh_token: refreshToken,
+    client_id:     process.env.GOOGLE_CLIENT_ID,
+    client_secret: process.env.GOOGLE_CLIENT_SECRET,
+    grant_type:    'refresh_token'
+  }).toString();
+  const data = await httpsReq({
+    hostname: 'oauth2.googleapis.com', path: '/token', method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'Content-Length': Buffer.byteLength(body) }
+  }, body);
+  if (!data.access_token) throw new Error(data.error_description || 'Failed to get access token');
+  return data.access_token;
+}
+
+const GOOGLE_REDIRECT_URI = 'https://tsp-task-manager-production.up.railway.app/api/auth/google/callback';
+
+app.get('/api/auth/google', (req, res) => {
+  if (!process.env.GOOGLE_CLIENT_ID) return res.status(503).json({ error: 'Google OAuth not configured' });
+  const url = 'https://accounts.google.com/o/oauth2/v2/auth?' + new URLSearchParams({
+    client_id:     process.env.GOOGLE_CLIENT_ID,
+    redirect_uri:  GOOGLE_REDIRECT_URI,
+    response_type: 'code',
+    scope:         'https://www.googleapis.com/auth/calendar.readonly',
+    access_type:   'offline',
+    prompt:        'consent'
+  });
+  res.redirect(url);
+});
+
+app.get('/api/auth/google/callback', async (req, res) => {
+  const { code, error } = req.query;
+  if (error || !code) return res.redirect('/?google_error=' + encodeURIComponent(error || 'no_code'));
+  try {
+    const body = new URLSearchParams({
+      code,
+      client_id:     process.env.GOOGLE_CLIENT_ID,
+      client_secret: process.env.GOOGLE_CLIENT_SECRET,
+      redirect_uri:  GOOGLE_REDIRECT_URI,
+      grant_type:    'authorization_code'
+    }).toString();
+    const data = await httpsReq({
+      hostname: 'oauth2.googleapis.com', path: '/token', method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'Content-Length': Buffer.byteLength(body) }
+    }, body);
+    if (!data.refresh_token) return res.redirect('/?google_error=no_refresh_token');
+    db.prepare('DELETE FROM google_auth').run();
+    db.prepare('INSERT INTO google_auth (id, refresh_token) VALUES (1, ?)').run(data.refresh_token);
+    res.redirect('/?google_connected=1');
+  } catch(e) {
+    console.error('Google OAuth callback error:', e.message);
+    res.redirect('/?google_error=callback_failed');
+  }
+});
+
+app.get('/api/auth/google/status', (req, res) => {
+  const row = db.prepare('SELECT connected_at FROM google_auth WHERE id = 1').get();
+  res.json({ connected: !!row, connected_at: row?.connected_at || null });
+});
+
+app.delete('/api/auth/google', (req, res) => {
+  db.prepare('DELETE FROM google_auth').run();
+  res.status(204).end();
+});
+
+app.get('/api/calendar/google-events', async (req, res) => {
+  const { start, end } = req.query;
+  if (!start || !end) return res.status(400).json({ error: 'start and end required' });
+  const row = db.prepare('SELECT refresh_token FROM google_auth WHERE id = 1').get();
+  if (!row) return res.json([]);
+  try {
+    const token = await googleAccessToken(row.refresh_token);
+    const params = new URLSearchParams({
+      timeMin: start + 'T00:00:00Z',
+      timeMax: end   + 'T23:59:59Z',
+      singleEvents: 'true',
+      orderBy:      'startTime',
+      maxResults:   '250'
+    });
+    const data = await httpsReq({
+      hostname: 'www.googleapis.com',
+      path:     '/calendar/v3/calendars/primary/events?' + params,
+      method:   'GET',
+      headers:  { Authorization: 'Bearer ' + token }
+    });
+    if (data.error) throw new Error(data.error.message);
+    res.json((data.items || []).map(e => ({
+      id:      e.id,
+      title:   e.summary || '(No title)',
+      start:   e.start?.dateTime || e.start?.date,
+      end:     e.end?.dateTime   || e.end?.date,
+      all_day: !e.start?.dateTime
+    })));
+  } catch(e) {
+    console.error('Google Calendar events error:', e.message);
+    res.json([]);
+  }
 });
 
 // ── Start ─────────────────────────────────────────────────────────────────────
