@@ -868,6 +868,7 @@ let calPanelProject   = '';
 let calPanelFocusList = '';
 let calPanelCategory  = '';
 let calPanelSearch    = '';
+let gcalRefreshTimer  = null;
 
 // ── API ───────────────────────────────────────────────────────────────────────
 
@@ -1108,6 +1109,7 @@ function setView(view) {
   document.getElementById('quick-add-bar').style.display = (isCalendar || isSettings) ? 'none' : '';
 
   document.getElementById('view-title').textContent = viewTitle(view);
+  if (view === 'calendar') startGcalRefresh(); else stopGcalRefresh();
   renderSidebar();
   renderTaskList();
 }
@@ -1299,7 +1301,8 @@ async function renderCalendar() {
   } else if (state.calMode === 'month') {
     renderCalendarMonth();
   } else {
-    renderCalendarDay();
+    await loadTimeBlocks(state.calDayStr);
+    if (state.view === 'calendar' && state.calMode === 'day') renderCalendarDay();
   }
 }
 
@@ -2036,6 +2039,32 @@ function gcalLocalTime(isoStr) {
   return `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
 }
 
+async function refreshGoogleEventsDay(date) {
+  if (!state.googleCalConnected) return;
+  try {
+    const evts = await api('GET', `/api/calendar/google-events?start=${date}&end=${date}`);
+    state.googleEvents = evts;
+  } catch(_) {}
+}
+
+function stopGcalRefresh() {
+  if (gcalRefreshTimer) { clearInterval(gcalRefreshTimer); gcalRefreshTimer = null; }
+}
+
+function startGcalRefresh() {
+  stopGcalRefresh();
+  if (!state.googleCalConnected) return;
+  gcalRefreshTimer = setInterval(async () => {
+    if (state.view !== 'calendar') { stopGcalRefresh(); return; }
+    if (state.calMode === 'day') {
+      await refreshGoogleEventsDay(state.calDayStr);
+      if (state.view === 'calendar' && state.calMode === 'day') renderCalendarDay();
+    } else if (state.calMode === 'week') {
+      renderCalendar();
+    }
+  }, 60000);
+}
+
 function gcalBusyConflict(date, startTimeStr, durationMins) {
   if (!state.googleCalConnected || !state.googleEvents?.length) return false;
   const startMs = new Date(`${date}T${startTimeStr}:00`).getTime();
@@ -2296,30 +2325,38 @@ function calDayTaskDragStart(e, taskId) {
 }
 function calDayDragOver(e) {
   e.preventDefault();
-  const y  = snapY(gridY(e.clientY));
+  const y   = snapY(gridY(e.clientY));
   const dur = calDragType === 'block'
     ? (state.timeBlocks.find(b => b.id === calDragBlockId)?.duration_minutes || 60)
     : 60;
-  const ind = document.getElementById('cal-drop-indicator');
-  if (ind) { ind.style.top = y + 'px'; ind.style.height = Math.max(dur/60*PX_PER_HOUR, 24)+'px'; ind.style.display = 'block'; }
-  e.dataTransfer.dropEffect = 'copy';
+  const busy = gcalBusyConflict(state.calDayStr, yToTimeStr(y), dur);
+  const ind  = document.getElementById('cal-drop-indicator');
+  if (ind) {
+    ind.style.top        = y + 'px';
+    ind.style.height     = Math.max(dur / 60 * PX_PER_HOUR, 24) + 'px';
+    ind.style.display    = 'block';
+    ind.style.background = busy ? 'rgba(239,68,68,.15)' : '';
+    ind.style.borderColor = busy ? '#ef4444' : '';
+  }
+  e.dataTransfer.dropEffect = busy ? 'none' : 'copy';
 }
 function calDayDragLeave(e) {
   if (!e.currentTarget.contains(e.relatedTarget)) {
     const ind = document.getElementById('cal-drop-indicator');
-    if (ind) ind.style.display = 'none';
+    if (ind) { ind.style.display = 'none'; ind.style.background = ''; ind.style.borderColor = ''; }
   }
 }
 async function calDayDrop(e) {
   e.preventDefault();
   const ind = document.getElementById('cal-drop-indicator');
-  if (ind) ind.style.display = 'none';
+  if (ind) { ind.style.display = 'none'; ind.style.background = ''; ind.style.borderColor = ''; }
   const time = yToTimeStr(snapY(gridY(e.clientY)));
   if (calDragType === 'task') {
     if (gcalBusyConflict(state.calDayStr, time, 60)) {
       toast("That time is busy on your Google Calendar");
     } else {
       await calDayCreateBlock(calDragTaskId, state.calDayStr, time);
+      refreshGoogleEventsDay(state.calDayStr);
     }
   } else if (calDragType === 'block') {
     const block = state.timeBlocks.find(b => b.id === calDragBlockId);
@@ -2329,6 +2366,7 @@ async function calDayDrop(e) {
       renderCalendarDay();
     } else {
       await calDayMoveBlock(calDragBlockId, state.calDayStr, time);
+      refreshGoogleEventsDay(state.calDayStr);
     }
   }
   calDragType = null; calDragTaskId = null; calDragBlockId = null;
@@ -2383,7 +2421,7 @@ document.addEventListener('mouseup', e => {
         toast("That time is busy on your Google Calendar");
         renderCalendarDay();
       } else {
-        calDayMoveBlock(bid, state.calDayStr, newTime);
+        calDayMoveBlock(bid, state.calDayStr, newTime).then(() => refreshGoogleEventsDay(state.calDayStr));
       }
     } else {
       openBlockEdit(bid);
