@@ -867,6 +867,7 @@ let calPanelPriority  = '';
 let calPanelProject   = '';
 let calPanelFocusList = '';
 let calPanelCategory  = '';
+let calPanelSearch    = '';
 
 // ── API ───────────────────────────────────────────────────────────────────────
 
@@ -2208,6 +2209,7 @@ function renderDayPanel() {
   if (calPanelPriority)  tasks = tasks.filter(t => t.priority === calPanelPriority);
   if (calPanelProject)   tasks = tasks.filter(t => t.project === calPanelProject);
   if (calPanelCategory)  tasks = tasks.filter(t => t.category === calPanelCategory);
+  if (calPanelSearch)    tasks = tasks.filter(t => t.title.toLowerCase().includes(calPanelSearch));
   tasks = [...tasks].sort((a, b) => {
     const db = bucket(a) - bucket(b);
     if (db !== 0) return db;
@@ -2223,6 +2225,7 @@ function renderDayPanel() {
     Unscheduled <span style="font-weight:400;color:var(--muted);">(${tasks.length})</span>
   </div>
   <div style="display:flex;flex-direction:column;gap:4px;margin-bottom:8px;position:sticky;top:28px;background:var(--surface);padding-bottom:4px;">
+    <input type="text" placeholder="Search tasks…" value="${esc(calPanelSearch)}" oninput="setDayPanelFilter('search',this.value)" style="width:100%;font-size:11px;padding:3px 5px;border:1px solid var(--border);border-radius:4px;background:var(--bg);color:var(--text);box-sizing:border-box;">
     <div style="display:flex;gap:4px;">
       <select onchange="setDayPanelFilter('priority',this.value)" style="${SEL}">
         <option value="" ${!calPanelPriority?'selected':''}>All priority</option>
@@ -2275,6 +2278,7 @@ function setDayPanelFilter(type, val) {
   if (type === 'project')   calPanelProject   = val;
   if (type === 'focuslist') calPanelFocusList = val;
   if (type === 'category')  calPanelCategory  = val;
+  if (type === 'search')    calPanelSearch    = val.toLowerCase().trim();
   renderDayPanel();
 }
 
