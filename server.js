@@ -130,6 +130,7 @@ db.exec(`
 try { db.prepare('ALTER TABLE tasks ADD COLUMN blocked_by_task_id INTEGER').run(); } catch(e) {}
 try { db.prepare('ALTER TABLE focus_lists ADD COLUMN max_tasks INTEGER NOT NULL DEFAULT 7').run(); } catch(e) {}
 try { db.prepare('ALTER TABLE focus_lists ADD COLUMN max_hours INTEGER NOT NULL DEFAULT 40').run(); } catch(e) {}
+try { db.prepare('ALTER TABLE task_meeting_notes ADD COLUMN label TEXT').run(); } catch(e) {}
 
 // Default settings
 [['daily_capacity_minutes','480'],['day_start_hour','7'],['day_end_hour','21']]
@@ -351,10 +352,10 @@ app.get('/api/tasks/:id/meeting-notes', (req, res) => {
 app.post('/api/tasks/:id/meeting-notes', (req, res) => {
   const task = db.prepare('SELECT id FROM tasks WHERE id = ?').get(req.params.id);
   if (!task) return res.status(404).json({ error: 'Task not found' });
-  const { date, url } = req.body;
+  const { date, url, label } = req.body;
   if (!date?.trim()) return res.status(400).json({ error: 'Date is required' });
   if (!url?.trim())  return res.status(400).json({ error: 'URL is required' });
-  const r = db.prepare('INSERT INTO task_meeting_notes (task_id, date, url) VALUES (?, ?, ?)').run(req.params.id, date.trim(), url.trim());
+  const r = db.prepare('INSERT INTO task_meeting_notes (task_id, date, url, label) VALUES (?, ?, ?, ?)').run(req.params.id, date.trim(), url.trim(), label?.trim() || null);
   res.status(201).json(db.prepare('SELECT * FROM task_meeting_notes WHERE id = ?').get(r.lastInsertRowid));
 });
 

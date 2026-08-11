@@ -304,11 +304,15 @@
     .mn-entry-date { color: var(--muted); white-space: nowrap; flex-shrink: 0; }
     .mn-entry-link { flex: 1; color: var(--accent); text-decoration: none; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .mn-entry-link:hover { text-decoration: underline; }
+    .mn-entry-label { flex: 1; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .mn-entry-link-sub { color: var(--accent); text-decoration: none; font-size: 11px; flex-shrink: 0; white-space: nowrap; }
+    .mn-entry-link-sub:hover { text-decoration: underline; }
     .mn-add-form { display: flex; gap: 6px; margin-top: 6px; flex-wrap: wrap; }
     .mn-add-form input { padding: 6px 10px; border: 1px solid var(--border); border-radius: 6px; font-size: 12px; outline: none; font-family: inherit; }
     .mn-add-form input:focus { border-color: var(--accent); }
     .mn-add-form input[type="date"] { width: 130px; flex-shrink: 0; }
-    .mn-add-form input[type="url"] { flex: 1; min-width: 140px; }
+    .mn-add-form input[type="url"]  { flex: 1; min-width: 140px; }
+    .mn-add-form input[type="text"] { flex: 1; min-width: 140px; }
 
     /* ── Updates Log ── */
     .upd-entry { padding: 10px 0; border-bottom: 1px solid var(--border); }
@@ -411,7 +415,7 @@
         <span class="nav-count" id="cnt-in-progress">0</span>
       </div>
       <div class="nav-item" data-view="status:needs-review" onclick="setView('status:needs-review')">
-        <span class="nav-label"><span class="nav-icon" style="color:#8b5cf6;">●</span> Needs Review</span>
+        <span class="nav-label"><span class="nav-icon" style="color:#8b5cf6;">●</span> Waiting on Someone</span>
         <span class="nav-count" id="cnt-needs-review">0</span>
       </div>
       <div class="nav-item" data-view="status:on-hold" onclick="setView('status:on-hold')">
@@ -481,7 +485,7 @@
           <option value="">All statuses</option>
           <option value="pending">Pending</option>
           <option value="in-progress">In Progress</option>
-          <option value="needs-review">Needs Review</option>
+          <option value="needs-review">Waiting on Someone</option>
           <option value="on-hold">On Hold</option>
           <option value="complete">Complete</option>
         </select>
@@ -547,7 +551,7 @@
           <select id="d-status">
             <option value="pending">Pending</option>
             <option value="in-progress">In Progress</option>
-            <option value="needs-review">Needs Review</option>
+            <option value="needs-review">Waiting on Someone</option>
             <option value="on-hold">On Hold</option>
             <option value="complete">Complete</option>
           </select>
@@ -603,6 +607,7 @@
       <div id="mn-list"></div>
       <div id="mn-add-form" style="display:none;">
         <div class="mn-add-form">
+          <input type="text" id="mn-label" placeholder="Label (optional, e.g. Client kickoff call)" style="flex:1;min-width:100%;">
           <input type="date" id="mn-date">
           <input type="url" id="mn-url" placeholder="https://…">
           <button class="btn btn-primary btn-sm" onclick="addMeetingNote()">Add</button>
@@ -846,6 +851,7 @@
 const CATEGORIES  = ['admin','ops','accounting','marketing','sales','pm','hr','personal'];
 const CAT_ICONS   = { admin:'🗂', ops:'⚙️', accounting:'💰', marketing:'📣', sales:'💼', pm:'📐', hr:'👥', personal:'🏠' };
 const CAT_COLORS  = { admin:'#6366f1', ops:'#0ea5e9', accounting:'#10b981', marketing:'#ec4899', sales:'#14b8a6', pm:'#8b5cf6', hr:'#f59e0b', personal:'#ef4444' };
+const STATUS_LABELS = { pending:'Pending', 'in-progress':'In Progress', 'needs-review':'Waiting on Someone', 'on-hold':'On Hold', complete:'Complete' };
 const PX_PER_HOUR = 80;
 
 // ── State ─────────────────────────────────────────────────────────────────────
@@ -1286,7 +1292,7 @@ function renderTaskList() {
         <div class="task-card-title${t.status === 'complete' ? ' done' : ''}">${esc(t.title)}</div>
         <div class="task-card-meta">
           <span class="pill pill-priority-${t.priority}">${t.priority}</span>
-          <span class="pill pill-status-${t.status}">${t.status.replace(/-/g,' ')}</span>
+          <span class="pill pill-status-${t.status}">${STATUS_LABELS[t.status] || t.status.replace(/-/g,' ')}</span>
           ${t.category ? `<span class="pill pill-cat">${t.category}</span>` : ''}
           ${t.project  ? `<span class="pill pill-proj">${esc(t.project)}</span>` : ''}
           ${t.due_date ? `<span class="${overdue?'overdue':''}">Due ${fmtDate(t.due_date)}</span>` : ''}
@@ -1535,7 +1541,7 @@ function renderCalendarMonth() {
             <span class="cal-task-title">${esc(t.title)}</span>
             <div class="cal-task-meta">
               <span class="pill pill-priority-${t.priority}">${t.priority}</span>
-              <span class="pill pill-status-${t.status}">${t.status.replace(/-/g,' ')}</span>
+              <span class="pill pill-status-${t.status}">${STATUS_LABELS[t.status] || t.status.replace(/-/g,' ')}</span>
               ${t.project ? `<span class="pill pill-proj">${esc(t.project)}</span>` : ''}
             </div>
           </div>
@@ -1891,7 +1897,10 @@ function renderMeetingNotes() {
     <div class="mn-entry">
       <span class="mn-entry-date">${fmtDate(mn.date)}</span>
       <span style="color:var(--muted);">→</span>
-      <a href="${esc(mn.url)}" target="_blank" rel="noopener" class="mn-entry-link">${esc(mn.url)}</a>
+      ${mn.label
+        ? `<span class="mn-entry-label">${esc(mn.label)}</span>
+           <a href="${esc(mn.url)}" target="_blank" rel="noopener" class="mn-entry-link mn-entry-link-sub" title="${esc(mn.url)}">↗ link</a>`
+        : `<a href="${esc(mn.url)}" target="_blank" rel="noopener" class="mn-entry-link">${esc(mn.url)}</a>`}
       <button class="log-del" onclick="deleteMeetingNote(${mn.id})" title="Remove">✕</button>
     </div>`).join('');
 }
@@ -1899,9 +1908,10 @@ function renderMeetingNotes() {
 function showMeetingNoteForm() {
   document.getElementById('mn-add-form').style.display = '';
   document.getElementById('mn-add-btn').style.display  = 'none';
-  document.getElementById('mn-date').value = new Date().toISOString().slice(0, 10);
-  document.getElementById('mn-url').value  = '';
-  document.getElementById('mn-url').focus();
+  document.getElementById('mn-label').value = '';
+  document.getElementById('mn-date').value  = new Date().toISOString().slice(0, 10);
+  document.getElementById('mn-url').value   = '';
+  document.getElementById('mn-label').focus();
 }
 
 function hideMeetingNoteForm() {
@@ -1910,11 +1920,12 @@ function hideMeetingNoteForm() {
 }
 
 async function addMeetingNote() {
-  const date = document.getElementById('mn-date').value;
-  const url  = document.getElementById('mn-url').value.trim();
+  const label = document.getElementById('mn-label').value.trim();
+  const date  = document.getElementById('mn-date').value;
+  const url   = document.getElementById('mn-url').value.trim();
   if (!date) { toast('Pick a date'); return; }
   if (!url)  { toast('Enter a URL'); return; }
-  const mn = await api('POST', `/api/tasks/${state.selectedId}/meeting-notes`, { date, url });
+  const mn = await api('POST', `/api/tasks/${state.selectedId}/meeting-notes`, { date, url, label: label || null });
   state.meetingNotes.unshift(mn);
   const task = state.tasks.find(t => t.id === state.selectedId);
   if (task) {
