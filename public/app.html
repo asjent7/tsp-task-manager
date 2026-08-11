@@ -310,6 +310,25 @@
     .mn-add-form input[type="date"] { width: 130px; flex-shrink: 0; }
     .mn-add-form input[type="url"] { flex: 1; min-width: 140px; }
 
+    /* ── Updates Log ── */
+    .upd-entry { padding: 10px 0; border-bottom: 1px solid var(--border); }
+    .upd-entry:last-child { border-bottom: none; }
+    .upd-entry-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 5px; }
+    .upd-entry-ts { font-size: 11px; color: var(--muted); font-weight: 500; }
+    .upd-entry-body { font-size: 13px; line-height: 1.55; color: var(--text); }
+    .upd-entry-body p { margin: 0 0 5px; }
+    .upd-entry-body p:last-child { margin-bottom: 0; }
+    .upd-entry-body ul { margin: 0 0 5px 16px; padding: 0; }
+    .upd-entry-body li { margin-bottom: 2px; }
+    .upd-entry-body strong { font-weight: 600; }
+    .upd-entry-body em { font-style: italic; }
+    .upd-entry-body a { color: var(--accent); text-decoration: none; }
+    .upd-entry-body a:hover { text-decoration: underline; }
+    .upd-compose textarea { width: 100%; min-height: 72px; border: 1px solid var(--border); border-radius: 6px; padding: 8px 10px; font-size: 13px; font-family: inherit; color: var(--text); background: var(--surface); resize: vertical; box-sizing: border-box; transition: border-color .15s; }
+    .upd-compose textarea:focus { outline: none; border-color: var(--accent); }
+    .upd-compose-actions { display: flex; justify-content: space-between; align-items: center; margin-top: 6px; }
+    .upd-hint { font-size: 11px; color: var(--muted); }
+
     /* ── Subtasks ── */
     .subtask-item { display: flex; align-items: center; gap: 8px; padding: 6px 8px; background: var(--bg); border-radius: 5px; margin-bottom: 4px; }
     .subtask-item input[type="checkbox"] { flex-shrink: 0; cursor: pointer; width: 15px; height: 15px; }
@@ -594,6 +613,18 @@
 
       <hr style="border:none;border-top:1px solid var(--border);margin:16px 0;">
 
+      <div class="sidebar-label" style="margin-bottom:8px;">Updates Log</div>
+      <div id="upd-list"></div>
+      <div class="upd-compose" style="margin-top:8px;">
+        <textarea id="upd-input" placeholder="Add an update… Supports **bold**, *italic*, - bullets, [link text](url) or paste a URL"></textarea>
+        <div class="upd-compose-actions">
+          <span class="upd-hint">Ctrl+Enter to post</span>
+          <button class="btn btn-primary btn-sm" onclick="addTaskUpdate()">Post Update</button>
+        </div>
+      </div>
+
+      <hr style="border:none;border-top:1px solid var(--border);margin:16px 0;">
+
       <div class="sidebar-label" style="margin-bottom:8px;">Subtasks</div>
       <div id="subtask-list"></div>
       <div class="subtask-add-form">
@@ -832,7 +863,7 @@ let state = {
   view: 'inbox',
   filters: { priority: '', status: '', search: '', due: '', dueFrom: '', dueTo: '' },
   selectedId: null,
-  timeLogs: [], subtasks: [], meetingNotes: [],
+  timeLogs: [], subtasks: [], meetingNotes: [], taskUpdates: [],
   calMode: 'week',
   calWeekStart: getWeekStart(),
   calMonth: { year: new Date().getFullYear(), month: new Date().getMonth() },
@@ -1627,7 +1658,7 @@ async function openDetail(id) {
   document.getElementById('detail-panel').classList.add('open');
   renderDetailFocusList(task);
   renderTaskList();
-  await Promise.all([loadTimeLogs(id), loadSubtasks(id), loadMeetingNotes(id)]);
+  await Promise.all([loadTimeLogs(id), loadSubtasks(id), loadMeetingNotes(id), loadTaskUpdates(id)]);
 }
 
 function closeDetail() {
@@ -1912,6 +1943,97 @@ async function deleteMeetingNote(id) {
   renderMeetingNotes();
   renderTaskList();
 }
+
+// ── Task Updates (running log) ────────────────────────────────────────────────
+
+// Inline markdown → safe HTML. Escapes raw text first, then applies patterns.
+function renderMarkdown(raw) {
+  if (!raw) return '';
+  // HTML-escape
+  const e = s => s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  const escaped = e(raw);
+
+  function inlineMd(text) {
+    // Stash [text](url) links so their URLs aren't auto-linked separately
+    const stash = [];
+    text = text.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_, anchor, href) => {
+      const safe = /^https?:\/\//i.test(href.replace(/&amp;/g,'&')) ? href : '#';
+      stash.push(`<a href="${safe}" target="_blank" rel="noopener">${anchor}</a>`);
+      return `\x00L${stash.length - 1}\x00`;
+    });
+    // Bold, italic
+    text = text.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+    text = text.replace(/\*([^*\n]+?)\*/g, '<em>$1</em>');
+    text = text.replace(/_([^_\n]+?)_/g,   '<em>$1</em>');
+    // Auto-link bare URLs (not already inside a stash token)
+    text = text.replace(/(https?:\/\/[^\s<\x00]+)/g,
+      '<a href="$1" target="_blank" rel="noopener">$1</a>');
+    // Restore stashed links
+    text = text.replace(/\x00L(\d+)\x00/g, (_, i) => stash[+i]);
+    return text;
+  }
+
+  // Split on blank lines → blocks
+  const blocks = escaped.split(/\n{2,}/);
+  return blocks.map(block => {
+    const lines = block.split('\n');
+    const contentLines = lines.filter(l => l.trim());
+    const isList = contentLines.length > 0 && contentLines.every(l => /^\s*[*\-]\s/.test(l));
+    if (isList) {
+      return '<ul>' + contentLines.map(l =>
+        `<li>${inlineMd(l.replace(/^\s*[*\-]\s+/, ''))}</li>`
+      ).join('') + '</ul>';
+    }
+    return '<p>' + lines.map(inlineMd).join('<br>') + '</p>';
+  }).join('');
+}
+
+function fmtUpdateTime(ts) {
+  // SQLite datetime('now') is UTC: "2026-08-11 22:30:45"
+  const d = new Date(ts.replace(' ', 'T') + 'Z');
+  return d.toLocaleString(undefined, { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' });
+}
+
+async function loadTaskUpdates(taskId) {
+  state.taskUpdates = await api('GET', `/api/tasks/${taskId}/updates`);
+  renderTaskUpdates();
+}
+
+function renderTaskUpdates() {
+  const list = document.getElementById('upd-list');
+  if (!state.taskUpdates.length) {
+    list.innerHTML = `<div style="font-size:12px;color:var(--muted);padding:2px 0 6px;">No updates yet</div>`;
+    return;
+  }
+  list.innerHTML = state.taskUpdates.map(u => `
+    <div class="upd-entry" data-uid="${u.id}">
+      <div class="upd-entry-header">
+        <span class="upd-entry-ts">${fmtUpdateTime(u.created_at)}</span>
+        <button class="log-del" onclick="deleteTaskUpdate(${u.id})" title="Delete this update">✕</button>
+      </div>
+      <div class="upd-entry-body">${renderMarkdown(u.content)}</div>
+    </div>`).join('');
+}
+
+async function addTaskUpdate() {
+  const input = document.getElementById('upd-input');
+  const content = input.value.trim();
+  if (!content) { input.focus(); return; }
+  const update = await api('POST', `/api/tasks/${state.selectedId}/updates`, { content });
+  state.taskUpdates.unshift(update);
+  input.value = '';
+  renderTaskUpdates();
+}
+
+async function deleteTaskUpdate(id) {
+  await api('DELETE', `/api/updates/${id}`);
+  state.taskUpdates = state.taskUpdates.filter(u => u.id !== id);
+  renderTaskUpdates();
+}
+
+document.getElementById('upd-input').addEventListener('keydown', e => {
+  if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') addTaskUpdate();
+});
 
 // ── Project Links ─────────────────────────────────────────────────────────────
 

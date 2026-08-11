@@ -83,6 +83,13 @@ db.exec(`
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
   );
 
+  CREATE TABLE IF NOT EXISTS task_updates (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    task_id INTEGER NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+    content TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+
   CREATE TABLE IF NOT EXISTS focus_lists (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT NOT NULL UNIQUE,
@@ -354,6 +361,29 @@ app.post('/api/tasks/:id/meeting-notes', (req, res) => {
 app.delete('/api/meeting-notes/:id', (req, res) => {
   const result = db.prepare('DELETE FROM task_meeting_notes WHERE id = ?').run(req.params.id);
   if (!result.changes) return res.status(404).json({ error: 'Meeting note not found' });
+  res.status(204).end();
+});
+
+// ── Task Updates (running log) ────────────────────────────────────────────────
+
+app.get('/api/tasks/:id/updates', (req, res) => {
+  const task = db.prepare('SELECT id FROM tasks WHERE id = ?').get(req.params.id);
+  if (!task) return res.status(404).json({ error: 'Task not found' });
+  res.json(db.prepare('SELECT * FROM task_updates WHERE task_id = ? ORDER BY created_at DESC').all(req.params.id));
+});
+
+app.post('/api/tasks/:id/updates', (req, res) => {
+  const task = db.prepare('SELECT id FROM tasks WHERE id = ?').get(req.params.id);
+  if (!task) return res.status(404).json({ error: 'Task not found' });
+  const { content } = req.body;
+  if (!content?.trim()) return res.status(400).json({ error: 'content is required' });
+  const r = db.prepare('INSERT INTO task_updates (task_id, content) VALUES (?, ?)').run(req.params.id, content.trim());
+  res.status(201).json(db.prepare('SELECT * FROM task_updates WHERE id = ?').get(r.lastInsertRowid));
+});
+
+app.delete('/api/updates/:id', (req, res) => {
+  const result = db.prepare('DELETE FROM task_updates WHERE id = ?').run(req.params.id);
+  if (!result.changes) return res.status(404).json({ error: 'Update not found' });
   res.status(204).end();
 });
 
