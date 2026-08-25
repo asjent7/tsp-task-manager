@@ -1324,7 +1324,9 @@ async function renderCalendar() {
       }
       const ds0 = dateStr(days[0]), ds6 = dateStr(days[6]);
       try {
-        const evts = await api('GET', `/api/calendar/google-events?start=${ds0}&end=${ds6}`);
+        const tMin = encodeURIComponent(new Date(ds0 + 'T00:00:00').toISOString());
+        const tMax = encodeURIComponent(new Date(ds6 + 'T23:59:59').toISOString());
+        const evts = await api('GET', `/api/calendar/google-events?timeMin=${tMin}&timeMax=${tMax}`);
         state.googleWeekEvents = {};
         evts.forEach(e => {
           const d = e.all_day ? e.start.slice(0, 10) : (e.start ? dateStr(new Date(e.start)) : null);
@@ -2175,7 +2177,9 @@ function gcalLocalTime(isoStr) {
 async function refreshGoogleEventsDay(date) {
   if (!state.googleCalConnected) return;
   try {
-    const evts = await api('GET', `/api/calendar/google-events?start=${date}&end=${date}`);
+    const tMin = encodeURIComponent(new Date(date + 'T00:00:00').toISOString());
+    const tMax = encodeURIComponent(new Date(date + 'T23:59:59').toISOString());
+    const evts = await api('GET', `/api/calendar/google-events?timeMin=${tMin}&timeMax=${tMax}`);
     state.googleEvents = evts;
   } catch(_) {}
 }
@@ -2200,22 +2204,28 @@ function startGcalRefresh() {
 
 function gcalBusyConflict(date, startTimeStr, durationMins) {
   if (!state.googleCalConnected || !state.googleEvents?.length) return false;
-  const startMs = new Date(`${date}T${startTimeStr}:00`).getTime();
-  const endMs   = startMs + durationMins * 60000;
+  const startMs  = new Date(`${date}T${startTimeStr}:00`).getTime();
+  const endMs    = startMs + durationMins * 60000;
+  // Only events whose local start falls within the visible grid window can block drops.
+  // Events at or beyond endHour render outside the scrollable viewport and are invisible.
+  const gridEndMs = new Date(`${date}T${String(state.daySettings.endHour).padStart(2,'0')}:00:00`).getTime();
   return state.googleEvents.some(evt => {
     if (evt.all_day || evt.transparency === 'transparent' || !evt.start || evt.start.length === 10) return false;
     const evtStart = new Date(evt.start).getTime();
-    const evtEnd   = new Date(evt.end).getTime();
+    if (evtStart >= gridEndMs) return false;
+    const evtEnd = new Date(evt.end).getTime();
     return startMs < evtEnd && endMs > evtStart;
   });
 }
 
 // Load/render
 async function loadTimeBlocks(date) {
+  const tMin = encodeURIComponent(new Date(date + 'T00:00:00').toISOString());
+  const tMax = encodeURIComponent(new Date(date + 'T23:59:59').toISOString());
   const [blocks, gcalEvts] = await Promise.all([
     api('GET', `/api/time-blocks?date=${date}`),
     state.googleCalConnected
-      ? api('GET', `/api/calendar/google-events?start=${date}&end=${date}`).catch(() => [])
+      ? api('GET', `/api/calendar/google-events?timeMin=${tMin}&timeMax=${tMax}`).catch(() => [])
       : Promise.resolve([])
   ]);
   state.timeBlocks   = blocks;
@@ -2288,6 +2298,7 @@ function renderCalendarDay() {
     const endLocal   = gcalLocalTime(evt.end);
     if (!startLocal) return;
     const y = timeToY(startLocal);
+    if (y >= totalPx) return; // Starts at or beyond grid end — invisible, skip to match conflict check
     const endY = endLocal ? timeToY(endLocal) : y + PX_PER_HOUR;
     const h = Math.max(endY - y, 24);
     const isFree = evt.transparency === 'transparent';

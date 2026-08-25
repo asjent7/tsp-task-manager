@@ -784,15 +784,18 @@ app.delete('/api/auth/google', (req, res) => {
 });
 
 app.get('/api/calendar/google-events', async (req, res) => {
-  const { start, end } = req.query;
-  if (!start || !end) return res.status(400).json({ error: 'start and end required' });
+  const { start, end, timeMin: tMin, timeMax: tMax } = req.query;
+  // Accept either full RFC-3339 timestamps (timezone-correct) or bare date strings (legacy fallback)
+  const resolvedMin = tMin || (start && start + 'T00:00:00Z');
+  const resolvedMax = tMax || (end   && end   + 'T23:59:59Z');
+  if (!resolvedMin || !resolvedMax) return res.status(400).json({ error: 'time range required' });
   const row = db.prepare('SELECT refresh_token FROM google_auth WHERE id = 1').get();
   if (!row) return res.json([]);
   try {
     const token = await googleAccessToken(row.refresh_token);
     const params = new URLSearchParams({
-      timeMin: start + 'T00:00:00Z',
-      timeMax: end   + 'T23:59:59Z',
+      timeMin: resolvedMin,
+      timeMax: resolvedMax,
       singleEvents: 'true',
       orderBy:      'startTime',
       maxResults:   '250'
