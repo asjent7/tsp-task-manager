@@ -2163,9 +2163,10 @@ function fmt12(t) {
 }
 function gridY(clientY) {
   const content = document.getElementById('cal-day-content');
-  const outer   = document.getElementById('cal-day-grid-outer');
-  if (!content || !outer) return 0;
-  return clientY - content.getBoundingClientRect().top + outer.scrollTop;
+  if (!content) return 0;
+  // getBoundingClientRect().top already reflects the container's scroll offset,
+  // so subtracting it gives the correct content-relative Y without double-counting.
+  return clientY - content.getBoundingClientRect().top;
 }
 
 function gcalLocalTime(isoStr) {
@@ -2472,7 +2473,7 @@ function calDayDragOver(e) {
   const y   = snapY(gridY(e.clientY));
   const dur = calDragType === 'block'
     ? (state.timeBlocks.find(b => b.id === calDragBlockId)?.duration_minutes || 60)
-    : 60;
+    : (state.tasks.find(t => t.id === calDragTaskId)?.estimated_minutes || 60);
   const busy = gcalBusyConflict(state.calDayStr, yToTimeStr(y), dur);
   const ind  = document.getElementById('cal-drop-indicator');
   if (ind) {
@@ -2496,10 +2497,11 @@ async function calDayDrop(e) {
   if (ind) { ind.style.display = 'none'; ind.style.background = ''; ind.style.borderColor = ''; }
   const time = yToTimeStr(snapY(gridY(e.clientY)));
   if (calDragType === 'task') {
-    if (gcalBusyConflict(state.calDayStr, time, 60)) {
+    const taskDur = state.tasks.find(t => t.id === calDragTaskId)?.estimated_minutes || 60;
+    if (gcalBusyConflict(state.calDayStr, time, taskDur)) {
       toast("That time is busy on your Google Calendar");
     } else {
-      await calDayCreateBlock(calDragTaskId, state.calDayStr, time);
+      await calDayCreateBlock(calDragTaskId, state.calDayStr, time, taskDur);
       refreshGoogleEventsDay(state.calDayStr);
     }
   } else if (calDragType === 'block') {
@@ -2525,6 +2527,14 @@ function calDayBlockMouseDown(e, blockId, blockTop) {
   const el = document.querySelector(`[data-block-id="${blockId}"]`);
   if (el) el.style.cursor = 'grabbing';
 }
+
+// Clear stale drop-indicator and drag state when a drag ends without a drop
+// (e.g. Escape pressed, released outside the grid, or browser cancelled the drag).
+document.addEventListener('dragend', () => {
+  const ind = document.getElementById('cal-drop-indicator');
+  if (ind) { ind.style.display = 'none'; ind.style.background = ''; ind.style.borderColor = ''; }
+  calDragType = null; calDragTaskId = null; calDragBlockId = null;
+});
 
 document.addEventListener('mousemove', e => {
   if (calResizeBlockId) {
