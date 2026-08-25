@@ -642,6 +642,7 @@
       <div class="sidebar-label" style="margin-bottom:10px;">Time Tracking</div>
       <div class="time-summary">
         <div class="time-item"><span class="time-val" id="d-est">—</span><span class="time-lbl">Estimated</span></div>
+        <div class="time-item"><span class="time-val" id="d-scheduled">—</span><span class="time-lbl">Scheduled</span></div>
         <div class="time-item"><span class="time-val" id="d-actual">0h</span><span class="time-lbl">Logged</span></div>
       </div>
       <div class="field">
@@ -821,6 +822,21 @@
   </div>
 </div>
 
+<!-- Quick Block Modal (shown after dropping a task onto the day grid) -->
+<div class="overlay" id="quick-block-modal">
+  <div class="modal">
+    <h3>Schedule Block</h3>
+    <div class="modal-sub" id="quick-block-title" style="font-weight:500;color:var(--text);max-height:40px;overflow:hidden;"></div>
+    <div id="quick-block-remaining" style="font-size:11px;color:var(--muted);margin:4px 0 10px;"></div>
+    <label style="display:block;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin-bottom:4px;">Duration (minutes)</label>
+    <input type="number" id="quick-block-duration" min="15" step="15" placeholder="30">
+    <div class="modal-btns">
+      <button class="btn btn-ghost btn-sm" onclick="cancelQuickBlock()">Cancel</button>
+      <button class="btn btn-primary btn-sm" onclick="confirmQuickBlock()">Add Block</button>
+    </div>
+  </div>
+</div>
+
 <!-- Day Settings Modal -->
 <div class="overlay" id="day-settings-modal">
   <div class="modal">
@@ -906,6 +922,10 @@ let calPanelFocusList = '';
 let calPanelCategory  = '';
 let calPanelSearch    = '';
 let gcalRefreshTimer  = null;
+// Pending drop for quick-block modal
+let pendingDropDate   = null;
+let pendingDropTime   = null;
+let pendingDropTaskId = null;
 
 // ── API ───────────────────────────────────────────────────────────────────────
 
@@ -1655,6 +1675,7 @@ async function openDetail(id) {
   document.getElementById('d-notes').value                  = task.notes    || '';
   document.getElementById('d-estimated-mins').value         = task.estimated_minutes || '';
   document.getElementById('d-est').textContent              = task.estimated_minutes ? fmtMins(task.estimated_minutes) : '—';
+  document.getElementById('d-scheduled').textContent        = task.scheduled_minutes  ? fmtMins(task.scheduled_minutes)  : '—';
   document.getElementById('d-actual').textContent           = fmtMins(task.actual_minutes);
   const blockedSel = document.getElementById('d-blocked-by');
   blockedSel.innerHTML = `<option value="">Not blocked</option>` +
@@ -2377,8 +2398,7 @@ function renderDayPanel() {
     return 3;
   }
 
-  const blockedIds = new Set(state.timeBlocks.map(b => b.task_id));
-  let tasks = state.tasks.filter(t => t.status !== 'complete' && !blockedIds.has(t.id));
+  let tasks = state.tasks.filter(t => t.status !== 'complete');
   if (calPanelFocusList) tasks = tasks.filter(t => (t.focus_list_ids||[]).includes(Number(calPanelFocusList)));
   if (calPanelPriority)  tasks = tasks.filter(t => t.priority === calPanelPriority);
   if (calPanelProject)   tasks = tasks.filter(t => t.project === calPanelProject);
@@ -2396,7 +2416,7 @@ function renderDayPanel() {
   const SEL = 'flex:1;min-width:0;font-size:11px;padding:3px 4px;border:1px solid var(--border);border-radius:4px;background:var(--bg);color:var(--text);';
 
   let html = `<div class="cal-day-panel-hdr" style="padding-bottom:4px;">
-    Unscheduled <span style="font-weight:400;color:var(--muted);">(${tasks.length})</span>
+    Tasks <span style="font-weight:400;color:var(--muted);">(${tasks.length})</span>
   </div>
   <div style="display:flex;flex-direction:column;gap:4px;margin-bottom:8px;position:sticky;top:28px;background:var(--surface);padding-bottom:4px;">
     <input type="text" placeholder="Search tasks…" value="${esc(calPanelSearch)}" oninput="setDayPanelFilter('search',this.value)" style="width:100%;font-size:11px;padding:3px 5px;border:1px solid var(--border);border-radius:4px;background:var(--bg);color:var(--text);box-sizing:border-box;">
@@ -2424,7 +2444,7 @@ function renderDayPanel() {
   </div>`;
 
   if (!tasks.length) {
-    html += '<div class="cal-day-panel-empty">No unscheduled tasks</div>';
+    html += '<div class="cal-day-panel-empty">No tasks to schedule</div>';
   } else {
     let lastBucket = -1;
     tasks.forEach(t => {
@@ -2437,9 +2457,15 @@ function renderDayPanel() {
       const dueLine = t.due_date
         ? `<div style="font-size:10px;color:${overdue?'var(--urgent)':'var(--muted)'};margin-top:2px;">${t.due_date===today?'Due today':'Due '+fmtDate(t.due_date)}</div>`
         : '';
+      const sched = t.scheduled_minutes || 0;
+      const est   = t.estimated_minutes || 0;
+      const rem   = Math.max(0, est - sched);
+      const schedLine = est > 0
+        ? `<div style="font-size:10px;color:var(--muted);margin-top:2px;">${sched > 0 ? fmtMins(sched)+' / '+fmtMins(est)+' scheduled' : fmtMins(est)+' est.'}</div>`
+        : (sched > 0 ? `<div style="font-size:10px;color:var(--muted);margin-top:2px;">${fmtMins(sched)} scheduled</div>` : '');
       html += `<div class="cal-day-panel-task" data-priority="${t.priority}" draggable="true" ondragstart="calDayTaskDragStart(event,${t.id})">
         <div style="font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${esc(t.title)}</div>
-        ${dueLine}
+        ${dueLine}${schedLine}
       </div>`;
     });
   }
@@ -2473,7 +2499,7 @@ function calDayDragOver(e) {
   const y   = snapY(gridY(e.clientY));
   const dur = calDragType === 'block'
     ? (state.timeBlocks.find(b => b.id === calDragBlockId)?.duration_minutes || 60)
-    : (state.tasks.find(t => t.id === calDragTaskId)?.estimated_minutes || 60);
+    : defaultBlockDur(state.tasks.find(t => t.id === calDragTaskId));
   const busy = gcalBusyConflict(state.calDayStr, yToTimeStr(y), dur);
   const ind  = document.getElementById('cal-drop-indicator');
   if (ind) {
@@ -2497,13 +2523,7 @@ async function calDayDrop(e) {
   if (ind) { ind.style.display = 'none'; ind.style.background = ''; ind.style.borderColor = ''; }
   const time = yToTimeStr(snapY(gridY(e.clientY)));
   if (calDragType === 'task') {
-    const taskDur = state.tasks.find(t => t.id === calDragTaskId)?.estimated_minutes || 60;
-    if (gcalBusyConflict(state.calDayStr, time, taskDur)) {
-      toast("That time is busy on your Google Calendar");
-    } else {
-      await calDayCreateBlock(calDragTaskId, state.calDayStr, time, taskDur);
-      refreshGoogleEventsDay(state.calDayStr);
-    }
+    openQuickBlock(calDragTaskId, state.calDayStr, time);
   } else if (calDragType === 'block') {
     const block = state.timeBlocks.find(b => b.id === calDragBlockId);
     const dur = block?.duration_minutes || 60;
@@ -2594,6 +2614,8 @@ async function calDayCreateBlock(taskId, date, startTime, durMins = 60) {
     const b = await api('POST', '/api/time-blocks', { task_id: taskId, date, start_time: startTime, duration_minutes: durMins });
     state.timeBlocks.push(b);
     state.timeBlocks.sort((a,b) => a.start_time.localeCompare(b.start_time));
+    const task = state.tasks.find(t => t.id === taskId);
+    if (task) task.scheduled_minutes = (task.scheduled_minutes || 0) + durMins;
     renderCalendarDay();
     toast(`Block at ${fmt12(startTime)}`);
   } catch(err) { toast(err.message); }
@@ -2612,14 +2634,23 @@ async function calDayMoveBlock(blockId, date, startTime) {
 }
 async function calDayResizeBlock(blockId, durMins) {
   try {
-    const updated = await api('PATCH', `/api/time-blocks/${blockId}`, { duration_minutes: durMins });
+    const oldBlock = state.timeBlocks.find(b => b.id === blockId);
+    const oldDur   = oldBlock?.duration_minutes || 0;
+    const updated  = await api('PATCH', `/api/time-blocks/${blockId}`, { duration_minutes: durMins });
     state.timeBlocks = state.timeBlocks.map(b => b.id === blockId ? updated : b);
+    const task = state.tasks.find(t => t.id === updated.task_id);
+    if (task) task.scheduled_minutes = Math.max(0, (task.scheduled_minutes || 0) - oldDur + durMins);
     renderCalendarDay();
   } catch(err) { toast(err.message); renderCalendarDay(); }
 }
 async function calDayDeleteBlock(blockId) {
+  const b = state.timeBlocks.find(x => x.id === blockId);
   await api('DELETE', `/api/time-blocks/${blockId}`);
-  state.timeBlocks = state.timeBlocks.filter(b => b.id !== blockId);
+  state.timeBlocks = state.timeBlocks.filter(x => x.id !== blockId);
+  if (b) {
+    const task = state.tasks.find(t => t.id === b.task_id);
+    if (task) task.scheduled_minutes = Math.max(0, (task.scheduled_minutes || 0) - b.duration_minutes);
+  }
   closeBlockEdit(); renderCalendarDay(); toast('Block deleted');
 }
 async function calDayLogBlock(blockId) {
@@ -2651,6 +2682,50 @@ function openBlockEdit(blockId) {
 }
 function closeBlockEdit() { document.getElementById('block-edit-modal').classList.remove('open'); blockEditId = null; }
 document.getElementById('block-edit-modal').addEventListener('click', e => { if (e.target===e.currentTarget) closeBlockEdit(); });
+
+// Quick-block modal: shown after dropping a task onto the day grid
+function defaultBlockDur(task) {
+  const remaining = Math.max(0, (task?.estimated_minutes || 0) - (task?.scheduled_minutes || 0));
+  return remaining > 0 ? Math.max(15, Math.min(remaining, 60)) : 30;
+}
+function openQuickBlock(taskId, date, time) {
+  pendingDropDate = date; pendingDropTime = time; pendingDropTaskId = taskId;
+  const task = state.tasks.find(t => t.id === taskId);
+  const estimated  = task?.estimated_minutes || 0;
+  const scheduled  = task?.scheduled_minutes || 0;
+  const remaining  = Math.max(0, estimated - scheduled);
+  document.getElementById('quick-block-title').textContent = task?.title || '';
+  const remEl = document.getElementById('quick-block-remaining');
+  if (estimated > 0) {
+    remEl.textContent = remaining > 0
+      ? `${fmtMins(remaining)} remaining of ${fmtMins(estimated)} estimated`
+      : `Fully scheduled (${fmtMins(estimated)} estimated) — adding extra block`;
+  } else {
+    remEl.textContent = '';
+  }
+  document.getElementById('quick-block-duration').value = defaultBlockDur(task);
+  document.getElementById('quick-block-modal').classList.add('open');
+  setTimeout(() => document.getElementById('quick-block-duration').select(), 50);
+}
+function cancelQuickBlock() {
+  document.getElementById('quick-block-modal').classList.remove('open');
+  pendingDropDate = pendingDropTime = pendingDropTaskId = null;
+}
+async function confirmQuickBlock() {
+  const dur = parseInt(document.getElementById('quick-block-duration').value, 10);
+  if (!dur || dur < 1) return;
+  const date = pendingDropDate, time = pendingDropTime, taskId = pendingDropTaskId;
+  document.getElementById('quick-block-modal').classList.remove('open');
+  pendingDropDate = pendingDropTime = pendingDropTaskId = null;
+  if (gcalBusyConflict(date, time, dur)) {
+    toast('That time is busy on your Google Calendar');
+    return;
+  }
+  await calDayCreateBlock(taskId, date, time, dur);
+  refreshGoogleEventsDay(date);
+}
+document.getElementById('quick-block-modal').addEventListener('click', e => { if (e.target===e.currentTarget) cancelQuickBlock(); });
+document.getElementById('quick-block-duration').addEventListener('keydown', e => { if (e.key === 'Enter') confirmQuickBlock(); });
 
 async function saveBlockEdit() {
   const date     = document.getElementById('block-edit-date').value;

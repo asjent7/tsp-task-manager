@@ -181,6 +181,10 @@ app.get('/api/tasks', (req, res) => {
   const flMap  = {};
   flRows.forEach(r => { (flMap[r.task_id] = flMap[r.task_id] || []).push(r.focus_list_id); });
 
+  const schedRows = db.prepare('SELECT task_id, SUM(duration_minutes) AS total FROM time_blocks GROUP BY task_id').all();
+  const schedMap  = {};
+  schedRows.forEach(r => { schedMap[r.task_id] = r.total; });
+
   res.json(tasks.map(t => ({
     ...t,
     subtask_count: cmap[t.id]?.total || 0,
@@ -188,6 +192,7 @@ app.get('/api/tasks', (req, res) => {
     meeting_notes_count:      mnCounts[t.id]?.cnt        || 0,
     meeting_notes_latest_url: mnCounts[t.id]?.latest_url || null,
     focus_list_ids: flMap[t.id] || [],
+    scheduled_minutes: schedMap[t.id] || 0,
   })));
 });
 
