@@ -111,6 +111,17 @@ db.exec(`
     start_time       TEXT NOT NULL,
     duration_minutes INTEGER NOT NULL DEFAULT 60,
     logged           INTEGER NOT NULL DEFAULT 0,
+    parent_category_block_id INTEGER,
+    created_at       TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+
+  CREATE TABLE IF NOT EXISTS category_blocks (
+    id               INTEGER PRIMARY KEY AUTOINCREMENT,
+    label            TEXT NOT NULL,
+    category         TEXT NOT NULL,
+    date             TEXT NOT NULL,
+    start_time       TEXT NOT NULL,
+    duration_minutes INTEGER NOT NULL DEFAULT 60,
     created_at       TEXT NOT NULL DEFAULT (datetime('now'))
   );
 
@@ -131,6 +142,7 @@ try { db.prepare('ALTER TABLE tasks ADD COLUMN blocked_by_task_id INTEGER').run(
 try { db.prepare('ALTER TABLE focus_lists ADD COLUMN max_tasks INTEGER NOT NULL DEFAULT 7').run(); } catch(e) {}
 try { db.prepare('ALTER TABLE focus_lists ADD COLUMN max_hours INTEGER NOT NULL DEFAULT 40').run(); } catch(e) {}
 try { db.prepare('ALTER TABLE task_meeting_notes ADD COLUMN label TEXT').run(); } catch(e) {}
+try { db.prepare('ALTER TABLE time_blocks ADD COLUMN parent_category_block_id INTEGER').run(); } catch(e) {}
 
 // Default settings
 [['daily_capacity_minutes','480'],['day_start_hour','7'],['day_end_hour','21']]
@@ -589,14 +601,15 @@ const blockWithTask = (id) => db.prepare(`
 `).get(id);
 
 app.get('/api/time-blocks', (req, res) => {
-  const { date } = req.query;
-  if (!date) return res.status(400).json({ error: 'date is required' });
-  res.json(db.prepare(`
-    SELECT tb.*, t.title AS task_title, t.category AS task_category,
-           t.priority AS task_priority, t.status AS task_status
-    FROM time_blocks tb JOIN tasks t ON tb.task_id = t.id
-    WHERE tb.date = ? ORDER BY tb.start_time ASC
-  `).all(date));
+  const { date, from, to } = req.query;
+  const sel = `SELECT tb.*, t.title AS task_title, t.category AS task_category,
+               t.priority AS task_priority, t.status AS task_status
+               FROM time_blocks tb JOIN tasks t ON tb.task_id = t.id`;
+  if (from && to) {
+    return res.json(db.prepare(sel + ' WHERE tb.date >= ? AND tb.date <= ? ORDER BY tb.date ASC, tb.start_time ASC').all(from, to));
+  }
+  if (!date) return res.status(400).json({ error: 'date or from/to required' });
+  res.json(db.prepare(sel + ' WHERE tb.date = ? ORDER BY tb.start_time ASC').all(date));
 });
 
 app.post('/api/time-blocks', (req, res) => {
@@ -645,6 +658,39 @@ app.post('/api/time-blocks/:id/log', (req, res) => {
     return db.prepare('SELECT * FROM time_logs WHERE id=?').get(r.lastInsertRowid);
   })();
   res.status(201).json({ time_log: log });
+});
+
+// ── Category Blocks ───────────────────────────────────────────────────────────
+
+app.get('/api/category-blocks', (req, res) => {
+  const { date, from, to } = req.query;
+  if (from && to) return res.json(db.prepare('SELECT * FROM category_blocks WHERE date >= ? AND date <= ? ORDER BY date, start_time').all(from, to));
+  if (date)       return res.json(db.prepare('SELECT * FROM category_blocks WHERE date = ? ORDER BY start_time').all(date));
+  res.status(400).json({ error: 'date or from/to required' });
+});
+
+app.post('/api/category-blocks', (req, res) => {
+  const { label, category, date, start_time, duration_minutes = 60 } = req.body;
+  if (!label || !category || !date || !start_time) return res.status(400).json({ error: 'label, category, date, start_time required' });
+  const r = db.prepare('INSERT INTO category_blocks (label, category, date, start_time, duration_minutes) VALUES (?,?,?,?,?)').run(label, category, date, start_time, Number(duration_minutes));
+  res.status(201).json(db.prepare('SELECT * FROM category_blocks WHERE id = ?').get(r.lastInsertRowid));
+});
+
+app.patch('/api/category-blocks/:id', (req, res) => {
+  const cb = db.prepare('SELECT * FROM category_blocks WHERE id = ?').get(req.params.id);
+  if (!cb) return res.status(404).json({ error: 'Not found' });
+  const label            = req.body.label            ?? cb.label;
+  const category         = req.body.category         ?? cb.category;
+  const date             = req.body.date             ?? cb.date;
+  const start_time       = req.body.start_time       ?? cb.start_time;
+  const duration_minutes = req.body.duration_minutes !== undefined ? Number(req.body.duration_minutes) : cb.duration_minutes;
+  db.prepare('UPDATE category_blocks SET label=?,category=?,date=?,start_time=?,duration_minutes=? WHERE id=?').run(label, category, date, start_time, duration_minutes, req.params.id);
+  res.json(db.prepare('SELECT * FROM category_blocks WHERE id = ?').get(req.params.id));
+});
+
+app.delete('/api/category-blocks/:id', (req, res) => {
+  if (!db.prepare('DELETE FROM category_blocks WHERE id=?').run(req.params.id).changes) return res.status(404).json({ error: 'Not found' });
+  res.status(204).end();
 });
 
 // ── Templates ─────────────────────────────────────────────────────────────────
