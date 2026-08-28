@@ -2385,6 +2385,9 @@ function renderCalendarDay() {
 function renderDayPanel() {
   const el = document.querySelector('.cal-day-panel');
   if (!el) return;
+  const searchWasFocused = document.activeElement?.id === 'cal-panel-search-input';
+  const searchSelStart   = document.activeElement?.selectionStart;
+  const searchSelEnd     = document.activeElement?.selectionEnd;
   const today = state.calDayStr;
   const eowDate = new Date(today + 'T00:00:00');
   eowDate.setDate(eowDate.getDate() + 6);
@@ -2419,7 +2422,7 @@ function renderDayPanel() {
     Tasks <span style="font-weight:400;color:var(--muted);">(${tasks.length})</span>
   </div>
   <div style="display:flex;flex-direction:column;gap:4px;margin-bottom:8px;position:sticky;top:28px;background:var(--surface);padding-bottom:4px;">
-    <input type="text" placeholder="Search tasks…" value="${esc(calPanelSearch)}" oninput="setDayPanelFilter('search',this.value)" style="width:100%;font-size:11px;padding:3px 5px;border:1px solid var(--border);border-radius:4px;background:var(--bg);color:var(--text);box-sizing:border-box;">
+    <input type="text" id="cal-panel-search-input" placeholder="Search tasks…" value="${esc(calPanelSearch)}" oninput="setDayPanelFilter('search',this.value)" style="width:100%;font-size:11px;padding:3px 5px;border:1px solid var(--border);border-radius:4px;background:var(--bg);color:var(--text);box-sizing:border-box;">
     <div style="display:flex;gap:4px;">
       <select onchange="setDayPanelFilter('priority',this.value)" style="${SEL}">
         <option value="" ${!calPanelPriority?'selected':''}>All priority</option>
@@ -2471,6 +2474,10 @@ function renderDayPanel() {
   }
 
   el.innerHTML = html;
+  if (searchWasFocused) {
+    const inp = document.getElementById('cal-panel-search-input');
+    if (inp) { inp.focus(); inp.setSelectionRange(searchSelStart, searchSelEnd); }
+  }
 }
 
 function setDayPanelFilter(type, val) {
