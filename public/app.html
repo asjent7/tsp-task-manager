@@ -2968,7 +2968,7 @@ async function saveCatBlock() {
     } else {
       const created = await api('POST', '/api/category-blocks', { label, category, date, start_time, duration_minutes });
       if (date === state.calDayStr) state.categoryBlocks.push(created);
-      if (state.weekCategoryBlocks[date]) state.weekCategoryBlocks[date].push(created);
+      (state.weekCategoryBlocks[date] = state.weekCategoryBlocks[date] || []).push(created);
     }
     closeCatBlockModal();
     if (state.calMode === 'day') renderCalendarDay();

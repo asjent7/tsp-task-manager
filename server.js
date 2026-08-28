@@ -122,6 +122,7 @@ db.exec(`
     date             TEXT NOT NULL,
     start_time       TEXT NOT NULL,
     duration_minutes INTEGER NOT NULL DEFAULT 60,
+    google_event_id  TEXT,
     created_at       TEXT NOT NULL DEFAULT (datetime('now'))
   );
 
@@ -143,6 +144,7 @@ try { db.prepare('ALTER TABLE focus_lists ADD COLUMN max_tasks INTEGER NOT NULL 
 try { db.prepare('ALTER TABLE focus_lists ADD COLUMN max_hours INTEGER NOT NULL DEFAULT 40').run(); } catch(e) {}
 try { db.prepare('ALTER TABLE task_meeting_notes ADD COLUMN label TEXT').run(); } catch(e) {}
 try { db.prepare('ALTER TABLE time_blocks ADD COLUMN parent_category_block_id INTEGER').run(); } catch(e) {}
+try { db.prepare('ALTER TABLE category_blocks ADD COLUMN google_event_id TEXT').run(); } catch(e) {}
 
 // Default settings
 [['daily_capacity_minutes','480'],['day_start_hour','7'],['day_end_hour','21']]
@@ -669,14 +671,20 @@ app.get('/api/category-blocks', (req, res) => {
   res.status(400).json({ error: 'date or from/to required' });
 });
 
-app.post('/api/category-blocks', (req, res) => {
+app.post('/api/category-blocks', async (req, res) => {
   const { label, category, date, start_time, duration_minutes = 60 } = req.body;
   if (!label || !category || !date || !start_time) return res.status(400).json({ error: 'label, category, date, start_time required' });
   const r = db.prepare('INSERT INTO category_blocks (label, category, date, start_time, duration_minutes) VALUES (?,?,?,?,?)').run(label, category, date, start_time, Number(duration_minutes));
-  res.status(201).json(db.prepare('SELECT * FROM category_blocks WHERE id = ?').get(r.lastInsertRowid));
+  const created = db.prepare('SELECT * FROM category_blocks WHERE id = ?').get(r.lastInsertRowid);
+  const eventId = await syncCatBlockToGoogle(created, null);
+  if (eventId) {
+    db.prepare('UPDATE category_blocks SET google_event_id = ? WHERE id = ?').run(eventId, created.id);
+    created.google_event_id = eventId;
+  }
+  res.status(201).json(created);
 });
 
-app.patch('/api/category-blocks/:id', (req, res) => {
+app.patch('/api/category-blocks/:id', async (req, res) => {
   const cb = db.prepare('SELECT * FROM category_blocks WHERE id = ?').get(req.params.id);
   if (!cb) return res.status(404).json({ error: 'Not found' });
   const label            = req.body.label            ?? cb.label;
@@ -685,11 +693,15 @@ app.patch('/api/category-blocks/:id', (req, res) => {
   const start_time       = req.body.start_time       ?? cb.start_time;
   const duration_minutes = req.body.duration_minutes !== undefined ? Number(req.body.duration_minutes) : cb.duration_minutes;
   db.prepare('UPDATE category_blocks SET label=?,category=?,date=?,start_time=?,duration_minutes=? WHERE id=?').run(label, category, date, start_time, duration_minutes, req.params.id);
+  await syncCatBlockToGoogle({ label, category, date, start_time, duration_minutes }, cb.google_event_id);
   res.json(db.prepare('SELECT * FROM category_blocks WHERE id = ?').get(req.params.id));
 });
 
-app.delete('/api/category-blocks/:id', (req, res) => {
-  if (!db.prepare('DELETE FROM category_blocks WHERE id=?').run(req.params.id).changes) return res.status(404).json({ error: 'Not found' });
+app.delete('/api/category-blocks/:id', async (req, res) => {
+  const cb = db.prepare('SELECT google_event_id FROM category_blocks WHERE id = ?').get(req.params.id);
+  if (!cb) return res.status(404).json({ error: 'Not found' });
+  db.prepare('DELETE FROM category_blocks WHERE id=?').run(req.params.id);
+  if (cb.google_event_id) deleteGoogleCatBlockEvent(cb.google_event_id);
   res.status(204).end();
 });
 
@@ -761,12 +773,66 @@ function httpsReq(options, body) {
     const req = https.request(options, res => {
       let data = '';
       res.on('data', c => { data += c; });
-      res.on('end', () => { try { resolve(JSON.parse(data)); } catch(e) { reject(e); } });
+      res.on('end', () => {
+        if (!data) { resolve(null); return; }
+        try { resolve(JSON.parse(data)); } catch(e) { reject(e); }
+      });
     });
     req.on('error', reject);
     if (body) req.write(body);
     req.end();
   });
+}
+
+function toRFC3339Local(d) {
+  const y  = d.getFullYear();
+  const mo = String(d.getMonth() + 1).padStart(2, '0');
+  const dy = String(d.getDate()).padStart(2, '0');
+  const h  = String(d.getHours()).padStart(2, '0');
+  const mi = String(d.getMinutes()).padStart(2, '0');
+  const off = -d.getTimezoneOffset();
+  const oh  = String(Math.floor(Math.abs(off) / 60)).padStart(2, '0');
+  const om  = String(Math.abs(off) % 60).padStart(2, '0');
+  return `${y}-${mo}-${dy}T${h}:${mi}:00${off >= 0 ? '+' : '-'}${oh}:${om}`;
+}
+
+async function syncCatBlockToGoogle(cb, existingEventId) {
+  const auth = db.prepare('SELECT refresh_token FROM google_auth WHERE id = 1').get();
+  if (!auth) return null;
+  try {
+    const token   = await googleAccessToken(auth.refresh_token);
+    const startD  = new Date(`${cb.date}T${cb.start_time}:00`);
+    const endD    = new Date(startD.getTime() + Number(cb.duration_minutes) * 60000);
+    const body    = JSON.stringify({
+      summary:      `Busy — ${cb.label}`,
+      start:        { dateTime: toRFC3339Local(startD) },
+      end:          { dateTime: toRFC3339Local(endD) },
+      transparency: 'opaque'
+    });
+    const headers = { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) };
+    let data;
+    if (existingEventId) {
+      data = await httpsReq({ hostname: 'www.googleapis.com', path: `/calendar/v3/calendars/primary/events/${existingEventId}`, method: 'PUT', headers }, body);
+    } else {
+      data = await httpsReq({ hostname: 'www.googleapis.com', path: '/calendar/v3/calendars/primary/events', method: 'POST', headers }, body);
+    }
+    if (data?.error) throw new Error(data.error.message);
+    return data?.id || null;
+  } catch(e) {
+    console.error('Google Calendar cat-block sync error:', e.message);
+    return null;
+  }
+}
+
+async function deleteGoogleCatBlockEvent(eventId) {
+  const auth = db.prepare('SELECT refresh_token FROM google_auth WHERE id = 1').get();
+  if (!auth || !eventId) return;
+  try {
+    const token = await googleAccessToken(auth.refresh_token);
+    await httpsReq({ hostname: 'www.googleapis.com', path: `/calendar/v3/calendars/primary/events/${eventId}`, method: 'DELETE', headers: { Authorization: 'Bearer ' + token } });
+  } catch(e) {
+    console.error('Google Calendar cat-block delete error:', e.message);
+  }
 }
 
 async function googleAccessToken(refreshToken) {
@@ -792,7 +858,7 @@ app.get('/api/auth/google', (req, res) => {
     client_id:     process.env.GOOGLE_CLIENT_ID,
     redirect_uri:  GOOGLE_REDIRECT_URI,
     response_type: 'code',
-    scope:         'https://www.googleapis.com/auth/calendar.readonly',
+    scope:         'https://www.googleapis.com/auth/calendar.events https://www.googleapis.com/auth/calendar.readonly',
     access_type:   'offline',
     prompt:        'consent'
   });
