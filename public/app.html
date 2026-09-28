@@ -417,6 +417,10 @@
     .proj-card-bar-wrap { height: 6px; background: #e2e8f0; border-radius: 100px; overflow: hidden; }
     .proj-card-bar-fill { height: 100%; background: var(--accent); border-radius: 100px; }
     .proj-card-bar-label { font-size: 11px; color: var(--muted); margin-top: 4px; }
+    .proj-type-section { margin-bottom: 28px; }
+    .proj-type-label { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); margin-bottom: 14px; padding-bottom: 7px; border-bottom: 2px solid var(--border); }
+    .proj-subsection-label { font-size: 11px; font-weight: 600; color: #475569; margin: 16px 0 8px; }
+    .proj-div-tag { font-size: 9px; font-weight: 500; background: rgba(255,255,255,.1); color: #64748b; border-radius: 3px; padding: 1px 4px; white-space: nowrap; flex-shrink: 0; }
   </style>
 </head>
 <body>
@@ -744,6 +748,17 @@
     <h3>New Project</h3>
     <div class="modal-sub">Creates a blank project</div>
     <input type="text" id="new-proj-name" placeholder="Project name">
+    <select id="new-proj-type" onchange="toggleNewProjDivision()">
+      <option value="professional">Professional</option>
+      <option value="personal">Personal</option>
+    </select>
+    <select id="new-proj-division">
+      <option value="">No division</option>
+      <option value="TSP">TSP</option>
+      <option value="Legendary Stages">Legendary Stages</option>
+      <option value="Xtrava">Xtrava</option>
+      <option value="WOW Speakers">WOW Speakers</option>
+    </select>
     <div class="modal-btns">
       <button class="btn btn-ghost btn-sm" onclick="closeAddProject()">Cancel</button>
       <button class="btn btn-primary btn-sm" onclick="createProject()">Create</button>
@@ -751,15 +766,26 @@
   </div>
 </div>
 
-<!-- Rename Project Modal -->
+<!-- Edit Project Modal -->
 <div class="overlay" id="rename-proj-modal">
   <div class="modal">
-    <h3>Rename Project</h3>
+    <h3>Edit Project</h3>
     <div class="modal-sub">Updates all tasks assigned to this project</div>
-    <input type="text" id="rename-proj-input" placeholder="New name">
+    <input type="text" id="rename-proj-input" placeholder="Project name">
+    <select id="edit-proj-type" onchange="toggleEditProjDivision()">
+      <option value="professional">Professional</option>
+      <option value="personal">Personal</option>
+    </select>
+    <select id="edit-proj-division">
+      <option value="">No division</option>
+      <option value="TSP">TSP</option>
+      <option value="Legendary Stages">Legendary Stages</option>
+      <option value="Xtrava">Xtrava</option>
+      <option value="WOW Speakers">WOW Speakers</option>
+    </select>
     <div class="modal-btns">
       <button class="btn btn-ghost btn-sm" onclick="closeRenameProject()">Cancel</button>
-      <button class="btn btn-primary btn-sm" onclick="renameProject()">Rename</button>
+      <button class="btn btn-primary btn-sm" onclick="renameProject()">Save</button>
     </div>
   </div>
 </div>
@@ -1240,10 +1266,10 @@ function renderSidebar() {
 
   document.getElementById('proj-nav').innerHTML = state.projects.map(p => `
     <div class="nav-item" data-view="project:${p.id}" onclick="setView('project:${p.id}')">
-      <span class="nav-label"><span class="nav-icon">📁</span> ${esc(p.name)}</span>
+      <span class="nav-label"><span class="nav-icon">📁</span> ${esc(p.name)}${p.division ? ` <span class="proj-div-tag">${esc(p.division)}</span>` : ''}</span>
       <div class="nav-right">
         <span class="nav-count">${counts['proj:'+p.id] || 0}</span>
-        <button class="proj-action-btn" onclick="event.stopPropagation();openRenameProject(${p.id},'${esc(p.name)}')" title="Rename">✏️</button>
+        <button class="proj-action-btn" onclick="event.stopPropagation();openRenameProject(${p.id},'${esc(p.name)}')" title="Edit">✏️</button>
         <button class="proj-action-btn" onclick="event.stopPropagation();openMergeProject(${p.id},'${esc(p.name)}')" title="Merge into…">⇒</button>
       </div>
     </div>`).join('');
@@ -1411,7 +1437,7 @@ function renderAllProjects() {
   const q       = rawQ.toLowerCase().trim();
   const matched = state.projects.filter(p => !q || p.name.toLowerCase().includes(q));
 
-  const cards = matched.map(p => {
+  function makeCard(p) {
     const all  = state.tasks.filter(t => t.project === p.name);
     const done = all.filter(t => t.status === 'complete').length;
     const tot  = all.length;
@@ -1427,7 +1453,7 @@ function renderAllProjects() {
           <span class="proj-card-name" title="${esc(p.name)}">${esc(p.name)}</span>
         </div>
         <div class="proj-card-actions">
-          <button class="proj-card-btn" onclick="event.stopPropagation();openRenameProject(${p.id},'${esc(p.name)}')" title="Rename">✏️</button>
+          <button class="proj-card-btn" onclick="event.stopPropagation();openRenameProject(${p.id},'${esc(p.name)}')" title="Edit">✏️</button>
           <button class="proj-card-btn" onclick="event.stopPropagation();openMergeProject(${p.id},'${esc(p.name)}')" title="Delete / merge into…">⇒</button>
         </div>
       </div>
@@ -1437,11 +1463,38 @@ function renderAllProjects() {
         <div class="proj-card-bar-label">${done}/${tot} complete · ${pct}%</div>
       </div>
     </div>`;
-  }).join('');
+  }
 
-  const body = matched.length
-    ? `<div class="proj-card-grid">${cards}</div>`
-    : `<div class="empty-state"><div class="icon">📁</div><p>${q ? 'No projects match "'+esc(rawQ)+'"' : 'No projects yet'}</p></div>`;
+  function makeGrid(projects) {
+    return `<div class="proj-card-grid">${projects.map(makeCard).join('')}</div>`;
+  }
+
+  const DIVISIONS = ['TSP', 'Legendary Stages', 'Xtrava', 'WOW Speakers'];
+  const professional = matched.filter(p => (p.type || 'professional') === 'professional');
+  const personal     = matched.filter(p => p.type === 'personal');
+
+  let body = '';
+
+  if (professional.length) {
+    body += `<div class="proj-type-section"><div class="proj-type-label">Professional</div>`;
+    for (const div of DIVISIONS) {
+      const group = professional.filter(p => p.division === div).sort((a,b) => a.name.localeCompare(b.name));
+      if (!group.length) continue;
+      body += `<div class="proj-subsection-label">${esc(div)}</div>${makeGrid(group)}`;
+    }
+    const unassigned = professional.filter(p => !p.division).sort((a,b) => a.name.localeCompare(b.name));
+    if (unassigned.length) body += `<div class="proj-subsection-label">Unassigned</div>${makeGrid(unassigned)}`;
+    body += `</div>`;
+  }
+
+  if (personal.length) {
+    const sorted = [...personal].sort((a,b) => a.name.localeCompare(b.name));
+    body += `<div class="proj-type-section"><div class="proj-type-label">Personal</div>${makeGrid(sorted)}</div>`;
+  }
+
+  if (!matched.length) {
+    body = `<div class="empty-state"><div class="icon">📁</div><p>${q ? 'No projects match "'+esc(rawQ)+'"' : 'No projects yet'}</p></div>`;
+  }
 
   document.getElementById('task-list').innerHTML = `
     <div class="proj-grid-header">
@@ -2045,8 +2098,24 @@ async function deleteSubtask(id) {
 
 // ── Projects ──────────────────────────────────────────────────────────────────
 
+function toggleNewProjDivision() {
+  const isPro = document.getElementById('new-proj-type').value === 'professional';
+  const div   = document.getElementById('new-proj-division');
+  div.style.display = isPro ? '' : 'none';
+  if (!isPro) div.value = '';
+}
+function toggleEditProjDivision() {
+  const isPro = document.getElementById('edit-proj-type').value === 'professional';
+  const div   = document.getElementById('edit-proj-division');
+  div.style.display = isPro ? '' : 'none';
+  if (!isPro) div.value = '';
+}
+
 function openAddProject() {
-  document.getElementById('new-proj-name').value = '';
+  document.getElementById('new-proj-name').value    = '';
+  document.getElementById('new-proj-type').value    = 'professional';
+  document.getElementById('new-proj-division').value = '';
+  document.getElementById('new-proj-division').style.display = '';
   document.getElementById('proj-modal').classList.add('open');
   setTimeout(() => document.getElementById('new-proj-name').focus(), 50);
 }
@@ -2055,20 +2124,26 @@ document.getElementById('new-proj-name').addEventListener('keydown', e => { if (
 document.getElementById('proj-modal').addEventListener('click', e => { if (e.target===e.currentTarget) closeAddProject(); });
 
 async function createProject() {
-  const name = document.getElementById('new-proj-name').value.trim();
+  const name     = document.getElementById('new-proj-name').value.trim();
   if (!name) return;
+  const type     = document.getElementById('new-proj-type').value;
+  const division = type === 'professional' ? (document.getElementById('new-proj-division').value || null) : null;
   try {
-    const proj = await api('POST', '/api/projects', { name });
+    const proj = await api('POST', '/api/projects', { name, type, division });
     state.projects.push(proj); state.projects.sort((a,b)=>a.name.localeCompare(b.name));
-    closeAddProject(); populateProjectSelect(); renderSidebar();
+    closeAddProject(); populateProjectSelect(); renderSidebar(); renderTaskList();
     toast(`Project "${name}" created`);
   } catch(e) { toast(e.message); }
 }
 
-// Rename project
+// Edit project
 function openRenameProject(id, name) {
   renameProjId = id;
-  document.getElementById('rename-proj-input').value = name;
+  const proj = state.projects.find(p => p.id === id);
+  document.getElementById('rename-proj-input').value  = name;
+  document.getElementById('edit-proj-type').value     = proj?.type     || 'professional';
+  document.getElementById('edit-proj-division').value = proj?.division || '';
+  toggleEditProjDivision();
   document.getElementById('rename-proj-modal').classList.add('open');
   setTimeout(() => document.getElementById('rename-proj-input').focus(), 50);
 }
@@ -2079,14 +2154,16 @@ document.getElementById('rename-proj-modal').addEventListener('click', e => { if
 async function renameProject() {
   const name = document.getElementById('rename-proj-input').value.trim();
   if (!name) return;
+  const type     = document.getElementById('edit-proj-type').value;
+  const division = type === 'professional' ? (document.getElementById('edit-proj-division').value || null) : null;
   try {
-    const updated = await api('PUT', `/api/projects/${renameProjId}`, { name });
+    const updated = await api('PUT', `/api/projects/${renameProjId}`, { name, type, division });
     const oldName = state.projects.find(p => p.id === renameProjId)?.name;
     state.projects = state.projects.map(p => p.id === renameProjId ? updated : p);
     state.projects.sort((a,b) => a.name.localeCompare(b.name));
     state.tasks = state.tasks.map(t => t.project === oldName ? { ...t, project: updated.name } : t);
-    closeRenameProject(); populateProjectSelect(); renderSidebar();
-    toast(`Renamed to "${name}"`);
+    closeRenameProject(); populateProjectSelect(); renderSidebar(); renderTaskList();
+    toast(`Saved "${name}"`);
   } catch(e) { toast(e.message); }
 }
 

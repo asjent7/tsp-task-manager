@@ -145,6 +145,8 @@ try { db.prepare('ALTER TABLE focus_lists ADD COLUMN max_hours INTEGER NOT NULL 
 try { db.prepare('ALTER TABLE task_meeting_notes ADD COLUMN label TEXT').run(); } catch(e) {}
 try { db.prepare('ALTER TABLE time_blocks ADD COLUMN parent_category_block_id INTEGER').run(); } catch(e) {}
 try { db.prepare('ALTER TABLE category_blocks ADD COLUMN google_event_id TEXT').run(); } catch(e) {}
+try { db.prepare("ALTER TABLE projects ADD COLUMN type TEXT NOT NULL DEFAULT 'professional'").run(); } catch(e) {}
+try { db.prepare('ALTER TABLE projects ADD COLUMN division TEXT').run(); } catch(e) {}
 
 // Default settings
 [['daily_capacity_minutes','480'],['day_start_hour','7'],['day_end_hour','21']]
@@ -419,10 +421,10 @@ app.get('/api/projects', (req, res) => {
 });
 
 app.post('/api/projects', (req, res) => {
-  const { name } = req.body;
+  const { name, type = 'professional', division } = req.body;
   if (!name?.trim()) return res.status(400).json({ error: 'Project name is required' });
   try {
-    const result = db.prepare('INSERT INTO projects (name) VALUES (?)').run(name.trim());
+    const result = db.prepare('INSERT INTO projects (name, type, division) VALUES (?, ?, ?)').run(name.trim(), type, division || null);
     res.status(201).json(withLinks(db.prepare('SELECT * FROM projects WHERE id = ?').get(result.lastInsertRowid)));
   } catch (e) {
     if (e.message.includes('UNIQUE')) return res.status(409).json({ error: 'Project already exists' });
@@ -433,11 +435,13 @@ app.post('/api/projects', (req, res) => {
 app.put('/api/projects/:id', (req, res) => {
   const proj = db.prepare('SELECT * FROM projects WHERE id = ?').get(req.params.id);
   if (!proj) return res.status(404).json({ error: 'Project not found' });
-  const { name } = req.body;
+  const { name, type, division } = req.body;
   if (!name?.trim()) return res.status(400).json({ error: 'Project name is required' });
+  const newType     = type     !== undefined ? type     : proj.type;
+  const newDivision = division !== undefined ? (division || null) : proj.division;
   try {
     db.transaction(() => {
-      db.prepare('UPDATE projects SET name = ? WHERE id = ?').run(name.trim(), req.params.id);
+      db.prepare('UPDATE projects SET name = ?, type = ?, division = ? WHERE id = ?').run(name.trim(), newType, newDivision, req.params.id);
       db.prepare('UPDATE tasks SET project = ?, updated_at = datetime(\'now\') WHERE project = ?').run(name.trim(), proj.name);
     })();
     res.json(withLinks(db.prepare('SELECT * FROM projects WHERE id = ?').get(req.params.id)));
