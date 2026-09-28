@@ -148,6 +148,14 @@ try { db.prepare('ALTER TABLE category_blocks ADD COLUMN google_event_id TEXT').
 try { db.prepare("ALTER TABLE projects ADD COLUMN type TEXT NOT NULL DEFAULT 'professional'").run(); } catch(e) {}
 try { db.prepare('ALTER TABLE projects ADD COLUMN division TEXT').run(); } catch(e) {}
 
+// 6-stage workflow: preserve old statuses, then remap
+try { db.prepare('ALTER TABLE tasks ADD COLUMN legacy_status TEXT').run(); } catch(e) {}
+db.prepare('UPDATE tasks SET legacy_status = status WHERE legacy_status IS NULL').run();
+[['pending','new'],['needs-review','on-hold'],['blocked','on-hold']].forEach(([from, to]) => {
+  const n = db.prepare('UPDATE tasks SET status = ? WHERE status = ?').run(to, from).changes;
+  if (n > 0) console.log(`[migration] Remapped ${n} task(s) from '${from}' to '${to}'`);
+});
+
 // Default settings
 [['daily_capacity_minutes','480'],['day_start_hour','7'],['day_end_hour','21']]
   .forEach(([k,v]) => db.prepare('INSERT OR IGNORE INTO settings (key,value) VALUES (?,?)').run(k,v));
@@ -221,7 +229,7 @@ app.get('/api/tasks/:id', (req, res) => {
 app.post('/api/tasks', (req, res) => {
   const {
     title, priority = 'medium', category, project,
-    status = 'pending', due_date, estimated_minutes, notes
+    status = 'new', due_date, estimated_minutes, notes
   } = req.body;
 
   if (!title?.trim()) return res.status(400).json({ error: 'Title is required' });
@@ -761,7 +769,7 @@ app.post('/api/templates/:id/apply', (req, res) => {
     templateTasks.map(tt => {
       const r = db.prepare(`
         INSERT INTO tasks (title, priority, category, project, status, estimated_minutes, is_inbox)
-        VALUES (?, ?, ?, ?, 'pending', ?, 0)
+        VALUES (?, ?, ?, ?, 'new', ?, 0)
       `).run(tt.title, tt.priority, tt.category || null, project.trim(), tt.estimated_minutes || null);
       return db.prepare('SELECT * FROM tasks WHERE id = ?').get(r.lastInsertRowid);
     })

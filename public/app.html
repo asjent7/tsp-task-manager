@@ -9,7 +9,8 @@
 
     :root {
       --urgent: #ef4444; --high: #f97316; --medium: #3b82f6; --low: #94a3b8;
-      --status-pending: #64748b; --status-in-progress: #3b82f6;
+      --status-new: #94a3b8; --status-assigned: #60a5fa;
+      --status-pending: #94a3b8; --status-in-progress: #0ea5e9;
       --status-needs-review: #8b5cf6; --status-on-hold: #f59e0b; --status-complete: #10b981;
       --sidebar-bg: #1e293b; --sidebar-text: #94a3b8;
       --sidebar-active-bg: rgba(59,130,246,.15); --sidebar-active-text: #60a5fa;
@@ -95,8 +96,10 @@
     .pill-priority-high   { background: #fff7ed; color: var(--high); }
     .pill-priority-medium { background: #eff6ff; color: var(--accent); }
     .pill-priority-low    { background: #f8fafc; color: var(--muted); }
+    .pill-status-new           { background: #f1f5f9; color: var(--status-new); }
+    .pill-status-assigned      { background: #eff6ff; color: var(--status-assigned); }
     .pill-status-pending       { background: #f1f5f9; color: var(--status-pending); }
-    .pill-status-in-progress   { background: #eff6ff; color: var(--status-in-progress); }
+    .pill-status-in-progress   { background: #e0f2fe; color: var(--status-in-progress); }
     .pill-status-needs-review  { background: #f5f3ff; color: var(--status-needs-review); }
     .pill-status-on-hold       { background: #fffbeb; color: var(--status-on-hold); }
     .pill-status-complete      { background: #f0fdf4; color: var(--status-complete); }
@@ -421,6 +424,30 @@
     .proj-type-label { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); margin-bottom: 14px; padding-bottom: 7px; border-bottom: 2px solid var(--border); }
     .proj-subsection-label { font-size: 11px; font-weight: 600; color: #475569; margin: 16px 0 8px; }
     .proj-div-tag { font-size: 9px; font-weight: 500; background: rgba(255,255,255,.1); color: #64748b; border-radius: 3px; padding: 1px 4px; white-space: nowrap; flex-shrink: 0; }
+
+    /* ── View-mode toggle ── */
+    .view-mode-toggle { display: flex; gap: 3px; margin-left: auto; flex-shrink: 0; }
+    .view-mode-btn { background: none; border: 1px solid var(--border); border-radius: 6px; padding: 5px 11px; font-size: 12px; cursor: pointer; color: var(--muted); line-height: 1; }
+    .view-mode-btn.active { background: var(--accent); border-color: var(--accent); color: white; }
+
+    /* ── Board view ── */
+    #board-wrap { flex: 1; overflow-x: auto; overflow-y: hidden; padding: 12px 20px 16px; display: flex; gap: 10px; align-items: flex-start; }
+    .board-col { display: flex; flex-direction: column; min-width: 230px; width: 230px; background: #f1f5f9; border-radius: 8px; max-height: calc(100vh - 180px); flex-shrink: 0; }
+    .board-col-header { display: flex; align-items: center; gap: 6px; padding: 9px 11px; border-bottom: 1px solid #e2e8f0; }
+    .board-col-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+    .board-col-title { flex: 1; font-size: 12px; font-weight: 600; color: var(--text); }
+    .board-col-count { font-size: 11px; background: rgba(0,0,0,.07); color: var(--muted); border-radius: 10px; padding: 1px 6px; }
+    .board-col-body { flex: 1; overflow-y: auto; padding: 6px; display: flex; flex-direction: column; gap: 5px; }
+    .board-col.drag-over { background: #dbeafe; }
+    .board-col.drag-over .board-col-body { outline: 2px dashed #93c5fd; outline-offset: -4px; border-radius: 0 0 8px 8px; }
+    .board-card { background: white; border-radius: 6px; padding: 9px 11px; cursor: pointer; border: 1px solid #e2e8f0; transition: box-shadow .1s; user-select: none; }
+    .board-card:hover { box-shadow: 0 2px 8px rgba(0,0,0,.08); }
+    .board-card.dragging { opacity: .45; }
+    .board-card.selected { border-color: var(--accent); box-shadow: 0 0 0 2px rgba(59,130,246,.15); }
+    .board-card-title { font-size: 13px; font-weight: 500; color: var(--text); margin-bottom: 6px; line-height: 1.4; }
+    .board-card-title.done { text-decoration: line-through; color: var(--muted); }
+    .board-card-meta { display: flex; flex-wrap: wrap; gap: 3px; }
+    .board-empty { padding: 20px 8px; text-align: center; font-size: 12px; color: #94a3b8; }
   </style>
 </head>
 <body>
@@ -479,25 +506,25 @@
 
     <div class="sidebar-section">
       <div class="sidebar-label">By Status</div>
-      <div class="nav-item" data-view="status:pending" onclick="setView('status:pending')">
-        <span class="nav-label"><span class="nav-icon" style="color:#64748b;">●</span> Pending</span>
-        <span class="nav-count" id="cnt-pending">0</span>
+      <div class="nav-item" data-view="status:new" onclick="setView('status:new')">
+        <span class="nav-label"><span class="nav-icon" style="color:#94a3b8;">●</span> New</span>
+        <span class="nav-count" id="cnt-new">0</span>
+      </div>
+      <div class="nav-item" data-view="status:assigned" onclick="setView('status:assigned')">
+        <span class="nav-label"><span class="nav-icon" style="color:#60a5fa;">●</span> Assigned</span>
+        <span class="nav-count" id="cnt-assigned">0</span>
       </div>
       <div class="nav-item" data-view="status:in-progress" onclick="setView('status:in-progress')">
-        <span class="nav-label"><span class="nav-icon" style="color:#3b82f6;">●</span> In Progress</span>
+        <span class="nav-label"><span class="nav-icon" style="color:#0ea5e9;">●</span> In Progress</span>
         <span class="nav-count" id="cnt-in-progress">0</span>
-      </div>
-      <div class="nav-item" data-view="status:needs-review" onclick="setView('status:needs-review')">
-        <span class="nav-label"><span class="nav-icon" style="color:#8b5cf6;">●</span> Waiting on Someone</span>
-        <span class="nav-count" id="cnt-needs-review">0</span>
       </div>
       <div class="nav-item" data-view="status:on-hold" onclick="setView('status:on-hold')">
         <span class="nav-label"><span class="nav-icon" style="color:#f59e0b;">●</span> On Hold</span>
         <span class="nav-count" id="cnt-on-hold">0</span>
       </div>
-      <div class="nav-item" data-view="blocked" onclick="setView('blocked')">
-        <span class="nav-label"><span class="nav-icon" style="color:#92400e;">🔒</span> Blocked</span>
-        <span class="nav-count" id="cnt-blocked">0</span>
+      <div class="nav-item" data-view="status:needs-review" onclick="setView('status:needs-review')">
+        <span class="nav-label"><span class="nav-icon" style="color:#8b5cf6;">●</span> Needs Review</span>
+        <span class="nav-count" id="cnt-needs-review">0</span>
       </div>
       <div class="nav-item" data-view="status:complete" onclick="setView('status:complete')">
         <span class="nav-label"><span class="nav-icon" style="color:#10b981;">●</span> Complete</span>
@@ -542,6 +569,10 @@
   <div id="main-content">
     <div id="topbar">
       <h2 id="view-title">Inbox</h2>
+      <div id="view-mode-toggle" class="view-mode-toggle" style="display:none">
+        <button id="view-mode-list" class="view-mode-btn active" onclick="setViewMode('list')">≡ List</button>
+        <button id="view-mode-board" class="view-mode-btn" onclick="setViewMode('board')">⊞ Board</button>
+      </div>
       <div id="search-wrap">
         <span class="search-icon">⌕</span>
         <input type="text" id="search" placeholder="Search tasks…" autocomplete="off">
@@ -556,10 +587,11 @@
         </select>
         <select id="filter-status" onchange="applyFilters()">
           <option value="">All statuses</option>
-          <option value="pending">Pending</option>
+          <option value="new">New</option>
+          <option value="assigned">Assigned</option>
           <option value="in-progress">In Progress</option>
-          <option value="needs-review">Waiting on Someone</option>
           <option value="on-hold">On Hold</option>
+          <option value="needs-review">Needs Review</option>
           <option value="complete">Complete</option>
         </select>
         <select id="filter-due" onchange="applyFilters()">
@@ -596,6 +628,7 @@
     <div id="task-list-wrap">
       <div id="task-list"></div>
     </div>
+    <div id="board-wrap" style="display:none"></div>
   </div>
 
   <!-- Detail Panel -->
@@ -622,10 +655,11 @@
         <div class="field">
           <label>Status</label>
           <select id="d-status">
-            <option value="pending">Pending</option>
+            <option value="new">New</option>
+            <option value="assigned">Assigned</option>
             <option value="in-progress">In Progress</option>
-            <option value="needs-review">Waiting on Someone</option>
             <option value="on-hold">On Hold</option>
+            <option value="needs-review">Needs Review</option>
             <option value="complete">Complete</option>
           </select>
         </div>
@@ -1005,7 +1039,9 @@
 const CATEGORIES  = ['admin','ops','accounting','marketing','sales','pm','hr','personal'];
 const CAT_ICONS   = { admin:'🗂', ops:'⚙️', accounting:'💰', marketing:'📣', sales:'💼', pm:'📐', hr:'👥', personal:'🏠' };
 const CAT_COLORS  = { admin:'#6366f1', ops:'#0ea5e9', accounting:'#10b981', marketing:'#ec4899', sales:'#14b8a6', pm:'#8b5cf6', hr:'#f59e0b', personal:'#ef4444' };
-const STATUS_LABELS = { pending:'Pending', 'in-progress':'In Progress', 'needs-review':'Waiting on Someone', 'on-hold':'On Hold', complete:'Complete' };
+const STATUS_LABELS = { new:'New', assigned:'Assigned', 'in-progress':'In Progress', 'on-hold':'On Hold', 'needs-review':'Needs Review', complete:'Complete' };
+const BOARD_STAGES  = ['new','assigned','in-progress','on-hold','needs-review','complete'];
+const STAGE_COLORS  = { new:'#94a3b8', assigned:'#60a5fa', 'in-progress':'#0ea5e9', 'on-hold':'#f59e0b', 'needs-review':'#8b5cf6', complete:'#10b981' };
 const PX_PER_HOUR = 80;
 
 // ── State ─────────────────────────────────────────────────────────────────────
@@ -1039,6 +1075,7 @@ let state = {
   weekCategoryBlocks: {},  // week grid view: by date
   weekBlocks: {},          // week grid view: time blocks by date
   calWeekGridMode: true,   // true = compressed time-grid, false = task-card view
+  boardMode: false,
 };
 
 let draggedTaskId  = null;
@@ -1139,7 +1176,7 @@ function viewTitle(view) {
   if (view === 'blocked')      return 'Blocked Tasks';
   if (view === 'settings')     return 'Settings';
   const [type, val] = view.split(':');
-  if (type === 'status')   return val.replace(/-/g,' ').replace(/\b\w/g, c => c.toUpperCase());
+  if (type === 'status')   return STATUS_LABELS[val] || val.replace(/-/g,' ').replace(/\b\w/g, c => c.toUpperCase());
   if (type === 'category') return val.charAt(0).toUpperCase() + val.slice(1);
   if (type === 'project')  return state.projects.find(p => p.id == val)?.name ?? 'Project';
   if (type === 'due') {
@@ -1218,7 +1255,7 @@ function renderSidebar() {
 
   const counts = { inbox:0, all:0, blocked:0 };
   CATEGORIES.forEach(c => { counts['cat:'+c] = 0; });
-  ['pending','in-progress','needs-review','on-hold','complete'].forEach(s => { counts['status:'+s] = 0; });
+  BOARD_STAGES.forEach(s => { counts['status:'+s] = 0; });
   state.projects.forEach(p => { counts['proj:'+p.id] = 0; });
   counts['due:past-due'] = 0; counts['due:today'] = 0; counts['due:this-week'] = 0; counts['due:next-week'] = 0;
 
@@ -1249,12 +1286,11 @@ function renderSidebar() {
   document.getElementById('cnt-inbox').textContent        = counts.inbox;
   document.getElementById('cnt-all').textContent          = counts.all;
   document.getElementById('cnt-all-projects').textContent = state.projects.length;
-  document.getElementById('cnt-blocked').textContent      = counts.blocked;
   document.getElementById('cnt-past-due').textContent = counts['due:past-due'];
   document.getElementById('cnt-today').textContent    = counts['due:today'];
   document.getElementById('cnt-this-week').textContent = counts['due:this-week'];
   document.getElementById('cnt-next-week').textContent = counts['due:next-week'];
-  ['pending','in-progress','needs-review','on-hold','complete'].forEach(s => {
+  BOARD_STAGES.forEach(s => {
     document.getElementById('cnt-'+s).textContent = counts['status:'+s] || 0;
   });
 
@@ -1335,12 +1371,20 @@ function setView(view) {
     if (_proj) state.filters.project = _proj.name;
   }
 
+  state.boardMode = false;
   const isCalendar    = view === 'calendar';
   const isSettings    = view === 'settings';
   const isAllProjects = view === 'all-projects';
-  document.getElementById('search-wrap').style.display   = (isCalendar || isSettings || isAllProjects) ? 'none' : '';
-  document.getElementById('filter-bar').style.display    = (isCalendar || isSettings || isAllProjects) ? 'none' : '';
-  document.getElementById('quick-add-bar').style.display = (isCalendar || isSettings || isAllProjects) ? 'none' : '';
+  const isListable    = !isCalendar && !isSettings && !isAllProjects;
+  document.getElementById('search-wrap').style.display   = isListable ? '' : 'none';
+  document.getElementById('filter-bar').style.display    = isListable ? '' : 'none';
+  document.getElementById('quick-add-bar').style.display = isListable ? '' : 'none';
+  const toggle = document.getElementById('view-mode-toggle');
+  toggle.style.display = isListable ? '' : 'none';
+  document.getElementById('view-mode-list').classList.toggle('active', true);
+  document.getElementById('view-mode-board').classList.toggle('active', false);
+  document.getElementById('task-list-wrap').style.display = '';
+  document.getElementById('board-wrap').style.display = 'none';
 
   document.getElementById('view-title').textContent = viewTitle(view);
   if (view === 'calendar') startGcalRefresh(); else stopGcalRefresh();
@@ -1358,7 +1402,7 @@ function applyFilters() {
   state.filters.project  = document.getElementById('filter-project').value;
   document.getElementById('custom-date-range').classList.toggle('visible', state.filters.due === 'custom');
   renderSidebar();
-  renderTaskList();
+  if (state.boardMode) renderBoard(); else renderTaskList();
 }
 
 function getVisibleTasks() {
@@ -1512,10 +1556,111 @@ function renderAllProjects() {
   if (next && rawQ) { next.focus(); next.setSelectionRange(next.value.length, next.value.length); }
 }
 
+// ── Board View ────────────────────────────────────────────────────────────────
+
+let boardDraggedId = null;
+
+function setViewMode(mode) {
+  state.boardMode = (mode === 'board');
+  document.getElementById('view-mode-list').classList.toggle('active', !state.boardMode);
+  document.getElementById('view-mode-board').classList.toggle('active',  state.boardMode);
+  document.getElementById('task-list-wrap').style.display = state.boardMode ? 'none' : '';
+  document.getElementById('board-wrap').style.display     = state.boardMode ? '' : 'none';
+  if (state.boardMode) renderBoard(); else renderTaskList();
+}
+
+function renderBoard() {
+  const tasks = getVisibleTasks();
+  const byCols = {};
+  BOARD_STAGES.forEach(s => { byCols[s] = []; });
+  tasks.forEach(t => {
+    const bucket = byCols[t.status] ? t.status : 'new';
+    byCols[bucket].push(t);
+  });
+
+  document.getElementById('board-wrap').innerHTML = BOARD_STAGES.map(stage => {
+    const cards = byCols[stage];
+    const label = STATUS_LABELS[stage];
+    const color = STAGE_COLORS[stage];
+    const cardsHtml = cards.length
+      ? cards.map(t => {
+          const overdue = isOverdue(t.due_date) && t.status !== 'complete';
+          const badge   = t.subtask_count ? `<span class="subtask-badge">${t.subtask_done||0}/${t.subtask_count}</span>` : '';
+          return `<div class="board-card${t.id===state.selectedId?' selected':''}"
+                       data-id="${t.id}" draggable="true"
+                       ondragstart="boardDragStart(event,${t.id})"
+                       ondragend="boardDragEnd(event)"
+                       onclick="openDetail(${t.id})">
+            <div class="board-card-title${t.status==='complete'?' done':''}">${esc(t.title)}</div>
+            <div class="board-card-meta">
+              <span class="pill pill-priority-${t.priority}">${t.priority}</span>
+              ${t.category ? `<span class="pill pill-cat">${t.category}</span>` : ''}
+              ${t.project  ? `<span class="pill pill-proj">${esc(t.project)}</span>` : ''}
+              ${t.due_date ? `<span class="${overdue?'overdue':''}">Due ${fmtDate(t.due_date)}</span>` : ''}
+              ${badge}
+            </div>
+          </div>`;
+        }).join('')
+      : `<div class="board-empty">Empty</div>`;
+
+    return `<div class="board-col" data-stage="${stage}"
+                 ondragover="boardDragOver(event)"
+                 ondragleave="boardDragLeave(event)"
+                 ondrop="boardDrop(event,'${stage}')">
+      <div class="board-col-header">
+        <div class="board-col-dot" style="background:${color}"></div>
+        <span class="board-col-title">${label}</span>
+        <span class="board-col-count">${cards.length}</span>
+      </div>
+      <div class="board-col-body">${cardsHtml}</div>
+    </div>`;
+  }).join('');
+}
+
+function boardDragStart(e, taskId) {
+  boardDraggedId = taskId;
+  e.dataTransfer.effectAllowed = 'move';
+  setTimeout(() => { const el = document.querySelector(`.board-card[data-id="${taskId}"]`); if (el) el.classList.add('dragging'); }, 0);
+}
+
+function boardDragEnd() {
+  boardDraggedId = null;
+  document.querySelectorAll('.board-card.dragging').forEach(el => el.classList.remove('dragging'));
+  document.querySelectorAll('.board-col.drag-over').forEach(el => el.classList.remove('drag-over'));
+}
+
+function boardDragOver(e) {
+  e.preventDefault();
+  e.dataTransfer.dropEffect = 'move';
+  e.currentTarget.closest('.board-col').classList.add('drag-over');
+}
+
+function boardDragLeave(e) {
+  const col = e.currentTarget.closest('.board-col');
+  if (!col.contains(e.relatedTarget)) col.classList.remove('drag-over');
+}
+
+async function boardDrop(e, stage) {
+  e.preventDefault();
+  e.currentTarget.closest('.board-col').classList.remove('drag-over');
+  if (!boardDraggedId) return;
+  const id = boardDraggedId;
+  boardDraggedId = null;
+  const task = state.tasks.find(t => t.id === id);
+  if (!task || task.status === stage) return;
+  try {
+    await api('PUT', `/api/tasks/${id}`, { status: stage });
+    await loadAll();
+  } catch(_) {
+    toast('Failed to update status');
+  }
+}
+
 function renderTaskList() {
   if (state.view === 'calendar')     { renderCalendar();     return; }
   if (state.view === 'settings')     { renderSettings();     return; }
   if (state.view === 'all-projects') { renderAllProjects();  return; }
+  if (state.boardMode)               { renderBoard();        return; }
 
   const list = document.getElementById('task-list');
   let html = '';
