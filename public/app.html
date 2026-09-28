@@ -448,6 +448,67 @@
     .board-card-title.done { text-decoration: line-through; color: var(--muted); }
     .board-card-meta { display: flex; flex-wrap: wrap; gap: 3px; }
     .board-empty { padding: 20px 8px; text-align: center; font-size: 12px; color: #94a3b8; }
+
+    /* ── Project Detail Page ── */
+    #proj-detail-wrap { flex: 1; overflow: hidden; display: flex; flex-direction: column; }
+    .pd-wrap { display: flex; flex-direction: column; height: 100%; overflow: hidden; }
+    .pd-header { display: flex; align-items: center; gap: 10px; padding: 14px 20px 12px; border-bottom: 1px solid var(--border); background: var(--surface); flex-shrink: 0; flex-wrap: wrap; }
+    .pd-dot { width: 12px; height: 12px; border-radius: 50%; flex-shrink: 0; }
+    .pd-name { font-size: 18px; font-weight: 700; color: var(--text); flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .pd-div-tag { font-size: 11px; font-weight: 500; background: #f1f5f9; color: var(--muted); border-radius: 4px; padding: 2px 7px; }
+    .pd-header-actions { display: flex; align-items: center; gap: 6px; margin-left: auto; }
+    .pd-tabs { display: flex; gap: 0; border-bottom: 1px solid var(--border); background: var(--surface); flex-shrink: 0; padding: 0 20px; }
+    .pd-tab { padding: 9px 14px; font-size: 13px; font-weight: 500; color: var(--muted); border: none; background: none; cursor: pointer; border-bottom: 2px solid transparent; margin-bottom: -1px; transition: color .15s, border-color .15s; }
+    .pd-tab:hover { color: var(--text); }
+    .pd-tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+    .pd-filter-bar { display: flex; align-items: center; gap: 8px; padding: 10px 20px; border-bottom: 1px solid var(--border); background: var(--surface); flex-shrink: 0; flex-wrap: wrap; }
+    .pd-filter-group { display: flex; align-items: center; gap: 4px; }
+    .pd-filter-label { font-size: 11px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; margin-right: 2px; }
+    .pd-pill { padding: 3px 10px; border-radius: 100px; font-size: 12px; border: 1px solid var(--border); background: var(--bg); color: var(--muted); cursor: pointer; transition: background .1s, color .1s, border-color .1s; white-space: nowrap; }
+    .pd-pill:hover { background: #f1f5f9; }
+    .pd-pill.active { background: var(--accent); border-color: var(--accent); color: white; }
+    .pd-search { padding: 4px 10px; border: 1px solid var(--border); border-radius: 6px; font-size: 12px; outline: none; color: var(--text); background: var(--bg); }
+    .pd-search:focus { border-color: var(--accent); }
+    .pd-content { flex: 1; overflow: hidden; display: flex; flex-direction: column; }
+    .pd-list-wrap { flex: 1; overflow-y: auto; padding: 0 20px 16px; }
+    .pd-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    .pd-table thead th { position: sticky; top: 0; background: var(--surface); padding: 9px 10px 8px; text-align: left; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); border-bottom: 1px solid var(--border); cursor: pointer; white-space: nowrap; user-select: none; }
+    .pd-table thead th:hover { color: var(--text); }
+    .pd-table thead th.sort-asc::after  { content: ' ↑'; }
+    .pd-table thead th.sort-desc::after { content: ' ↓'; }
+    .pd-table tbody tr { border-bottom: 1px solid var(--border); cursor: pointer; transition: background .1s; }
+    .pd-table tbody tr:hover { background: var(--bg); }
+    .pd-table tbody tr.selected { background: #eff6ff; }
+    .pd-table td { padding: 8px 10px; vertical-align: middle; }
+    .pd-table td:first-child { font-weight: 500; color: var(--text); }
+    .pd-table td.done-cell { text-decoration: line-through; color: var(--muted); }
+    /* Links tab */
+    .pd-links-wrap { padding: 20px; flex: 1; overflow-y: auto; }
+    .pd-link-row { display: flex; align-items: center; gap: 8px; padding: 10px 14px; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; margin-bottom: 8px; }
+    .pd-link-label { flex: 1; font-size: 13px; font-weight: 500; color: var(--text); }
+    .pd-link-url { font-size: 12px; color: var(--accent); text-decoration: none; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 300px; }
+    .pd-link-url:hover { text-decoration: underline; }
+    /* Notes tab */
+    .pd-notes-wrap { padding: 20px; flex: 1; overflow-y: auto; }
+    .pd-notes-task-group { margin-bottom: 20px; }
+    .pd-notes-task-title { font-size: 13px; font-weight: 600; color: var(--text); margin-bottom: 8px; }
+    .pd-note-row { display: flex; align-items: center; gap: 8px; padding: 8px 12px; background: var(--surface); border: 1px solid var(--border); border-radius: 6px; margin-bottom: 5px; font-size: 12px; }
+    /* Sprints tab */
+    .pd-sprints-wrap { padding: 20px; flex: 1; overflow-y: auto; }
+    .pd-sprint-card { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; margin-bottom: 12px; overflow: hidden; }
+    .pd-sprint-header { display: flex; align-items: center; gap: 10px; padding: 10px 14px; border-bottom: 1px solid var(--border); }
+    .pd-sprint-name { font-size: 14px; font-weight: 600; flex: 1; }
+    .pd-sprint-dates { font-size: 11px; color: var(--muted); }
+    .pd-sprint-status { font-size: 11px; padding: 2px 7px; border-radius: 100px; font-weight: 500; }
+    .pd-sprint-status-active   { background: #dbeafe; color: #1d4ed8; }
+    .pd-sprint-status-complete { background: #dcfce7; color: #15803d; }
+    .pd-sprint-body { padding: 10px 14px; }
+    .pd-sprint-task-row { display: flex; align-items: center; gap: 8px; padding: 5px 0; font-size: 13px; border-bottom: 1px solid #f1f5f9; }
+    .pd-sprint-task-row:last-child { border-bottom: none; }
+    .pd-sprint-empty { font-size: 12px; color: var(--muted); padding: 6px 0; }
+    .pd-sprint-task-remove { background: none; border: none; color: #94a3b8; cursor: pointer; font-size: 13px; padding: 0 4px; }
+    .pd-sprint-task-remove:hover { color: #ef4444; }
+    .pd-board-wrap { flex: 1; overflow-x: auto; overflow-y: hidden; padding: 12px 20px 16px; display: flex; gap: 10px; align-items: flex-start; }
   </style>
 </head>
 <body>
@@ -629,6 +690,7 @@
       <div id="task-list"></div>
     </div>
     <div id="board-wrap" style="display:none"></div>
+    <div id="proj-detail-wrap" style="display:none"></div>
   </div>
 
   <!-- Detail Panel -->
@@ -1375,7 +1437,10 @@ function setView(view) {
   const isCalendar    = view === 'calendar';
   const isSettings    = view === 'settings';
   const isAllProjects = view === 'all-projects';
-  const isListable    = !isCalendar && !isSettings && !isAllProjects;
+  const isProjectDetail = view.startsWith('project:');
+  if (isProjectDetail) { pdState.sprintsLoaded = false; pdState.sprints = []; }
+  const isListable    = !isCalendar && !isSettings && !isAllProjects && !isProjectDetail;
+  document.getElementById('view-title').style.display    = isProjectDetail ? 'none' : '';
   document.getElementById('search-wrap').style.display   = isListable ? '' : 'none';
   document.getElementById('filter-bar').style.display    = isListable ? '' : 'none';
   document.getElementById('quick-add-bar').style.display = isListable ? '' : 'none';
@@ -1383,8 +1448,9 @@ function setView(view) {
   toggle.style.display = isListable ? '' : 'none';
   document.getElementById('view-mode-list').classList.toggle('active', true);
   document.getElementById('view-mode-board').classList.toggle('active', false);
-  document.getElementById('task-list-wrap').style.display = '';
-  document.getElementById('board-wrap').style.display = 'none';
+  document.getElementById('task-list-wrap').style.display  = isProjectDetail ? 'none' : '';
+  document.getElementById('board-wrap').style.display      = 'none';
+  document.getElementById('proj-detail-wrap').style.display = isProjectDetail ? '' : 'none';
 
   document.getElementById('view-title').textContent = viewTitle(view);
   if (view === 'calendar') startGcalRefresh(); else stopGcalRefresh();
@@ -1556,6 +1622,350 @@ function renderAllProjects() {
   if (next && rawQ) { next.focus(); next.setSelectionRange(next.value.length, next.value.length); }
 }
 
+// ── Project Detail Page ──────────────────────────────────────────────────────
+
+const PD_TABS = ['board','list','links','notes','sprints'];
+const PD_TAB_LABELS = { board:'Board', list:'List', links:'Links & Drive', notes:'Meeting Notes', sprints:'⚡ Sprints' };
+
+let pdState = {
+  tabHistory: {},      // projId → tab
+  filters: {},         // projId → { phase, category, search }
+  listSort: { col:'title', dir:'asc' },
+  sprints: [],         // sprints for current project
+  sprintsLoaded: false,
+  editSprintId: null,
+};
+
+function pdTab(projId)     { return pdState.tabHistory[projId] || 'board'; }
+function pdFilters(projId) { return pdState.filters[projId] || { phase:'', category:'', search:'' }; }
+
+function pdGetTasks(proj) {
+  const f = pdFilters(proj.id);
+  return state.tasks.filter(t => {
+    if (t.project !== proj.name) return false;
+    if (f.phase && t.status !== f.phase) return false;
+    if (f.category && t.category !== f.category) return false;
+    if (f.search && !t.title.toLowerCase().includes(f.search.toLowerCase())) return false;
+    return true;
+  });
+}
+
+async function setProjectTab(tab, projId) {
+  pdState.tabHistory[projId] = tab;
+  if (tab === 'sprints' && !pdState.sprintsLoaded) {
+    try {
+      pdState.sprints = await api('GET', `/api/projects/${projId}/sprints`);
+      pdState.sprintsLoaded = true;
+    } catch(_) { pdState.sprints = []; }
+  }
+  const proj = state.projects.find(p => p.id == projId);
+  if (proj) renderProjectDetail(proj);
+}
+
+function setPdFilter(projId, key, val) {
+  if (!pdState.filters[projId]) pdState.filters[projId] = { phase:'', category:'', search:'' };
+  pdState.filters[projId][key] = val;
+  const proj = state.projects.find(p => p.id == projId);
+  if (proj) renderProjectDetail(proj);
+}
+
+function pdContextAction(tab, projId) {
+  if (tab === 'links')   openAddProjectLink(projId);
+  else if (tab === 'sprints') openNewSprint(projId);
+  else {
+    const proj = state.projects.find(p => p.id == projId);
+    if (proj) pdQuickAddTask(proj);
+  }
+}
+
+async function pdQuickAddTask(proj) {
+  const title = prompt('New task title:');
+  if (!title?.trim()) return;
+  const task = await api('POST', '/api/tasks', { title: title.trim(), project: proj.name, status: 'new' });
+  state.tasks.unshift(task);
+  renderSidebar(); renderProjectDetail(proj);
+  toast('Task added');
+}
+
+function renderProjectDetail(proj) {
+  const tab = pdTab(proj.id);
+  const f   = pdFilters(proj.id);
+  const dot = PROJ_DOT_COLORS[proj.id % PROJ_DOT_COLORS.length];
+
+  const ctxLabels = { board:'＋ Add Task', list:'＋ Add Task', links:'＋ Add Link', notes:'＋ Add Note', sprints:'＋ New Sprint' };
+
+  const headerHtml = `<div class="pd-header">
+    <div class="pd-dot" style="background:${dot}"></div>
+    <span class="pd-name">${esc(proj.name)}</span>
+    ${proj.division ? `<span class="pd-div-tag">${esc(proj.division)}</span>` : ''}
+    <div class="pd-header-actions">
+      <button class="btn btn-primary btn-sm" onclick="pdContextAction('${tab}',${proj.id})">${ctxLabels[tab]}</button>
+      <button class="btn btn-ghost btn-sm" onclick="openRenameProject(${proj.id},'${esc(proj.name)}')">Edit Project</button>
+      <button class="btn btn-ghost btn-sm" onclick="setView('all-projects')">← All Projects</button>
+    </div>
+  </div>`;
+
+  const tabsHtml = `<div class="pd-tabs">
+    ${PD_TABS.map(t => `<button class="pd-tab${t===tab?' active':''}" onclick="setProjectTab('${t}',${proj.id})">${PD_TAB_LABELS[t]}</button>`).join('')}
+  </div>`;
+
+  const showFilters = tab === 'board' || tab === 'list' || tab === 'notes';
+  const filterHtml = showFilters ? `<div class="pd-filter-bar">
+    <div class="pd-filter-group">
+      <span class="pd-filter-label">Phase</span>
+      <button class="pd-pill${!f.phase?' active':''}" onclick="setPdFilter(${proj.id},'phase','')">All</button>
+      ${BOARD_STAGES.map(s => `<button class="pd-pill${f.phase===s?' active':''}" onclick="setPdFilter(${proj.id},'phase','${s}')">${STATUS_LABELS[s]}</button>`).join('')}
+    </div>
+    <div class="pd-filter-group">
+      <span class="pd-filter-label">Category</span>
+      <button class="pd-pill${!f.category?' active':''}" onclick="setPdFilter(${proj.id},'category','')">All</button>
+      ${CATEGORIES.map(c => `<button class="pd-pill${f.category===c?' active':''}" onclick="setPdFilter(${proj.id},'category','${c}')">${c.charAt(0).toUpperCase()+c.slice(1)}</button>`).join('')}
+    </div>
+    <input class="pd-search" type="text" placeholder="Search tasks…" value="${esc(f.search)}"
+      oninput="setPdFilter(${proj.id},'search',this.value)">
+  </div>` : '';
+
+  let contentHtml = '';
+  const tasks = pdGetTasks(proj);
+
+  if (tab === 'board') {
+    contentHtml = `<div class="pd-board-wrap" id="pd-board-inner">${pdRenderBoardCols(tasks, proj.id)}</div>`;
+  } else if (tab === 'list') {
+    contentHtml = `<div class="pd-list-wrap">${pdRenderTable(tasks, proj.id)}</div>`;
+  } else if (tab === 'links') {
+    contentHtml = `<div class="pd-links-wrap">${pdRenderLinks(proj)}</div>`;
+  } else if (tab === 'notes') {
+    contentHtml = `<div class="pd-notes-wrap">${pdRenderNotes(tasks)}</div>`;
+  } else if (tab === 'sprints') {
+    contentHtml = `<div class="pd-sprints-wrap">${pdRenderSprints(proj)}</div>`;
+  }
+
+  document.getElementById('proj-detail-wrap').innerHTML =
+    `<div class="pd-wrap">${headerHtml}${tabsHtml}${filterHtml}<div class="pd-content">${contentHtml}</div></div>`;
+}
+
+function pdRenderBoardCols(tasks, projId) {
+  const byCols = {};
+  BOARD_STAGES.forEach(s => { byCols[s] = []; });
+  tasks.forEach(t => { (byCols[t.status] || byCols['new']).push(t); });
+
+  return BOARD_STAGES.map(stage => {
+    const cards = byCols[stage];
+    const label = STATUS_LABELS[stage];
+    const color = STAGE_COLORS[stage];
+    const cardsHtml = cards.length
+      ? cards.map(t => {
+          const overdue = isOverdue(t.due_date) && t.status !== 'complete';
+          const badge   = t.subtask_count ? `<span class="subtask-badge">${t.subtask_done||0}/${t.subtask_count}</span>` : '';
+          return `<div class="board-card${t.id===state.selectedId?' selected':''}"
+                       data-id="${t.id}" draggable="true"
+                       ondragstart="boardDragStart(event,${t.id})"
+                       ondragend="boardDragEnd(event)"
+                       onclick="openDetail(${t.id})">
+            <div class="board-card-title${t.status==='complete'?' done':''}">${esc(t.title)}</div>
+            <div class="board-card-meta">
+              <span class="pill pill-priority-${t.priority}">${t.priority}</span>
+              ${t.category ? `<span class="pill pill-cat">${t.category}</span>` : ''}
+              ${t.due_date ? `<span class="${overdue?'overdue':''}">Due ${fmtDate(t.due_date)}</span>` : ''}
+              ${badge}
+            </div>
+          </div>`;
+        }).join('')
+      : `<div class="board-empty">Empty</div>`;
+
+    return `<div class="board-col" data-stage="${stage}"
+                 ondragover="boardDragOver(event)"
+                 ondragleave="boardDragLeave(event)"
+                 ondrop="pdBoardDrop(event,'${stage}',${projId})">
+      <div class="board-col-header">
+        <div class="board-col-dot" style="background:${color}"></div>
+        <span class="board-col-title">${label}</span>
+        <span class="board-col-count">${cards.length}</span>
+      </div>
+      <div class="board-col-body">${cardsHtml}</div>
+    </div>`;
+  }).join('');
+}
+
+async function pdBoardDrop(e, stage, projId) {
+  e.preventDefault();
+  e.currentTarget.closest('.board-col').classList.remove('drag-over');
+  if (!boardDraggedId) return;
+  const id = boardDraggedId;
+  boardDraggedId = null;
+  const task = state.tasks.find(t => t.id === id);
+  if (!task || task.status === stage) return;
+  try {
+    await api('PUT', `/api/tasks/${id}`, { status: stage });
+    await loadAll();
+  } catch(_) {
+    toast('Failed to update status');
+  }
+}
+
+function pdRenderTable(tasks, projId) {
+  const { col, dir } = pdState.listSort;
+  const sorted = [...tasks].sort((a, b) => {
+    let av, bv;
+    if (col === 'title')    { av = a.title; bv = b.title; }
+    else if (col === 'phase')    { av = BOARD_STAGES.indexOf(a.status); bv = BOARD_STAGES.indexOf(b.status); }
+    else if (col === 'category') { av = a.category||''; bv = b.category||''; }
+    else if (col === 'due')      { av = a.due_date||'9999'; bv = b.due_date||'9999'; }
+    else if (col === 'subtasks') { av = a.subtask_count||0; bv = b.subtask_count||0; }
+    else { av = a.title; bv = b.title; }
+    const cmp = typeof av === 'number' ? av - bv : av.localeCompare(bv);
+    return dir === 'asc' ? cmp : -cmp;
+  });
+
+  function th(c, label) {
+    const cls = col === c ? (dir === 'asc' ? 'sort-asc' : 'sort-desc') : '';
+    return `<th class="${cls}" onclick="pdSortList('${c}',${projId})">${label}</th>`;
+  }
+
+  if (!sorted.length) return `<div class="empty-state" style="padding:40px 0"><div class="icon">✅</div><p>No tasks</p></div>`;
+
+  const rows = sorted.map(t => {
+    const overdue = isOverdue(t.due_date) && t.status !== 'complete';
+    return `<tr class="${t.id===state.selectedId?'selected':''}" onclick="openDetail(${t.id})">
+      <td class="${t.status==='complete'?'done-cell':''}">${esc(t.title)}</td>
+      <td><span class="pill pill-status-${t.status}">${STATUS_LABELS[t.status]||t.status}</span></td>
+      <td>${t.category ? `<span class="pill pill-cat">${t.category}</span>` : '<span style="color:var(--muted)">—</span>'}</td>
+      <td class="${overdue?'overdue':''}">${t.due_date ? fmtDate(t.due_date) : '<span style="color:var(--muted)">—</span>'}</td>
+      <td>${t.subtask_count ? `${t.subtask_done||0}/${t.subtask_count}` : '<span style="color:var(--muted)">—</span>'}</td>
+      <td><button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();openDetail(${t.id})">Edit</button></td>
+    </tr>`;
+  }).join('');
+
+  return `<table class="pd-table">
+    <thead><tr>${th('title','Task')}${th('phase','Phase')}${th('category','Category')}${th('due','Due')}${th('subtasks','Subtasks')}<th>Edit</th></tr></thead>
+    <tbody>${rows}</tbody>
+  </table>`;
+}
+
+function pdSortList(col, projId) {
+  if (pdState.listSort.col === col) {
+    pdState.listSort.dir = pdState.listSort.dir === 'asc' ? 'desc' : 'asc';
+  } else {
+    pdState.listSort = { col, dir: 'asc' };
+  }
+  const proj = state.projects.find(p => p.id == projId);
+  if (proj) renderProjectDetail(proj);
+}
+
+function pdRenderLinks(proj) {
+  const links = proj.links || [];
+  if (!links.length) return `<div class="empty-state" style="padding:40px 0"><div class="icon">🔗</div><p>No links yet. Click "＋ Add Link" to add one.</p></div>`;
+  return links.map(l => `
+    <div class="pd-link-row">
+      <div class="pd-link-label">${esc(l.label)}</div>
+      <a href="${esc(l.url)}" target="_blank" rel="noopener" class="pd-link-url">${esc(l.url)}</a>
+      <button class="btn btn-ghost btn-sm" style="color:#ef4444;flex-shrink:0" onclick="deleteProjectLink(${proj.id},${l.id})">Remove</button>
+    </div>`).join('');
+}
+
+function pdRenderNotes(tasks) {
+  const withNotes = tasks.filter(t => t.meeting_notes_count > 0);
+  if (!withNotes.length) return `<div class="empty-state" style="padding:40px 0"><div class="icon">📝</div><p>No meeting notes for this project yet</p></div>`;
+  return withNotes.map(t => `
+    <div class="pd-notes-task-group">
+      <div class="pd-notes-task-title">${esc(t.title)}</div>
+      <div class="pd-note-row">
+        <span style="color:var(--muted)">${t.meeting_notes_count} note${t.meeting_notes_count!==1?'s':''}</span>
+        ${t.meeting_notes_latest_url ? `<a href="${esc(t.meeting_notes_latest_url)}" target="_blank" rel="noopener" style="color:var(--accent);font-size:12px">Open latest ↗</a>` : ''}
+        <button class="btn btn-ghost btn-sm" onclick="openDetail(${t.id})">View all</button>
+      </div>
+    </div>`).join('');
+}
+
+function pdRenderSprints(proj) {
+  if (!pdState.sprintsLoaded) return `<div class="empty-state" style="padding:40px 0"><div class="icon">⚡</div><p>Loading…</p></div>`;
+  const sprints = pdState.sprints;
+
+  function sprintCard(sp) {
+    const spTasks = sp.task_ids.map(id => state.tasks.find(t => t.id === id)).filter(Boolean);
+    const tasksHtml = spTasks.length
+      ? spTasks.map(t => `<div class="pd-sprint-task-row">
+          <span class="pill pill-status-${t.status}" style="flex-shrink:0">${STATUS_LABELS[t.status]||t.status}</span>
+          <span style="flex:1">${esc(t.title)}</span>
+          <button class="pd-sprint-task-remove" onclick="pdRemoveSprintTask(${sp.id},${t.id},${proj.id})" title="Remove">✕</button>
+        </div>`).join('')
+      : `<div class="pd-sprint-empty">No tasks yet</div>`;
+
+    const dateStr = (sp.start_date || sp.end_date)
+      ? `${sp.start_date ? fmtDate(sp.start_date) : '?'} – ${sp.end_date ? fmtDate(sp.end_date) : '?'}`
+      : '';
+    const stCls = sp.status === 'complete' ? 'pd-sprint-status-complete' : 'pd-sprint-status-active';
+
+    return `<div class="pd-sprint-card">
+      <div class="pd-sprint-header">
+        <span class="pd-sprint-name">${esc(sp.name)}</span>
+        ${dateStr ? `<span class="pd-sprint-dates">${dateStr}</span>` : ''}
+        <span class="pd-sprint-status ${stCls}">${sp.status}</span>
+        <button class="btn btn-ghost btn-sm" onclick="pdAddSprintTask(${sp.id},${proj.id})">＋ Task</button>
+        ${sp.status==='active' ? `<button class="btn btn-ghost btn-sm" onclick="pdCompleteSprint(${sp.id},${proj.id})">Mark Complete</button>` : ''}
+        <button class="btn btn-ghost btn-sm" style="color:#ef4444" onclick="pdDeleteSprint(${sp.id},${proj.id})">Delete</button>
+      </div>
+      <div class="pd-sprint-body">${tasksHtml}</div>
+    </div>`;
+  }
+
+  const html = sprints.length
+    ? sprints.map(sprintCard).join('')
+    : `<div class="empty-state" style="padding:40px 0"><div class="icon">⚡</div><p>No sprints yet. Click "＋ New Sprint" to create one.</p></div>`;
+  return html;
+}
+
+function openNewSprint(projId) {
+  const name = prompt('Sprint name:');
+  if (!name?.trim()) return;
+  const start = prompt('Start date (YYYY-MM-DD, optional):') || null;
+  const end   = prompt('End date (YYYY-MM-DD, optional)')   || null;
+  api('POST', `/api/projects/${projId}/sprints`, { name: name.trim(), start_date: start, end_date: end })
+    .then(sp => {
+      pdState.sprints.unshift(sp);
+      const proj = state.projects.find(p => p.id == projId);
+      if (proj) renderProjectDetail(proj);
+    });
+}
+
+async function pdCompleteSprint(sprintId, projId) {
+  const sp = await api('PUT', `/api/sprints/${sprintId}`, { status: 'complete' });
+  pdState.sprints = pdState.sprints.map(s => s.id === sprintId ? sp : s);
+  const proj = state.projects.find(p => p.id == projId);
+  if (proj) renderProjectDetail(proj);
+}
+
+async function pdDeleteSprint(sprintId, projId) {
+  if (!confirm('Delete this sprint?')) return;
+  await api('DELETE', `/api/sprints/${sprintId}`);
+  pdState.sprints = pdState.sprints.filter(s => s.id !== sprintId);
+  const proj = state.projects.find(p => p.id == projId);
+  if (proj) renderProjectDetail(proj);
+}
+
+async function pdAddSprintTask(sprintId, projId) {
+  const proj = state.projects.find(p => p.id == projId);
+  if (!proj) return;
+  const projTasks = state.tasks.filter(t => t.project === proj.name && t.status !== 'complete');
+  const sprint = pdState.sprints.find(s => s.id === sprintId);
+  const available = projTasks.filter(t => !sprint?.task_ids.includes(t.id));
+  if (!available.length) { toast('No tasks available to add'); return; }
+  const opts = available.map((t,i) => `${i+1}. ${t.title}`).join('\n');
+  const choice = prompt(`Choose task to add:\n${opts}\n\nEnter number:`);
+  const idx = parseInt(choice) - 1;
+  if (isNaN(idx) || idx < 0 || idx >= available.length) return;
+  const sp = await api('POST', `/api/sprints/${sprintId}/tasks`, { task_id: available[idx].id });
+  pdState.sprints = pdState.sprints.map(s => s.id === sprintId ? sp : s);
+  renderProjectDetail(proj);
+}
+
+async function pdRemoveSprintTask(sprintId, taskId, projId) {
+  await api('DELETE', `/api/sprints/${sprintId}/tasks/${taskId}`);
+  pdState.sprints = pdState.sprints.map(s => s.id === sprintId ? { ...s, task_ids: s.task_ids.filter(id => id !== taskId) } : s);
+  const proj = state.projects.find(p => p.id == projId);
+  if (proj) renderProjectDetail(proj);
+}
+
 // ── Board View ────────────────────────────────────────────────────────────────
 
 let boardDraggedId = null;
@@ -1660,15 +2070,14 @@ function renderTaskList() {
   if (state.view === 'calendar')     { renderCalendar();     return; }
   if (state.view === 'settings')     { renderSettings();     return; }
   if (state.view === 'all-projects') { renderAllProjects();  return; }
+  if (state.view.startsWith('project:')) {
+    const proj = state.projects.find(p => p.id == state.view.slice(8));
+    if (proj) { renderProjectDetail(proj); return; }
+  }
   if (state.boardMode)               { renderBoard();        return; }
 
   const list = document.getElementById('task-list');
   let html = '';
-
-  if (state.view.startsWith('project:')) {
-    const proj = state.projects.find(p => p.id == state.view.slice(8));
-    if (proj) html += renderProjectHeader(proj);
-  }
 
   if (state.view.startsWith('focus:')) {
     const fl = state.focusLists.find(f => f.id == state.view.slice(6));

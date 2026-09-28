@@ -136,6 +136,22 @@ db.exec(`
     refresh_token TEXT NOT NULL,
     connected_at  TEXT NOT NULL DEFAULT (datetime('now'))
   );
+
+  CREATE TABLE IF NOT EXISTS sprints (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    name       TEXT NOT NULL,
+    start_date TEXT,
+    end_date   TEXT,
+    status     TEXT NOT NULL DEFAULT 'active',
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+
+  CREATE TABLE IF NOT EXISTS sprint_tasks (
+    sprint_id INTEGER NOT NULL REFERENCES sprints(id) ON DELETE CASCADE,
+    task_id   INTEGER NOT NULL REFERENCES tasks(id)   ON DELETE CASCADE,
+    PRIMARY KEY (sprint_id, task_id)
+  );
 `);
 
 // Idempotent migrations
@@ -503,6 +519,61 @@ app.post('/api/projects/:id/links', (req, res) => {
 app.delete('/api/project-links/:id', (req, res) => {
   const result = db.prepare('DELETE FROM project_links WHERE id = ?').run(req.params.id);
   if (!result.changes) return res.status(404).json({ error: 'Link not found' });
+  res.status(204).end();
+});
+
+// ── Sprints ───────────────────────────────────────────────────────────────────
+
+const withSprintTasks = (sprint) => ({
+  ...sprint,
+  task_ids: db.prepare('SELECT task_id FROM sprint_tasks WHERE sprint_id = ?').all(sprint.id).map(r => r.task_id),
+});
+
+app.get('/api/projects/:id/sprints', (req, res) => {
+  const proj = db.prepare('SELECT id FROM projects WHERE id = ?').get(req.params.id);
+  if (!proj) return res.status(404).json({ error: 'Project not found' });
+  const sprints = db.prepare('SELECT * FROM sprints WHERE project_id = ? ORDER BY created_at DESC').all(req.params.id);
+  res.json(sprints.map(withSprintTasks));
+});
+
+app.post('/api/projects/:id/sprints', (req, res) => {
+  const proj = db.prepare('SELECT id FROM projects WHERE id = ?').get(req.params.id);
+  if (!proj) return res.status(404).json({ error: 'Project not found' });
+  const { name, start_date, end_date } = req.body;
+  if (!name?.trim()) return res.status(400).json({ error: 'Name is required' });
+  const r = db.prepare('INSERT INTO sprints (project_id, name, start_date, end_date) VALUES (?, ?, ?, ?)')
+    .run(req.params.id, name.trim(), start_date || null, end_date || null);
+  res.status(201).json(withSprintTasks(db.prepare('SELECT * FROM sprints WHERE id = ?').get(r.lastInsertRowid)));
+});
+
+app.put('/api/sprints/:id', (req, res) => {
+  const sprint = db.prepare('SELECT * FROM sprints WHERE id = ?').get(req.params.id);
+  if (!sprint) return res.status(404).json({ error: 'Sprint not found' });
+  const { name, start_date, end_date, status } = req.body;
+  db.prepare('UPDATE sprints SET name = ?, start_date = ?, end_date = ?, status = ? WHERE id = ?')
+    .run(name?.trim() ?? sprint.name, start_date ?? sprint.start_date, end_date ?? sprint.end_date, status ?? sprint.status, req.params.id);
+  res.json(withSprintTasks(db.prepare('SELECT * FROM sprints WHERE id = ?').get(req.params.id)));
+});
+
+app.delete('/api/sprints/:id', (req, res) => {
+  const result = db.prepare('DELETE FROM sprints WHERE id = ?').run(req.params.id);
+  if (!result.changes) return res.status(404).json({ error: 'Sprint not found' });
+  res.status(204).end();
+});
+
+app.post('/api/sprints/:id/tasks', (req, res) => {
+  const sprint = db.prepare('SELECT * FROM sprints WHERE id = ?').get(req.params.id);
+  if (!sprint) return res.status(404).json({ error: 'Sprint not found' });
+  const { task_id } = req.body;
+  if (!task_id) return res.status(400).json({ error: 'task_id is required' });
+  try {
+    db.prepare('INSERT INTO sprint_tasks (sprint_id, task_id) VALUES (?, ?)').run(req.params.id, task_id);
+  } catch(_) {}
+  res.status(201).json(withSprintTasks(db.prepare('SELECT * FROM sprints WHERE id = ?').get(req.params.id)));
+});
+
+app.delete('/api/sprints/:id/tasks/:taskId', (req, res) => {
+  db.prepare('DELETE FROM sprint_tasks WHERE sprint_id = ? AND task_id = ?').run(req.params.id, req.params.taskId);
   res.status(204).end();
 });
 
