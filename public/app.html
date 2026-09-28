@@ -392,6 +392,31 @@
     #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
 
     #app { display: flex; height: 100vh; width: 100%; overflow: hidden; }
+
+    /* ── All Projects card grid ── */
+    .proj-grid-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; gap: 10px; flex-wrap: wrap; }
+    .proj-grid-search-wrap { position: relative; flex: 1; min-width: 160px; max-width: 340px; }
+    .proj-grid-search-wrap input { width: 100%; padding: 7px 30px 7px 10px; border: 1px solid var(--border); border-radius: 7px; font-size: 13px; outline: none; background: var(--bg); transition: border-color .15s; font-family: inherit; }
+    .proj-grid-search-wrap input:focus { border-color: var(--accent); background: white; }
+    .proj-grid-search-wrap input::placeholder { color: #94a3b8; }
+    .proj-grid-search-clear { position: absolute; right: 9px; top: 50%; transform: translateY(-50%); background: none; border: none; color: #94a3b8; cursor: pointer; font-size: 13px; line-height: 1; padding: 0; display: none; }
+    .proj-grid-search-clear.vis { display: block; }
+    .proj-grid-search-clear:hover { color: var(--text); }
+    .proj-card-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 14px; }
+    .proj-card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 16px; cursor: pointer; transition: box-shadow .15s, border-color .15s; display: flex; flex-direction: column; gap: 10px; }
+    .proj-card:hover { box-shadow: 0 4px 14px rgba(0,0,0,.08); border-color: #c7d2dc; }
+    .proj-card-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
+    .proj-card-name-row { display: flex; align-items: center; gap: 7px; min-width: 0; }
+    .proj-card-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; margin-top: 2px; }
+    .proj-card-name { font-size: 14px; font-weight: 600; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .proj-card-actions { display: flex; gap: 2px; flex-shrink: 0; opacity: 0; transition: opacity .1s; }
+    .proj-card:hover .proj-card-actions { opacity: 1; }
+    .proj-card-btn { background: none; border: none; color: #94a3b8; cursor: pointer; font-size: 13px; padding: 2px 5px; border-radius: 4px; line-height: 1; transition: background .1s, color .1s; }
+    .proj-card-btn:hover { background: var(--bg); color: var(--text); }
+    .proj-card-desc { font-size: 12px; color: var(--muted); line-height: 1.45; }
+    .proj-card-bar-wrap { height: 6px; background: #e2e8f0; border-radius: 100px; overflow: hidden; }
+    .proj-card-bar-fill { height: 100%; background: var(--accent); border-radius: 100px; }
+    .proj-card-bar-label { font-size: 11px; color: var(--muted); margin-top: 4px; }
   </style>
 </head>
 <body>
@@ -414,6 +439,10 @@
       <div class="nav-item" data-view="all" onclick="setView('all')">
         <span class="nav-label"><span class="nav-icon">📋</span> All Tasks</span>
         <span class="nav-count" id="cnt-all">0</span>
+      </div>
+      <div class="nav-item" data-view="all-projects" onclick="setView('all-projects')">
+        <span class="nav-label"><span class="nav-icon">🗂️</span> All Projects</span>
+        <span class="nav-count" id="cnt-all-projects">0</span>
       </div>
       <div class="nav-item" data-view="calendar" onclick="setView('calendar')">
         <span class="nav-label"><span class="nav-icon">🗓️</span> Calendar</span>
@@ -1077,11 +1106,12 @@ function isOverdue(d) {
 }
 
 function viewTitle(view) {
-  if (view === 'inbox')    return 'Inbox';
-  if (view === 'all')      return 'All Tasks';
-  if (view === 'calendar') return 'Calendar';
-  if (view === 'blocked')  return 'Blocked Tasks';
-  if (view === 'settings') return 'Settings';
+  if (view === 'inbox')        return 'Inbox';
+  if (view === 'all')          return 'All Tasks';
+  if (view === 'all-projects') return 'All Projects';
+  if (view === 'calendar')     return 'Calendar';
+  if (view === 'blocked')      return 'Blocked Tasks';
+  if (view === 'settings')     return 'Settings';
   const [type, val] = view.split(':');
   if (type === 'status')   return val.replace(/-/g,' ').replace(/\b\w/g, c => c.toUpperCase());
   if (type === 'category') return val.charAt(0).toUpperCase() + val.slice(1);
@@ -1190,9 +1220,10 @@ function renderSidebar() {
     }
   });
 
-  document.getElementById('cnt-inbox').textContent    = counts.inbox;
-  document.getElementById('cnt-all').textContent      = counts.all;
-  document.getElementById('cnt-blocked').textContent  = counts.blocked;
+  document.getElementById('cnt-inbox').textContent        = counts.inbox;
+  document.getElementById('cnt-all').textContent          = counts.all;
+  document.getElementById('cnt-all-projects').textContent = state.projects.length;
+  document.getElementById('cnt-blocked').textContent      = counts.blocked;
   document.getElementById('cnt-past-due').textContent = counts['due:past-due'];
   document.getElementById('cnt-today').textContent    = counts['due:today'];
   document.getElementById('cnt-this-week').textContent = counts['due:this-week'];
@@ -1278,11 +1309,12 @@ function setView(view) {
     if (_proj) state.filters.project = _proj.name;
   }
 
-  const isCalendar = view === 'calendar';
-  const isSettings = view === 'settings';
-  document.getElementById('search-wrap').style.display   = (isCalendar || isSettings) ? 'none' : '';
-  document.getElementById('filter-bar').style.display    = (isCalendar || isSettings) ? 'none' : '';
-  document.getElementById('quick-add-bar').style.display = (isCalendar || isSettings) ? 'none' : '';
+  const isCalendar    = view === 'calendar';
+  const isSettings    = view === 'settings';
+  const isAllProjects = view === 'all-projects';
+  document.getElementById('search-wrap').style.display   = (isCalendar || isSettings || isAllProjects) ? 'none' : '';
+  document.getElementById('filter-bar').style.display    = (isCalendar || isSettings || isAllProjects) ? 'none' : '';
+  document.getElementById('quick-add-bar').style.display = (isCalendar || isSettings || isAllProjects) ? 'none' : '';
 
   document.getElementById('view-title').textContent = viewTitle(view);
   if (view === 'calendar') startGcalRefresh(); else stopGcalRefresh();
@@ -1371,9 +1403,66 @@ function renderProjectHeader(proj) {
   </div>`;
 }
 
+const PROJ_DOT_COLORS = ['#3b82f6','#10b981','#f59e0b','#ef4444','#8b5cf6','#06b6d4','#f97316','#84cc16'];
+
+function renderAllProjects() {
+  const inp     = document.getElementById('proj-search');
+  const rawQ    = inp ? inp.value : '';
+  const q       = rawQ.toLowerCase().trim();
+  const matched = state.projects.filter(p => !q || p.name.toLowerCase().includes(q));
+
+  const cards = matched.map(p => {
+    const all  = state.tasks.filter(t => t.project === p.name);
+    const done = all.filter(t => t.status === 'complete').length;
+    const tot  = all.length;
+    const pct  = tot ? Math.round(done / tot * 100) : 0;
+    const dot  = PROJ_DOT_COLORS[p.id % PROJ_DOT_COLORS.length];
+    const desc = p.description
+      ? `<span>${esc(p.description)}</span>`
+      : `<span style="font-style:italic;color:var(--muted)">No description</span>`;
+    return `<div class="proj-card" onclick="setView('project:${p.id}')">
+      <div class="proj-card-top">
+        <div class="proj-card-name-row">
+          <div class="proj-card-dot" style="background:${dot}"></div>
+          <span class="proj-card-name" title="${esc(p.name)}">${esc(p.name)}</span>
+        </div>
+        <div class="proj-card-actions">
+          <button class="proj-card-btn" onclick="event.stopPropagation();openRenameProject(${p.id},'${esc(p.name)}')" title="Rename">✏️</button>
+          <button class="proj-card-btn" onclick="event.stopPropagation();openMergeProject(${p.id},'${esc(p.name)}')" title="Delete / merge into…">⇒</button>
+        </div>
+      </div>
+      <div class="proj-card-desc">${desc}</div>
+      <div>
+        <div class="proj-card-bar-wrap"><div class="proj-card-bar-fill" style="width:${pct}%"></div></div>
+        <div class="proj-card-bar-label">${done}/${tot} complete · ${pct}%</div>
+      </div>
+    </div>`;
+  }).join('');
+
+  const body = matched.length
+    ? `<div class="proj-card-grid">${cards}</div>`
+    : `<div class="empty-state"><div class="icon">📁</div><p>${q ? 'No projects match "'+esc(rawQ)+'"' : 'No projects yet'}</p></div>`;
+
+  document.getElementById('task-list').innerHTML = `
+    <div class="proj-grid-header">
+      <div class="proj-grid-search-wrap">
+        <input id="proj-search" type="text" placeholder="Search projects…" autocomplete="off"
+          oninput="renderAllProjects()" value="${esc(rawQ)}">
+        <button class="proj-grid-search-clear${rawQ ? ' vis' : ''}"
+          onclick="document.getElementById('proj-search').value='';renderAllProjects()">✕</button>
+      </div>
+      <button class="btn btn-primary btn-sm" onclick="openAddProject()">＋ New Project</button>
+    </div>
+    ${body}`;
+
+  const next = document.getElementById('proj-search');
+  if (next && rawQ) { next.focus(); next.setSelectionRange(next.value.length, next.value.length); }
+}
+
 function renderTaskList() {
-  if (state.view === 'calendar') { renderCalendar(); return; }
-  if (state.view === 'settings') { renderSettings(); return; }
+  if (state.view === 'calendar')     { renderCalendar();     return; }
+  if (state.view === 'settings')     { renderSettings();     return; }
+  if (state.view === 'all-projects') { renderAllProjects();  return; }
 
   const list = document.getElementById('task-list');
   let html = '';
