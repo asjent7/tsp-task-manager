@@ -41,6 +41,10 @@
     .sidebar-divider { border: none; border-top: 1px solid var(--sidebar-border); margin: 6px 0; }
     .sidebar-action-btn { display: flex; align-items: center; gap: 8px; padding: 7px 16px; font-size: 12px; color: #475569; cursor: pointer; transition: color .1s; }
     .sidebar-action-btn:hover { color: #94a3b8; }
+    .sidebar-project-filter { padding: 4px 16px 2px; }
+    .sidebar-project-filter select { width: 100%; padding: 5px 8px; background: rgba(255,255,255,.06); border: 1px solid rgba(255,255,255,.1); border-radius: 6px; font-size: 12px; color: #94a3b8; cursor: pointer; outline: none; }
+    .sidebar-project-filter select:focus { border-color: rgba(59,130,246,.5); color: #cbd5e1; }
+    .sidebar-project-filter select option { background: #1e293b; color: #cbd5e1; }
 
     /* ── Main ── */
     #main-content { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
@@ -401,6 +405,11 @@
       <div class="nav-item" data-view="inbox" onclick="setView('inbox')">
         <span class="nav-label"><span class="nav-icon">📥</span> Inbox</span>
         <span class="nav-count" id="cnt-inbox">0</span>
+      </div>
+      <div class="sidebar-project-filter">
+        <select id="filter-project" onchange="applyFilters()">
+          <option value="">All projects</option>
+        </select>
       </div>
       <div class="nav-item" data-view="all" onclick="setView('all')">
         <span class="nav-label"><span class="nav-icon">📋</span> All Tasks</span>
@@ -957,7 +966,7 @@ function getWeekStart(date) {
 let state = {
   tasks: [], projects: [], templates: [], focusLists: [],
   view: 'inbox',
-  filters: { priority: '', status: '', search: '', due: '', dueFrom: '', dueTo: '' },
+  filters: { priority: '', status: '', search: '', due: '', dueFrom: '', dueTo: '', project: '' },
   selectedId: null,
   timeLogs: [], subtasks: [], meetingNotes: [], taskUpdates: [],
   calMode: 'week',
@@ -1223,8 +1232,31 @@ function renderSidebar() {
   }).join('');
 
   document.querySelectorAll('.nav-item').forEach(el => {
-    el.classList.toggle('active', el.dataset.view === state.view);
+    let isActive = el.dataset.view === state.view;
+    if (!isActive && state.filters.project && el.dataset.view && el.dataset.view.startsWith('project:')) {
+      const _p = state.projects.find(p => p.id == el.dataset.view.slice(8));
+      if (_p && _p.name === state.filters.project) isActive = true;
+    }
+    el.classList.toggle('active', isActive);
   });
+
+  populateFilterProject();
+}
+
+function populateFilterProject() {
+  const sel = document.getElementById('filter-project');
+  if (!sel) return;
+  const cur = state.filters.project;
+  const counts = {};
+  state.tasks.forEach(t => {
+    if (t.status === 'complete' || !t.project) return;
+    counts[t.project] = (counts[t.project] || 0) + 1;
+  });
+  const names = Object.keys(counts).sort((a, b) => a.localeCompare(b));
+  sel.innerHTML = '<option value="">All projects</option>' +
+    names.map(n => `<option value="${esc(n)}">${esc(n)} (${counts[n]})</option>`).join('');
+  sel.value = names.includes(cur) ? cur : '';
+  if (!names.includes(cur)) state.filters.project = '';
 }
 
 // ── View / Filters ────────────────────────────────────────────────────────────
@@ -1232,14 +1264,19 @@ function renderSidebar() {
 function setView(view) {
   state.view = view;
   state.calSelectedDay = null;
-  state.filters = { priority:'', status:'', search:'', due:'', dueFrom:'', dueTo:'' };
+  state.filters = { priority:'', status:'', search:'', due:'', dueFrom:'', dueTo:'', project:'' };
   document.getElementById('filter-priority').value = '';
   document.getElementById('filter-status').value   = '';
   document.getElementById('filter-due').value      = '';
   document.getElementById('filter-from').value     = '';
   document.getElementById('filter-to').value       = '';
   document.getElementById('search').value          = '';
+  document.getElementById('filter-project').value  = '';
   document.getElementById('custom-date-range').classList.remove('visible');
+  if (view.startsWith('project:')) {
+    const _proj = state.projects.find(p => p.id == view.slice(8));
+    if (_proj) state.filters.project = _proj.name;
+  }
 
   const isCalendar = view === 'calendar';
   const isSettings = view === 'settings';
@@ -1260,7 +1297,9 @@ function applyFilters() {
   state.filters.due      = document.getElementById('filter-due').value;
   state.filters.dueFrom  = document.getElementById('filter-from').value;
   state.filters.dueTo    = document.getElementById('filter-to').value;
+  state.filters.project  = document.getElementById('filter-project').value;
   document.getElementById('custom-date-range').classList.toggle('visible', state.filters.due === 'custom');
+  renderSidebar();
   renderTaskList();
 }
 
@@ -1306,12 +1345,13 @@ function getVisibleTasks() {
   // Exclude complete tasks from every view except the dedicated Complete status view
   if (v !== 'status:complete') tasks = tasks.filter(t => t.status !== 'complete');
 
-  const { priority, status, search, due, dueFrom, dueTo } = state.filters;
+  const { priority, status, search, due, dueFrom, dueTo, project } = state.filters;
   if (priority) tasks = tasks.filter(t => t.priority === priority);
   if (status)   tasks = tasks.filter(t => t.status   === status);
   if (search)   tasks = tasks.filter(t => t.title.toLowerCase().includes(search) ||
     (t.notes || '').toLowerCase().includes(search) || (t.project || '').toLowerCase().includes(search));
   if (due)      tasks = tasks.filter(t => dueDateMatches(t.due_date, due, dueFrom, dueTo));
+  if (project && !v.startsWith('project:')) tasks = tasks.filter(t => t.project === project);
 
   return tasks;
 }
