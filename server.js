@@ -143,7 +143,7 @@ db.exec(`
     name       TEXT NOT NULL,
     start_date TEXT,
     end_date   TEXT,
-    status     TEXT NOT NULL DEFAULT 'active',
+    status     TEXT NOT NULL DEFAULT 'upcoming',
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
   );
 
@@ -151,6 +151,19 @@ db.exec(`
     sprint_id INTEGER NOT NULL REFERENCES sprints(id) ON DELETE CASCADE,
     task_id   INTEGER NOT NULL REFERENCES tasks(id)   ON DELETE CASCADE,
     PRIMARY KEY (sprint_id, task_id)
+  );
+
+  CREATE TABLE IF NOT EXISTS project_notes (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    title      TEXT NOT NULL,
+    date       TEXT NOT NULL,
+    body       TEXT,
+    type       TEXT NOT NULL DEFAULT 'meeting-notes',
+    phase      TEXT,
+    category   TEXT,
+    task_id    INTEGER REFERENCES tasks(id) ON DELETE SET NULL,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
   );
 `);
 
@@ -163,6 +176,11 @@ try { db.prepare('ALTER TABLE time_blocks ADD COLUMN parent_category_block_id IN
 try { db.prepare('ALTER TABLE category_blocks ADD COLUMN google_event_id TEXT').run(); } catch(e) {}
 try { db.prepare("ALTER TABLE projects ADD COLUMN type TEXT NOT NULL DEFAULT 'professional'").run(); } catch(e) {}
 try { db.prepare('ALTER TABLE projects ADD COLUMN division TEXT').run(); } catch(e) {}
+
+// project_links extra columns
+try { db.prepare("ALTER TABLE project_links ADD COLUMN type TEXT NOT NULL DEFAULT 'web-link'").run(); } catch(e) {}
+try { db.prepare('ALTER TABLE project_links ADD COLUMN phase TEXT').run(); } catch(e) {}
+try { db.prepare('ALTER TABLE project_links ADD COLUMN category TEXT').run(); } catch(e) {}
 
 // 6-stage workflow: preserve old statuses, then remap
 try { db.prepare('ALTER TABLE tasks ADD COLUMN legacy_status TEXT').run(); } catch(e) {}
@@ -509,16 +527,62 @@ app.get('/api/projects/:id/links', (req, res) => {
 app.post('/api/projects/:id/links', (req, res) => {
   const proj = db.prepare('SELECT id FROM projects WHERE id = ?').get(req.params.id);
   if (!proj) return res.status(404).json({ error: 'Project not found' });
-  const { label, url } = req.body;
+  const { label, url, type = 'web-link', phase, category } = req.body;
   if (!label?.trim()) return res.status(400).json({ error: 'Label is required' });
   if (!url?.trim())   return res.status(400).json({ error: 'URL is required' });
-  const r = db.prepare('INSERT INTO project_links (project_id, label, url) VALUES (?, ?, ?)').run(req.params.id, label.trim(), url.trim());
+  const r = db.prepare('INSERT INTO project_links (project_id, label, url, type, phase, category) VALUES (?, ?, ?, ?, ?, ?)')
+    .run(req.params.id, label.trim(), url.trim(), type, phase || null, category || null);
   res.status(201).json(db.prepare('SELECT * FROM project_links WHERE id = ?').get(r.lastInsertRowid));
+});
+
+app.put('/api/project-links/:id', (req, res) => {
+  const link = db.prepare('SELECT * FROM project_links WHERE id = ?').get(req.params.id);
+  if (!link) return res.status(404).json({ error: 'Link not found' });
+  const { label, url, type, phase, category } = req.body;
+  db.prepare('UPDATE project_links SET label = ?, url = ?, type = ?, phase = ?, category = ? WHERE id = ?')
+    .run(label?.trim() ?? link.label, url?.trim() ?? link.url, type ?? link.type, phase ?? link.phase, category ?? link.category, req.params.id);
+  res.json(db.prepare('SELECT * FROM project_links WHERE id = ?').get(req.params.id));
 });
 
 app.delete('/api/project-links/:id', (req, res) => {
   const result = db.prepare('DELETE FROM project_links WHERE id = ?').run(req.params.id);
   if (!result.changes) return res.status(404).json({ error: 'Link not found' });
+  res.status(204).end();
+});
+
+// ── Project Notes ─────────────────────────────────────────────────────────────
+
+app.get('/api/projects/:id/notes', (req, res) => {
+  const proj = db.prepare('SELECT id FROM projects WHERE id = ?').get(req.params.id);
+  if (!proj) return res.status(404).json({ error: 'Project not found' });
+  res.json(db.prepare('SELECT * FROM project_notes WHERE project_id = ? ORDER BY date DESC, id DESC').all(req.params.id));
+});
+
+app.post('/api/projects/:id/notes', (req, res) => {
+  const proj = db.prepare('SELECT id FROM projects WHERE id = ?').get(req.params.id);
+  if (!proj) return res.status(404).json({ error: 'Project not found' });
+  const { title, date, body, type = 'meeting-notes', phase, category, task_id } = req.body;
+  if (!title?.trim()) return res.status(400).json({ error: 'Title is required' });
+  if (!date?.trim())  return res.status(400).json({ error: 'Date is required' });
+  const r = db.prepare('INSERT INTO project_notes (project_id, title, date, body, type, phase, category, task_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
+    .run(req.params.id, title.trim(), date.trim(), body || null, type, phase || null, category || null, task_id || null);
+  res.status(201).json(db.prepare('SELECT * FROM project_notes WHERE id = ?').get(r.lastInsertRowid));
+});
+
+app.put('/api/project-notes/:id', (req, res) => {
+  const note = db.prepare('SELECT * FROM project_notes WHERE id = ?').get(req.params.id);
+  if (!note) return res.status(404).json({ error: 'Note not found' });
+  const { title, date, body, type, phase, category, task_id } = req.body;
+  db.prepare('UPDATE project_notes SET title = ?, date = ?, body = ?, type = ?, phase = ?, category = ?, task_id = ? WHERE id = ?')
+    .run(title?.trim() ?? note.title, date?.trim() ?? note.date, body ?? note.body, type ?? note.type,
+         phase !== undefined ? (phase || null) : note.phase, category !== undefined ? (category || null) : note.category,
+         task_id !== undefined ? (task_id || null) : note.task_id, req.params.id);
+  res.json(db.prepare('SELECT * FROM project_notes WHERE id = ?').get(req.params.id));
+});
+
+app.delete('/api/project-notes/:id', (req, res) => {
+  const result = db.prepare('DELETE FROM project_notes WHERE id = ?').run(req.params.id);
+  if (!result.changes) return res.status(404).json({ error: 'Note not found' });
   res.status(204).end();
 });
 
@@ -539,10 +603,13 @@ app.get('/api/projects/:id/sprints', (req, res) => {
 app.post('/api/projects/:id/sprints', (req, res) => {
   const proj = db.prepare('SELECT id FROM projects WHERE id = ?').get(req.params.id);
   if (!proj) return res.status(404).json({ error: 'Project not found' });
-  const { name, start_date, end_date } = req.body;
+  const { name, start_date, end_date, status = 'upcoming' } = req.body;
   if (!name?.trim()) return res.status(400).json({ error: 'Name is required' });
-  const r = db.prepare('INSERT INTO sprints (project_id, name, start_date, end_date) VALUES (?, ?, ?, ?)')
-    .run(req.params.id, name.trim(), start_date || null, end_date || null);
+  if (status === 'active') {
+    db.prepare("UPDATE sprints SET status = 'parked' WHERE project_id = ? AND status = 'active'").run(req.params.id);
+  }
+  const r = db.prepare('INSERT INTO sprints (project_id, name, start_date, end_date, status) VALUES (?, ?, ?, ?, ?)')
+    .run(req.params.id, name.trim(), start_date || null, end_date || null, status);
   res.status(201).json(withSprintTasks(db.prepare('SELECT * FROM sprints WHERE id = ?').get(r.lastInsertRowid)));
 });
 
@@ -550,6 +617,10 @@ app.put('/api/sprints/:id', (req, res) => {
   const sprint = db.prepare('SELECT * FROM sprints WHERE id = ?').get(req.params.id);
   if (!sprint) return res.status(404).json({ error: 'Sprint not found' });
   const { name, start_date, end_date, status } = req.body;
+  if (status === 'active' && sprint.status !== 'active') {
+    db.prepare("UPDATE sprints SET status = 'parked' WHERE project_id = ? AND status = 'active' AND id != ?")
+      .run(sprint.project_id, req.params.id);
+  }
   db.prepare('UPDATE sprints SET name = ?, start_date = ?, end_date = ?, status = ? WHERE id = ?')
     .run(name?.trim() ?? sprint.name, start_date ?? sprint.start_date, end_date ?? sprint.end_date, status ?? sprint.status, req.params.id);
   res.json(withSprintTasks(db.prepare('SELECT * FROM sprints WHERE id = ?').get(req.params.id)));

@@ -509,6 +509,47 @@
     .pd-sprint-task-remove { background: none; border: none; color: #94a3b8; cursor: pointer; font-size: 13px; padding: 0 4px; }
     .pd-sprint-task-remove:hover { color: #ef4444; }
     .pd-board-wrap { flex: 1; overflow-x: auto; overflow-y: hidden; padding: 12px 20px 16px; display: flex; gap: 10px; align-items: flex-start; }
+    /* ── Links tab ── */
+    .pd-link-section-header { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); padding: 14px 0 6px; border-bottom: 1px solid var(--border); margin-bottom: 8px; }
+    .pd-link-row { display: flex; align-items: flex-start; gap: 12px; padding: 11px 14px; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; margin-bottom: 8px; }
+    .pd-link-left { flex: 1; min-width: 0; }
+    .pd-link-title { font-size: 13px; font-weight: 600; color: var(--text); margin-bottom: 4px; }
+    .pd-link-url-box { display: inline-block; font-size: 11px; color: var(--muted); background: var(--bg); border-radius: 4px; padding: 2px 6px; font-family: monospace; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }
+    .pd-link-pills { display: flex; gap: 4px; margin-top: 5px; flex-wrap: wrap; }
+    .pd-link-actions { display: flex; gap: 4px; flex-shrink: 0; align-items: flex-start; }
+    /* ── Notes tab ── */
+    .pd-note-card { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; margin-bottom: 10px; overflow: hidden; }
+    .pd-note-card.has-task { border-left: 3px solid var(--accent); }
+    .pd-note-card-header { display: flex; align-items: center; gap: 8px; padding: 10px 14px 8px; flex-wrap: wrap; }
+    .pd-note-card-title { font-size: 13px; font-weight: 600; flex: 1; }
+    .pd-note-card-date { font-size: 11px; color: var(--muted); flex-shrink: 0; }
+    .pd-note-card-actions { display: flex; gap: 4px; flex-shrink: 0; }
+    .pd-note-task-tag { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; color: var(--accent); background: #eff6ff; border-radius: 4px; padding: 2px 7px; cursor: pointer; }
+    .pd-note-task-tag:hover { background: #dbeafe; }
+    .pd-note-body { padding: 0 14px 12px; font-size: 13px; line-height: 1.55; color: var(--text); white-space: pre-wrap; word-break: break-word; }
+    .pd-note-body a { color: var(--accent); }
+    .pd-note-readonly { border-left: 3px solid #e2e8f0; opacity: .8; }
+    .pd-note-readonly-badge { font-size: 10px; background: #f1f5f9; color: var(--muted); border-radius: 3px; padding: 1px 5px; }
+    /* ── Sprints tab ── */
+    .pd-sprint-active-card { background: var(--surface); border: 1.5px solid var(--accent); border-radius: 10px; margin-bottom: 16px; overflow: hidden; }
+    .pd-sprint-active-header { padding: 12px 16px 10px; border-bottom: 1px solid var(--border); }
+    .pd-sprint-active-title { font-size: 16px; font-weight: 700; margin-bottom: 2px; }
+    .pd-sprint-active-meta { font-size: 11px; color: var(--muted); margin-bottom: 8px; }
+    .pd-sprint-bar-wrap { height: 6px; background: #e2e8f0; border-radius: 100px; overflow: hidden; }
+    .pd-sprint-bar-fill { height: 100%; background: var(--status-complete); border-radius: 100px; transition: width .3s; }
+    .pd-sprint-bar-label { font-size: 11px; color: var(--muted); margin-top: 4px; }
+    .pd-sprint-other-card { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; margin-bottom: 8px; overflow: hidden; }
+    .pd-sprint-other-summary { display: flex; align-items: center; gap: 8px; padding: 9px 14px; cursor: pointer; }
+    .pd-sprint-other-summary:hover { background: var(--bg); }
+    .pd-sprint-other-summary[open] { border-bottom: 1px solid var(--border); }
+    .pd-sprint-collapse-btn { background: none; border: none; color: var(--muted); cursor: pointer; font-size: 13px; padding: 0; transition: transform .15s; }
+    .pd-sprint-other-name { flex: 1; font-size: 13px; font-weight: 600; }
+    .pd-sprint-status-pill { font-size: 11px; padding: 2px 8px; border-radius: 100px; font-weight: 500; }
+    .pd-sprint-status-upcoming  { background: #f1f5f9; color: #64748b; }
+    .pd-sprint-status-active    { background: #dbeafe; color: #1d4ed8; }
+    .pd-sprint-status-parked    { background: #fffbeb; color: #92400e; }
+    .pd-sprint-status-complete  { background: #dcfce7; color: #15803d; }
+    .pd-sprint-no-active { font-size: 13px; color: var(--muted); padding: 14px; background: #f8fafc; border-radius: 8px; margin-bottom: 12px; text-align: center; border: 1px dashed var(--border); }
   </style>
 </head>
 <body>
@@ -975,15 +1016,106 @@
 </div>
 
 <!-- Add Project Link Modal -->
-<div class="overlay" id="add-link-modal">
-  <div class="modal">
-    <h3>Add Project Link</h3>
-    <div class="modal-sub">Attach a named URL to this project (e.g. Production Bible, Budget)</div>
-    <input type="text" id="new-link-label" placeholder="Label (e.g. Production Bible)">
-    <input type="url" id="new-link-url" placeholder="https://…">
+<div class="overlay" id="pd-link-modal">
+  <div class="modal" style="min-width:340px">
+    <h3 id="pd-link-modal-title">Add Link</h3>
+    <input type="text" id="pdl-label" placeholder="Title (e.g. Production Bible)">
+    <input type="url" id="pdl-url" placeholder="https://…">
+    <div class="field-row" style="margin:0;gap:6px">
+      <select id="pdl-type" style="flex:1">
+        <option value="web-link">Web Link</option>
+        <option value="document">Document</option>
+      </select>
+      <select id="pdl-phase" style="flex:1">
+        <option value="">No phase</option>
+        <option value="new">New</option>
+        <option value="assigned">Assigned</option>
+        <option value="in-progress">In Progress</option>
+        <option value="on-hold">On Hold</option>
+        <option value="needs-review">Needs Review</option>
+        <option value="complete">Complete</option>
+      </select>
+    </div>
+    <select id="pdl-category">
+      <option value="">No category</option>
+      <option value="admin">Admin</option>
+      <option value="ops">Ops</option>
+      <option value="accounting">Accounting</option>
+      <option value="marketing">Marketing</option>
+      <option value="sales">Sales</option>
+      <option value="pm">PM</option>
+      <option value="hr">HR</option>
+      <option value="personal">Personal</option>
+    </select>
     <div class="modal-btns">
-      <button class="btn btn-ghost btn-sm" onclick="closeAddProjectLink()">Cancel</button>
-      <button class="btn btn-primary btn-sm" onclick="createProjectLink()">Add Link</button>
+      <button class="btn btn-ghost btn-sm" onclick="closePdLinkModal()">Cancel</button>
+      <button class="btn btn-primary btn-sm" id="pdl-save-btn" onclick="savePdLink()">Save</button>
+    </div>
+  </div>
+</div>
+
+<div class="overlay" id="pd-sprint-modal">
+  <div class="modal" style="min-width:320px">
+    <h3>New Sprint</h3>
+    <input type="text" id="pd-sprint-modal-name" placeholder="Sprint name (e.g. Sprint 1)">
+    <div class="field-row" style="margin:0;gap:6px">
+      <div class="field" style="flex:1">
+        <label style="font-size:11px">Start date</label>
+        <input type="date" id="pd-sprint-modal-start">
+      </div>
+      <div class="field" style="flex:1">
+        <label style="font-size:11px">End date</label>
+        <input type="date" id="pd-sprint-modal-end">
+      </div>
+    </div>
+    <div class="modal-btns">
+      <button class="btn btn-ghost btn-sm" onclick="closePdSprintModal()">Cancel</button>
+      <button class="btn btn-primary btn-sm" onclick="savePdSprint()">Create Sprint</button>
+    </div>
+  </div>
+</div>
+
+<div class="overlay" id="pd-note-modal">
+  <div class="modal" style="min-width:380px;max-width:480px">
+    <h3 id="pd-note-modal-title">Add Note</h3>
+    <input type="text" id="pdn-title" placeholder="Title">
+    <div class="field-row" style="margin:0;gap:6px">
+      <input type="date" id="pdn-date" style="flex:1">
+      <select id="pdn-type" style="flex:1">
+        <option value="meeting-notes">Meeting Notes</option>
+        <option value="meeting-link">Meeting Link</option>
+        <option value="other">Other</option>
+      </select>
+    </div>
+    <textarea id="pdn-body" placeholder="Body (URLs become clickable links)" style="min-height:100px;resize:vertical;font-size:13px;padding:8px;border:1px solid var(--border);border-radius:7px;font-family:inherit;width:100%;outline:none;"></textarea>
+    <div class="field-row" style="margin:0;gap:6px">
+      <select id="pdn-phase" style="flex:1">
+        <option value="">No phase</option>
+        <option value="new">New</option>
+        <option value="assigned">Assigned</option>
+        <option value="in-progress">In Progress</option>
+        <option value="on-hold">On Hold</option>
+        <option value="needs-review">Needs Review</option>
+        <option value="complete">Complete</option>
+      </select>
+      <select id="pdn-category" style="flex:1">
+        <option value="">No category</option>
+        <option value="admin">Admin</option>
+        <option value="ops">Ops</option>
+        <option value="accounting">Accounting</option>
+        <option value="marketing">Marketing</option>
+        <option value="sales">Sales</option>
+        <option value="pm">PM</option>
+        <option value="hr">HR</option>
+        <option value="personal">Personal</option>
+      </select>
+    </div>
+    <select id="pdn-task">
+      <option value="">No linked task</option>
+    </select>
+    <div class="modal-btns">
+      <button class="btn btn-ghost btn-sm" onclick="closePdNoteModal()">Cancel</button>
+      <button class="btn btn-primary btn-sm" id="pdn-save-btn" onclick="savePdNote()">Save</button>
     </div>
   </div>
 </div>
@@ -1438,7 +1570,7 @@ function setView(view) {
   const isSettings    = view === 'settings';
   const isAllProjects = view === 'all-projects';
   const isProjectDetail = view.startsWith('project:');
-  if (isProjectDetail) { pdState.sprintsLoaded = false; pdState.sprints = []; }
+  if (isProjectDetail) { pdState.sprintsLoaded = false; pdState.sprints = []; pdState.notesLoaded = false; pdState.notes = []; }
   const isListable    = !isCalendar && !isSettings && !isAllProjects && !isProjectDetail;
   document.getElementById('view-title').style.display    = isProjectDetail ? 'none' : '';
   document.getElementById('search-wrap').style.display   = isListable ? '' : 'none';
@@ -1629,15 +1761,16 @@ const PD_TAB_LABELS = { board:'Board', list:'List', links:'Links & Drive', notes
 
 let pdState = {
   tabHistory: {},      // projId → tab
-  filters: {},         // projId → { phase, category, search }
+  filters: {},         // projId → { phase, category, search, type }
   listSort: { col:'title', dir:'asc' },
   sprints: [],         // sprints for current project
   sprintsLoaded: false,
-  editSprintId: null,
+  notes: [],           // project notes for current project
+  notesLoaded: false,
 };
 
 function pdTab(projId)     { return pdState.tabHistory[projId] || 'board'; }
-function pdFilters(projId) { return pdState.filters[projId] || { phase:'', category:'', search:'' }; }
+function pdFilters(projId) { return pdState.filters[projId] || { phase:'', category:'', search:'', type:'' }; }
 
 function pdGetTasks(proj) {
   const f = pdFilters(proj.id);
@@ -1651,12 +1784,20 @@ function pdGetTasks(proj) {
 }
 
 async function setProjectTab(tab, projId) {
+  // reset type filter when switching tabs
+  if (pdState.filters[projId]) pdState.filters[projId].type = '';
   pdState.tabHistory[projId] = tab;
   if (tab === 'sprints' && !pdState.sprintsLoaded) {
     try {
       pdState.sprints = await api('GET', `/api/projects/${projId}/sprints`);
       pdState.sprintsLoaded = true;
     } catch(_) { pdState.sprints = []; }
+  }
+  if (tab === 'notes' && !pdState.notesLoaded) {
+    try {
+      pdState.notes = await api('GET', `/api/projects/${projId}/notes`);
+      pdState.notesLoaded = true;
+    } catch(_) { pdState.notes = []; }
   }
   const proj = state.projects.find(p => p.id == projId);
   if (proj) renderProjectDetail(proj);
@@ -1670,7 +1811,8 @@ function setPdFilter(projId, key, val) {
 }
 
 function pdContextAction(tab, projId) {
-  if (tab === 'links')   openAddProjectLink(projId);
+  if (tab === 'links')   openPdLinkModal(projId, null);
+  else if (tab === 'notes')   openPdNoteModal(projId, null);
   else if (tab === 'sprints') openNewSprint(projId);
   else {
     const proj = state.projects.find(p => p.id == projId);
@@ -1709,21 +1851,39 @@ function renderProjectDetail(proj) {
     ${PD_TABS.map(t => `<button class="pd-tab${t===tab?' active':''}" onclick="setProjectTab('${t}',${proj.id})">${PD_TAB_LABELS[t]}</button>`).join('')}
   </div>`;
 
-  const showFilters = tab === 'board' || tab === 'list' || tab === 'notes';
-  const filterHtml = showFilters ? `<div class="pd-filter-bar">
-    <div class="pd-filter-group">
-      <span class="pd-filter-label">Phase</span>
-      <button class="pd-pill${!f.phase?' active':''}" onclick="setPdFilter(${proj.id},'phase','')">All</button>
-      ${BOARD_STAGES.map(s => `<button class="pd-pill${f.phase===s?' active':''}" onclick="setPdFilter(${proj.id},'phase','${s}')">${STATUS_LABELS[s]}</button>`).join('')}
-    </div>
-    <div class="pd-filter-group">
-      <span class="pd-filter-label">Category</span>
-      <button class="pd-pill${!f.category?' active':''}" onclick="setPdFilter(${proj.id},'category','')">All</button>
-      ${CATEGORIES.map(c => `<button class="pd-pill${f.category===c?' active':''}" onclick="setPdFilter(${proj.id},'category','${c}')">${c.charAt(0).toUpperCase()+c.slice(1)}</button>`).join('')}
-    </div>
-    <input class="pd-search" type="text" placeholder="Search tasks…" value="${esc(f.search)}"
-      oninput="setPdFilter(${proj.id},'search',this.value)">
-  </div>` : '';
+  // Build filter bar based on tab
+  let filterHtml = '';
+  const phaseGroup = `<div class="pd-filter-group">
+    <span class="pd-filter-label">Phase</span>
+    <button class="pd-pill${!f.phase?' active':''}" onclick="setPdFilter(${proj.id},'phase','')">All</button>
+    ${BOARD_STAGES.map(s => `<button class="pd-pill${f.phase===s?' active':''}" onclick="setPdFilter(${proj.id},'phase','${s}')">${STATUS_LABELS[s]}</button>`).join('')}
+  </div>`;
+  const catGroup = `<div class="pd-filter-group">
+    <span class="pd-filter-label">Category</span>
+    <button class="pd-pill${!f.category?' active':''}" onclick="setPdFilter(${proj.id},'category','')">All</button>
+    ${CATEGORIES.map(c => `<button class="pd-pill${f.category===c?' active':''}" onclick="setPdFilter(${proj.id},'category','${c}')">${c.charAt(0).toUpperCase()+c.slice(1)}</button>`).join('')}
+  </div>`;
+  const searchBox = `<input class="pd-search" type="text" placeholder="Search…" value="${esc(f.search)}" oninput="setPdFilter(${proj.id},'search',this.value)">`;
+
+  if (tab === 'board' || tab === 'list') {
+    filterHtml = `<div class="pd-filter-bar">${phaseGroup}${catGroup}${searchBox}</div>`;
+  } else if (tab === 'links') {
+    const linkTypes = [['','All'],['web-link','Web Link'],['document','Document']];
+    const typeGroup = `<div class="pd-filter-group">
+      <span class="pd-filter-label">Type</span>
+      ${linkTypes.map(([v,l]) => `<button class="pd-pill${f.type===v?' active':''}" onclick="setPdFilter(${proj.id},'type','${v}')">${l}</button>`).join('')}
+    </div>`;
+    filterHtml = `<div class="pd-filter-bar">${typeGroup}${phaseGroup}${catGroup}${searchBox}</div>`;
+  } else if (tab === 'notes') {
+    const noteTypes = [['','All'],['meeting-notes','Meeting Notes'],['meeting-link','Meeting Links'],['other','Other']];
+    const typeGroup = `<div class="pd-filter-group">
+      <span class="pd-filter-label">Type</span>
+      ${noteTypes.map(([v,l]) => `<button class="pd-pill${f.type===v?' active':''}" onclick="setPdFilter(${proj.id},'type','${v}')">${l}</button>`).join('')}
+    </div>`;
+    filterHtml = `<div class="pd-filter-bar">${typeGroup}${phaseGroup}${catGroup}${searchBox}</div>`;
+  } else if (tab === 'sprints') {
+    filterHtml = `<div class="pd-filter-bar">${phaseGroup}${catGroup}</div>`;
+  }
 
   let contentHtml = '';
   const tasks = pdGetTasks(proj);
@@ -1733,11 +1893,11 @@ function renderProjectDetail(proj) {
   } else if (tab === 'list') {
     contentHtml = `<div class="pd-list-wrap">${pdRenderTable(tasks, proj.id)}</div>`;
   } else if (tab === 'links') {
-    contentHtml = `<div class="pd-links-wrap">${pdRenderLinks(proj)}</div>`;
+    contentHtml = `<div class="pd-links-wrap" style="flex:1;overflow-y:auto;padding:16px 20px">${pdRenderLinks(proj, f)}</div>`;
   } else if (tab === 'notes') {
-    contentHtml = `<div class="pd-notes-wrap">${pdRenderNotes(tasks)}</div>`;
+    contentHtml = `<div class="pd-notes-wrap" style="flex:1;overflow-y:auto;padding:16px 20px">${pdRenderNotes(proj, f)}</div>`;
   } else if (tab === 'sprints') {
-    contentHtml = `<div class="pd-sprints-wrap">${pdRenderSprints(proj)}</div>`;
+    contentHtml = `<div class="pd-sprints-wrap" style="flex:1;overflow-y:auto;padding:16px 20px">${pdRenderSprints(proj)}</div>`;
   }
 
   document.getElementById('proj-detail-wrap').innerHTML =
@@ -1852,88 +2012,236 @@ function pdSortList(col, projId) {
   if (proj) renderProjectDetail(proj);
 }
 
-function pdRenderLinks(proj) {
-  const links = proj.links || [];
-  if (!links.length) return `<div class="empty-state" style="padding:40px 0"><div class="icon">🔗</div><p>No links yet. Click "＋ Add Link" to add one.</p></div>`;
-  return links.map(l => `
-    <div class="pd-link-row">
-      <div class="pd-link-label">${esc(l.label)}</div>
-      <a href="${esc(l.url)}" target="_blank" rel="noopener" class="pd-link-url">${esc(l.url)}</a>
-      <button class="btn btn-ghost btn-sm" style="color:#ef4444;flex-shrink:0" onclick="deleteProjectLink(${proj.id},${l.id})">Remove</button>
-    </div>`).join('');
+function pdRenderLinks(proj, f) {
+  f = f || pdFilters(proj.id);
+  let links = proj.links || [];
+  // apply filters — items with no phase/category only appear when filter is All
+  if (f.type)     links = links.filter(l => l.type === f.type);
+  if (f.phase)    links = links.filter(l => l.phase === f.phase);
+  if (f.category) links = links.filter(l => l.category === f.category);
+  if (f.search)   links = links.filter(l => l.label.toLowerCase().includes(f.search.toLowerCase()) || l.url.toLowerCase().includes(f.search.toLowerCase()));
+
+  if (!links.length) return `<div class="empty-state" style="padding:40px 0"><div class="icon">🔗</div><p>${(proj.links||[]).length ? 'No links match filters' : 'No links yet. Click "＋ Add Link" to add one.'}</p></div>`;
+
+  const web  = links.filter(l => (l.type || 'web-link') !== 'document');
+  const docs = links.filter(l => l.type === 'document');
+
+  function linkRow(l) {
+    return `<div class="pd-link-row">
+      <div class="pd-link-left">
+        <div class="pd-link-title">${esc(l.label)}</div>
+        <div class="pd-link-url-box">${esc(l.url)}</div>
+        <div class="pd-link-pills">
+          ${l.phase ? `<span class="pill pill-status-${l.phase}" style="font-size:11px">${STATUS_LABELS[l.phase]||l.phase}</span>` : ''}
+          ${l.category ? `<span class="pill pill-cat" style="font-size:11px">${l.category}</span>` : ''}
+        </div>
+      </div>
+      <div class="pd-link-actions">
+        <a href="${esc(l.url)}" target="_blank" rel="noopener" class="btn btn-ghost btn-sm">Open ↗</a>
+        <button class="btn btn-ghost btn-sm" onclick="navigator.clipboard.writeText('${esc(l.url).replace(/'/g,"\\'")}').then(()=>toast('Copied'))">Copy</button>
+        <button class="btn btn-ghost btn-sm" onclick="openPdLinkModal(${proj.id},${JSON.stringify(l)})">Edit</button>
+        <button class="btn btn-ghost btn-sm" style="color:#ef4444" onclick="deleteProjectLink(${proj.id},${l.id})">Delete</button>
+      </div>
+    </div>`;
+  }
+
+  let out = '';
+  if (web.length)  out += `<div class="pd-link-section-header">Web Links</div>${web.map(linkRow).join('')}`;
+  if (docs.length) out += `<div class="pd-link-section-header">Documents</div>${docs.map(linkRow).join('')}`;
+  return out;
 }
 
-function pdRenderNotes(tasks) {
-  const withNotes = tasks.filter(t => t.meeting_notes_count > 0);
-  if (!withNotes.length) return `<div class="empty-state" style="padding:40px 0"><div class="icon">📝</div><p>No meeting notes for this project yet</p></div>`;
-  return withNotes.map(t => `
-    <div class="pd-notes-task-group">
-      <div class="pd-notes-task-title">${esc(t.title)}</div>
-      <div class="pd-note-row">
-        <span style="color:var(--muted)">${t.meeting_notes_count} note${t.meeting_notes_count!==1?'s':''}</span>
-        ${t.meeting_notes_latest_url ? `<a href="${esc(t.meeting_notes_latest_url)}" target="_blank" rel="noopener" style="color:var(--accent);font-size:12px">Open latest ↗</a>` : ''}
-        <button class="btn btn-ghost btn-sm" onclick="openDetail(${t.id})">View all</button>
-      </div>
-    </div>`).join('');
+function linkifyText(text) {
+  if (!text) return '';
+  return esc(text).replace(/https?:\/\/[^\s<>"]+/g, url => `<a href="${url}" target="_blank" rel="noopener">${url}</a>`);
 }
+
+function pdRenderNotes(proj, f) {
+  f = f || pdFilters(proj.id);
+  // Project-level notes
+  let notes = [...pdState.notes];
+  if (f.type)     notes = notes.filter(n => n.type === f.type);
+  if (f.phase)    notes = notes.filter(n => n.phase === f.phase);
+  if (f.category) notes = notes.filter(n => n.category === f.category);
+  if (f.search)   notes = notes.filter(n => n.title.toLowerCase().includes(f.search.toLowerCase()) || (n.body||'').toLowerCase().includes(f.search.toLowerCase()));
+  notes.sort((a,b) => b.date.localeCompare(a.date) || b.id - a.id);
+
+  // Per-task meeting notes (read-only) — exclude when type filter is set
+  const tasks = state.tasks.filter(t => t.project === proj.name && t.meeting_notes_count > 0);
+  const taskNotesHtml = (!f.type && !f.phase && !f.category) ? tasks.map(t => {
+    if (f.search && !t.title.toLowerCase().includes(f.search.toLowerCase())) return '';
+    return `<div class="pd-note-card pd-note-readonly">
+      <div class="pd-note-card-header">
+        <span class="pd-note-card-title">${esc(t.title)}</span>
+        <span class="pd-note-readonly-badge">task notes</span>
+        <span class="pd-note-card-date">${t.meeting_notes_count} note${t.meeting_notes_count!==1?'s':''}</span>
+        <div class="pd-note-card-actions">
+          ${t.meeting_notes_latest_url ? `<a href="${esc(t.meeting_notes_latest_url)}" target="_blank" rel="noopener" class="btn btn-ghost btn-sm">Open ↗</a>` : ''}
+          <button class="btn btn-ghost btn-sm" onclick="openDetail(${t.id})">View task</button>
+        </div>
+      </div>
+    </div>`;
+  }).filter(Boolean).join('') : '';
+
+  const projNotesHtml = notes.map(n => {
+    const linkedTask = n.task_id ? state.tasks.find(t => t.id === n.task_id) : null;
+    const typeLabel = { 'meeting-notes':'Meeting Notes', 'meeting-link':'Meeting Link', 'other':'Other' }[n.type] || n.type;
+    return `<div class="pd-note-card${linkedTask ? ' has-task' : ''}">
+      <div class="pd-note-card-header">
+        <span class="pd-note-card-title">${esc(n.title)}</span>
+        <span class="pill pill-cat" style="font-size:11px">${typeLabel}</span>
+        ${n.phase ? `<span class="pill pill-status-${n.phase}" style="font-size:11px">${STATUS_LABELS[n.phase]||n.phase}</span>` : ''}
+        ${n.category ? `<span class="pill pill-cat" style="font-size:11px">${n.category}</span>` : ''}
+        <span class="pd-note-card-date">${n.date}</span>
+        <div class="pd-note-card-actions">
+          <button class="btn btn-ghost btn-sm" onclick="navigator.clipboard.writeText(${JSON.stringify(n.body||'')}).then(()=>toast('Copied'))">Copy</button>
+          <button class="btn btn-ghost btn-sm" onclick="openPdNoteModal(${proj.id},${JSON.stringify(n)})">Edit</button>
+          <button class="btn btn-ghost btn-sm" style="color:#ef4444" onclick="deletePdNote(${proj.id},${n.id})">Delete</button>
+        </div>
+      </div>
+      ${linkedTask ? `<div style="padding:0 14px 6px"><span class="pd-note-task-tag" onclick="openDetail(${linkedTask.id})">📌 Task: ${esc(linkedTask.title)}</span></div>` : ''}
+      ${n.body ? `<div class="pd-note-body">${linkifyText(n.body)}</div>` : ''}
+    </div>`;
+  }).join('');
+
+  if (!notes.length && !taskNotesHtml) {
+    return `<div class="empty-state" style="padding:40px 0"><div class="icon">📝</div><p>${pdState.notes.length ? 'No notes match filters' : 'No notes yet. Click "＋ Add Note" to add one.'}</p></div>`;
+  }
+  return projNotesHtml + taskNotesHtml;
+}
+
+const SPRINT_STATUS_ORDER = ['active','upcoming','parked','complete'];
+const SPRINT_STATUS_LABELS = { active:'Active', upcoming:'Upcoming', parked:'Parked', complete:'Complete' };
 
 function pdRenderSprints(proj) {
   if (!pdState.sprintsLoaded) return `<div class="empty-state" style="padding:40px 0"><div class="icon">⚡</div><p>Loading…</p></div>`;
   const sprints = pdState.sprints;
+  const f = pdFilters(proj.id);
+  if (!sprints.length) return `<div class="empty-state" style="padding:40px 0"><div class="icon">⚡</div><p>No sprints yet. Click "＋ New Sprint" to create one.</p></div>`;
 
-  function sprintCard(sp) {
-    const spTasks = sp.task_ids.map(id => state.tasks.find(t => t.id === id)).filter(Boolean);
-    const tasksHtml = spTasks.length
-      ? spTasks.map(t => `<div class="pd-sprint-task-row">
-          <span class="pill pill-status-${t.status}" style="flex-shrink:0">${STATUS_LABELS[t.status]||t.status}</span>
-          <span style="flex:1">${esc(t.title)}</span>
-          <button class="pd-sprint-task-remove" onclick="pdRemoveSprintTask(${sp.id},${t.id},${proj.id})" title="Remove">✕</button>
-        </div>`).join('')
-      : `<div class="pd-sprint-empty">No tasks yet</div>`;
+  const active   = sprints.find(s => s.status === 'active');
+  const others   = sprints.filter(s => s.status !== 'active')
+    .sort((a,b) => SPRINT_STATUS_ORDER.indexOf(a.status) - SPRINT_STATUS_ORDER.indexOf(b.status));
 
-    const dateStr = (sp.start_date || sp.end_date)
-      ? `${sp.start_date ? fmtDate(sp.start_date) : '?'} – ${sp.end_date ? fmtDate(sp.end_date) : '?'}`
-      : '';
-    const stCls = sp.status === 'complete' ? 'pd-sprint-status-complete' : 'pd-sprint-status-active';
+  function filteredTasks(sp) {
+    let tks = sp.task_ids.map(id => state.tasks.find(t => t.id === id)).filter(Boolean);
+    if (f.phase)    tks = tks.filter(t => t.status === f.phase);
+    if (f.category) tks = tks.filter(t => t.category === f.category);
+    return tks;
+  }
 
-    return `<div class="pd-sprint-card">
-      <div class="pd-sprint-header">
-        <span class="pd-sprint-name">${esc(sp.name)}</span>
-        ${dateStr ? `<span class="pd-sprint-dates">${dateStr}</span>` : ''}
-        <span class="pd-sprint-status ${stCls}">${sp.status}</span>
-        <button class="btn btn-ghost btn-sm" onclick="pdAddSprintTask(${sp.id},${proj.id})">＋ Task</button>
-        ${sp.status==='active' ? `<button class="btn btn-ghost btn-sm" onclick="pdCompleteSprint(${sp.id},${proj.id})">Mark Complete</button>` : ''}
-        <button class="btn btn-ghost btn-sm" style="color:#ef4444" onclick="pdDeleteSprint(${sp.id},${proj.id})">Delete</button>
-      </div>
-      <div class="pd-sprint-body">${tasksHtml}</div>
+  function taskRow(t, spId) {
+    return `<div class="pd-sprint-task-row">
+      <span class="pill pill-status-${t.status}" style="font-size:11px;flex-shrink:0">${STATUS_LABELS[t.status]||t.status}</span>
+      ${t.category ? `<span class="pill pill-cat" style="font-size:11px;flex-shrink:0">${t.category}</span>` : ''}
+      <span style="flex:1;font-size:13px;cursor:pointer" onclick="openDetail(${t.id})">${esc(t.title)}</span>
+      <button class="pd-sprint-task-remove" onclick="pdRemoveSprintTask(${spId},${t.id},${proj.id})" title="Remove">✕</button>
     </div>`;
   }
 
-  const html = sprints.length
-    ? sprints.map(sprintCard).join('')
-    : `<div class="empty-state" style="padding:40px 0"><div class="icon">⚡</div><p>No sprints yet. Click "＋ New Sprint" to create one.</p></div>`;
-  return html;
+  function activeCard() {
+    const sp = active;
+    const spTasks = filteredTasks(sp);
+    const allTasks = sp.task_ids.map(id => state.tasks.find(t => t.id === id)).filter(Boolean);
+    const done = allTasks.filter(t => t.status === 'complete').length;
+    const pct  = allTasks.length ? Math.round(done / allTasks.length * 100) : 0;
+    const dateStr = (sp.start_date || sp.end_date)
+      ? `${sp.start_date ? fmtDate(sp.start_date) : '?'} → ${sp.end_date ? fmtDate(sp.end_date) : '?'}`
+      : 'No dates set';
+    return `<div class="pd-sprint-active-card">
+      <div class="pd-sprint-active-header">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
+          <span class="pd-sprint-active-title">${esc(sp.name)}</span>
+          <span class="pd-sprint-status-pill pd-sprint-status-active">Active</span>
+          <div style="margin-left:auto;display:flex;gap:4px">
+            <button class="btn btn-ghost btn-sm" onclick="pdAddSprintTask(${sp.id},${proj.id})">＋ Task</button>
+            <button class="btn btn-ghost btn-sm" onclick="pdSetSprintStatus(${sp.id},'complete',${proj.id})">Complete Sprint</button>
+            <button class="btn btn-ghost btn-sm" onclick="pdSetSprintStatus(${sp.id},'parked',${proj.id})">Park</button>
+            <button class="btn btn-ghost btn-sm" style="color:#ef4444" onclick="pdDeleteSprint(${sp.id},${proj.id})">Delete</button>
+          </div>
+        </div>
+        <div class="pd-sprint-active-meta">${dateStr} · ${allTasks.length} task${allTasks.length!==1?'s':''}</div>
+        <div class="pd-sprint-bar-wrap"><div class="pd-sprint-bar-fill" style="width:${pct}%"></div></div>
+        <div class="pd-sprint-bar-label">${done}/${allTasks.length} complete · ${pct}%</div>
+      </div>
+      <div class="pd-sprint-body">
+        ${spTasks.length ? spTasks.map(t => taskRow(t, sp.id)).join('') : `<div class="pd-sprint-empty">${f.phase||f.category ? 'No tasks match filters' : 'No tasks yet'}</div>`}
+      </div>
+    </div>`;
+  }
+
+  function otherCard(sp) {
+    const stCls  = `pd-sprint-status-${sp.status}`;
+    const spTasks = filteredTasks(sp);
+    const allTasks = sp.task_ids.map(id => state.tasks.find(t => t.id === id)).filter(Boolean);
+    const done = allTasks.filter(t => t.status === 'complete').length;
+    const dateStr = (sp.start_date || sp.end_date)
+      ? ` · ${sp.start_date ? fmtDate(sp.start_date) : '?'} → ${sp.end_date ? fmtDate(sp.end_date) : '?'}`
+      : '';
+    const canActivate = sp.status !== 'complete';
+    return `<details class="pd-sprint-other-card">
+      <summary class="pd-sprint-other-summary">
+        <span class="pd-sprint-other-name">${esc(sp.name)}</span>
+        <span class="pd-sprint-status-pill ${stCls}">${SPRINT_STATUS_LABELS[sp.status]||sp.status}</span>
+        <span style="font-size:11px;color:var(--muted)">${allTasks.length} task${allTasks.length!==1?'s':''} · ${done} done${dateStr}</span>
+        <div style="margin-left:auto;display:flex;gap:4px">
+          ${canActivate ? `<button class="btn btn-ghost btn-sm" onclick="event.preventDefault();pdSetSprintStatus(${sp.id},'active',${proj.id})">Set Active</button>` : ''}
+          <button class="btn btn-ghost btn-sm" onclick="event.preventDefault();pdAddSprintTask(${sp.id},${proj.id})">＋ Task</button>
+          <button class="btn btn-ghost btn-sm" style="color:#ef4444" onclick="event.preventDefault();pdDeleteSprint(${sp.id},${proj.id})">Delete</button>
+        </div>
+      </summary>
+      <div class="pd-sprint-body" style="padding:10px 14px">
+        ${spTasks.length ? spTasks.map(t => taskRow(t, sp.id)).join('') : `<div class="pd-sprint-empty">${f.phase||f.category ? 'No tasks match filters' : 'No tasks yet'}</div>`}
+      </div>
+    </details>`;
+  }
+
+  let filterBar = '';
+  if (f.phase || f.category) {
+    filterBar = `<div style="font-size:12px;color:var(--muted);margin-bottom:8px">Showing tasks filtered by ${f.phase ? `phase: ${STATUS_LABELS[f.phase]}` : ''}${f.phase&&f.category?' · ':''}${f.category ? `category: ${f.category}` : ''}</div>`;
+  }
+
+  return filterBar
+    + (!active ? `<div class="pd-sprint-no-active">No active sprint. Set an upcoming or parked sprint as active.</div>` : activeCard())
+    + (others.length ? others.map(otherCard).join('') : '');
 }
+
+let _pdSprintProjId = null;
 
 function openNewSprint(projId) {
-  const name = prompt('Sprint name:');
-  if (!name?.trim()) return;
-  const start = prompt('Start date (YYYY-MM-DD, optional):') || null;
-  const end   = prompt('End date (YYYY-MM-DD, optional)')   || null;
-  api('POST', `/api/projects/${projId}/sprints`, { name: name.trim(), start_date: start, end_date: end })
-    .then(sp => {
-      pdState.sprints.unshift(sp);
-      const proj = state.projects.find(p => p.id == projId);
-      if (proj) renderProjectDetail(proj);
-    });
+  _pdSprintProjId = projId;
+  document.getElementById('pd-sprint-modal-name').value  = '';
+  document.getElementById('pd-sprint-modal-start').value = '';
+  document.getElementById('pd-sprint-modal-end').value   = '';
+  document.getElementById('pd-sprint-modal').classList.add('open');
+  setTimeout(() => document.getElementById('pd-sprint-modal-name').focus(), 50);
+}
+function closePdSprintModal() { document.getElementById('pd-sprint-modal').classList.remove('open'); }
+async function savePdSprint() {
+  const name  = document.getElementById('pd-sprint-modal-name').value.trim();
+  const start = document.getElementById('pd-sprint-modal-start').value || null;
+  const end   = document.getElementById('pd-sprint-modal-end').value   || null;
+  if (!name) { toast('Enter a sprint name'); return; }
+  const sp = await api('POST', `/api/projects/${_pdSprintProjId}/sprints`, { name, start_date: start, end_date: end });
+  pdState.sprints.unshift(sp);
+  closePdSprintModal();
+  const proj = state.projects.find(p => p.id == _pdSprintProjId);
+  if (proj) renderProjectDetail(proj);
 }
 
-async function pdCompleteSprint(sprintId, projId) {
-  const sp = await api('PUT', `/api/sprints/${sprintId}`, { status: 'complete' });
-  pdState.sprints = pdState.sprints.map(s => s.id === sprintId ? sp : s);
+async function pdSetSprintStatus(sprintId, status, projId) {
+  const sp = await api('PUT', `/api/sprints/${sprintId}`, { status });
+  // server already deactivates other sprints; refresh all sprints
+  pdState.sprints = pdState.sprints.map(s => {
+    if (s.id === sprintId) return sp;
+    if (status === 'active' && s.status === 'active') return { ...s, status: 'parked' };
+    return s;
+  });
   const proj = state.projects.find(p => p.id == projId);
   if (proj) renderProjectDetail(proj);
 }
+
+async function pdCompleteSprint(sprintId, projId) { await pdSetSprintStatus(sprintId, 'complete', projId); }
 
 async function pdDeleteSprint(sprintId, projId) {
   if (!confirm('Delete this sprint?')) return;
@@ -1964,6 +2272,69 @@ async function pdRemoveSprintTask(sprintId, taskId, projId) {
   pdState.sprints = pdState.sprints.map(s => s.id === sprintId ? { ...s, task_ids: s.task_ids.filter(id => id !== taskId) } : s);
   const proj = state.projects.find(p => p.id == projId);
   if (proj) renderProjectDetail(proj);
+}
+
+// ── Project Notes CRUD ────────────────────────────────────────────────────────
+
+let _pdNoteEditId  = null;
+let _pdNoteProjId  = null;
+
+function openPdNoteModal(projId, note) {
+  _pdNoteProjId  = projId;
+  _pdNoteEditId  = note ? note.id : null;
+  document.getElementById('pd-note-modal-title').textContent = note ? 'Edit Note' : 'Add Note';
+  document.getElementById('pdn-save-btn').textContent        = note ? 'Save' : 'Add Note';
+  document.getElementById('pdn-title').value    = note?.title    || '';
+  document.getElementById('pdn-date').value     = note?.date     || new Date().toISOString().slice(0,10);
+  document.getElementById('pdn-body').value     = note?.body     || '';
+  document.getElementById('pdn-type').value     = note?.type     || 'meeting-notes';
+  document.getElementById('pdn-phase').value    = note?.phase    || '';
+  document.getElementById('pdn-category').value = note?.category || '';
+  // populate task selector with project tasks
+  const projTasks = state.tasks.filter(t => t.project === (state.projects.find(p=>p.id==projId)?.name));
+  const taskSel = document.getElementById('pdn-task');
+  taskSel.innerHTML = '<option value="">No linked task</option>' +
+    projTasks.map(t => `<option value="${t.id}">${esc(t.title)}</option>`).join('');
+  taskSel.value = note?.task_id || '';
+  document.getElementById('pd-note-modal').classList.add('open');
+  setTimeout(() => document.getElementById('pdn-title').focus(), 50);
+}
+function closePdNoteModal() { document.getElementById('pd-note-modal').classList.remove('open'); }
+document.getElementById('pd-note-modal').addEventListener('click', e => { if (e.target===e.currentTarget) closePdNoteModal(); });
+
+async function savePdNote() {
+  const title    = document.getElementById('pdn-title').value.trim();
+  const date     = document.getElementById('pdn-date').value;
+  const body     = document.getElementById('pdn-body').value;
+  const type     = document.getElementById('pdn-type').value;
+  const phase    = document.getElementById('pdn-phase').value    || null;
+  const category = document.getElementById('pdn-category').value || null;
+  const task_id  = document.getElementById('pdn-task').value     || null;
+  if (!title) { toast('Enter a title'); return; }
+  if (!date)  { toast('Enter a date');  return; }
+  try {
+    if (_pdNoteEditId) {
+      const updated = await api('PUT', `/api/project-notes/${_pdNoteEditId}`, { title, date, body, type, phase, category, task_id });
+      pdState.notes = pdState.notes.map(n => n.id === _pdNoteEditId ? updated : n);
+      toast('Note updated');
+    } else {
+      const note = await api('POST', `/api/projects/${_pdNoteProjId}/notes`, { title, date, body, type, phase, category, task_id });
+      pdState.notes.unshift(note);
+      toast('Note added');
+    }
+    closePdNoteModal();
+    const proj = state.projects.find(p => p.id == _pdNoteProjId);
+    if (proj) renderProjectDetail(proj);
+  } catch(e) { toast(e.message); }
+}
+
+async function deletePdNote(projId, noteId) {
+  if (!confirm('Delete this note?')) return;
+  await api('DELETE', `/api/project-notes/${noteId}`);
+  pdState.notes = pdState.notes.filter(n => n.id !== noteId);
+  const proj = state.projects.find(p => p.id == projId);
+  if (proj) renderProjectDetail(proj);
+  toast('Note deleted');
 }
 
 // ── Board View ────────────────────────────────────────────────────────────────
@@ -2919,33 +3290,57 @@ document.getElementById('upd-input').addEventListener('keydown', e => {
 
 // ── Project Links ─────────────────────────────────────────────────────────────
 
-function openAddProjectLink(projId) {
-  addLinkProjId = projId;
-  document.getElementById('new-link-label').value = '';
-  document.getElementById('new-link-url').value   = '';
-  document.getElementById('add-link-modal').classList.add('open');
-  setTimeout(() => document.getElementById('new-link-label').focus(), 50);
-}
-function closeAddProjectLink() { document.getElementById('add-link-modal').classList.remove('open'); }
-document.getElementById('add-link-modal').addEventListener('click', e => { if (e.target===e.currentTarget) closeAddProjectLink(); });
-document.getElementById('new-link-url').addEventListener('keydown', e => { if (e.key==='Enter') createProjectLink(); if (e.key==='Escape') closeAddProjectLink(); });
+let _pdLinkEditId  = null;
+let _pdLinkProjId  = null;
 
-async function createProjectLink() {
-  const label = document.getElementById('new-link-label').value.trim();
-  const url   = document.getElementById('new-link-url').value.trim();
-  if (!label) { toast('Enter a label'); return; }
-  if (!url)   { toast('Enter a URL'); return; }
+function openAddProjectLink(projId) { openPdLinkModal(projId, null); }
+
+function openPdLinkModal(projId, link) {
+  _pdLinkProjId  = projId;
+  _pdLinkEditId  = link ? link.id : null;
+  document.getElementById('pd-link-modal-title').textContent = link ? 'Edit Link' : 'Add Link';
+  document.getElementById('pdl-save-btn').textContent        = link ? 'Save' : 'Add Link';
+  document.getElementById('pdl-label').value    = link?.label    || '';
+  document.getElementById('pdl-url').value      = link?.url      || '';
+  document.getElementById('pdl-type').value     = link?.type     || 'web-link';
+  document.getElementById('pdl-phase').value    = link?.phase    || '';
+  document.getElementById('pdl-category').value = link?.category || '';
+  document.getElementById('pd-link-modal').classList.add('open');
+  setTimeout(() => document.getElementById('pdl-label').focus(), 50);
+}
+function closePdLinkModal() { document.getElementById('pd-link-modal').classList.remove('open'); }
+function closeAddProjectLink() { closePdLinkModal(); }
+document.getElementById('pd-link-modal').addEventListener('click', e => { if (e.target===e.currentTarget) closePdLinkModal(); });
+document.getElementById('pd-sprint-modal').addEventListener('click', e => { if (e.target===e.currentTarget) closePdSprintModal(); });
+document.getElementById('pd-sprint-modal-name').addEventListener('keydown', e => { if (e.key==='Enter') savePdSprint(); if (e.key==='Escape') closePdSprintModal(); });
+
+async function savePdLink() {
+  const label    = document.getElementById('pdl-label').value.trim();
+  const url      = document.getElementById('pdl-url').value.trim();
+  const type     = document.getElementById('pdl-type').value;
+  const phase    = document.getElementById('pdl-phase').value    || null;
+  const category = document.getElementById('pdl-category').value || null;
+  if (!label) { toast('Enter a title'); return; }
+  if (!url)   { toast('Enter a URL');   return; }
   try {
-    const link = await api('POST', `/api/projects/${addLinkProjId}/links`, { label, url });
-    const proj = state.projects.find(p => p.id === addLinkProjId);
-    if (proj) { proj.links = proj.links || []; proj.links.push(link); }
-    closeAddProjectLink();
+    if (_pdLinkEditId) {
+      const updated = await api('PUT', `/api/project-links/${_pdLinkEditId}`, { label, url, type, phase, category });
+      const proj = state.projects.find(p => p.id === _pdLinkProjId);
+      if (proj) proj.links = (proj.links||[]).map(l => l.id === _pdLinkEditId ? updated : l);
+      toast('Link updated');
+    } else {
+      const link = await api('POST', `/api/projects/${_pdLinkProjId}/links`, { label, url, type, phase, category });
+      const proj = state.projects.find(p => p.id === _pdLinkProjId);
+      if (proj) { proj.links = proj.links || []; proj.links.push(link); }
+      toast('Link added');
+    }
+    closePdLinkModal();
     renderTaskList();
-    toast('Link added');
   } catch(e) { toast(e.message); }
 }
 
 async function deleteProjectLink(projId, linkId) {
+  if (!confirm('Delete this link?')) return;
   await api('DELETE', `/api/project-links/${linkId}`);
   const proj = state.projects.find(p => p.id === projId);
   if (proj) proj.links = (proj.links || []).filter(l => l.id !== linkId);
