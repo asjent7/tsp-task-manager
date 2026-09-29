@@ -618,6 +618,61 @@
     .share-row:last-child { border-bottom: none; }
     .share-row-url { flex: 1; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .share-row-exp { font-size: 11px; color: var(--muted); flex-shrink: 0; }
+    /* ── Dashboard ── */
+    .db-wrap { padding: 0 20px 40px; }
+    .db-header { display: flex; align-items: center; justify-content: space-between; padding: 16px 0 14px; border-bottom: 1px solid var(--border); margin-bottom: 16px; flex-wrap: wrap; gap: 10px; }
+    .db-header-left h2 { font-size: 20px; font-weight: 700; margin: 0 0 2px; }
+    .db-header-date { font-size: 12px; color: var(--muted); }
+    .db-header-right { display: flex; gap: 8px; flex-wrap: wrap; }
+    .db-search-wrap { position: relative; margin-bottom: 10px; }
+    .db-search-wrap input { width: 100%; padding: 9px 14px; border: 1px solid var(--border); border-radius: 8px; font-size: 14px; background: var(--surface); color: var(--text); outline: none; box-sizing: border-box; }
+    .db-search-wrap input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(59,130,246,.12); }
+    .db-search-box { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; overflow: hidden; margin-bottom: 14px; }
+    .db-search-tabs { display: flex; border-bottom: 1px solid var(--border); background: var(--bg); overflow-x: auto; }
+    .db-search-tab { padding: 7px 12px; font-size: 12px; cursor: pointer; border: none; background: none; color: var(--muted); border-bottom: 2px solid transparent; white-space: nowrap; flex-shrink: 0; }
+    .db-search-tab.active { color: var(--accent); border-bottom-color: var(--accent); font-weight: 600; }
+    .db-search-list { max-height: 280px; overflow-y: auto; }
+    .db-search-item { display: flex; gap: 10px; align-items: center; padding: 8px 14px; cursor: pointer; border-bottom: 1px solid var(--border); font-size: 13px; }
+    .db-search-item:last-child { border-bottom: none; }
+    .db-search-item:hover { background: var(--hover); }
+    .db-si-badge { font-size: 10px; background: var(--hover); border-radius: 3px; padding: 1px 5px; color: var(--muted); flex-shrink: 0; }
+    .db-si-name { flex: 1; font-weight: 500; }
+    .db-si-name mark { background: #fef08a; border-radius: 2px; }
+    .db-si-proj { font-size: 11px; color: var(--muted); flex-shrink: 0; max-width: 140px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .db-cards { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 20px; }
+    .db-card { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 12px 16px; flex: 1; min-width: 100px; cursor: pointer; transition: border-color .15s; }
+    .db-card:hover { border-color: var(--accent); }
+    .db-card-val { font-size: 24px; font-weight: 700; color: var(--text); line-height: 1.1; }
+    .db-card-val.db-val-red { color: #ef4444; }
+    .db-card-lbl { font-size: 11px; color: var(--muted); margin-top: 2px; }
+    .db-card-sub { font-size: 11px; color: var(--muted); margin-top: 4px; }
+    .db-card-bar { height: 4px; background: #e2e8f0; border-radius: 100px; margin-top: 6px; overflow: hidden; }
+    .db-card-bar-fill { height: 100%; background: var(--accent); border-radius: 100px; }
+    .db-sections { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+    @media (max-width: 860px) { .db-sections { grid-template-columns: 1fr; } }
+    .db-section { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+    .db-section-full { grid-column: 1 / -1; }
+    .db-section-head { display: flex; align-items: center; gap: 8px; padding: 9px 14px; border-bottom: 1px solid var(--border); background: var(--bg); font-size: 13px; font-weight: 600; }
+    .db-section-count { background: var(--accent); color: #fff; border-radius: 10px; padding: 1px 7px; font-size: 10px; font-weight: 700; min-width: 18px; text-align: center; }
+    .db-section-count.red { background: #ef4444; }
+    .db-section-more { padding: 6px 14px; font-size: 12px; color: var(--accent); cursor: pointer; border-top: 1px solid var(--border); text-align: center; }
+    .db-section-more:hover { background: var(--hover); }
+    .db-section-empty { padding: 14px; font-size: 12px; color: var(--muted); }
+    .db-tbl { width: 100%; border-collapse: collapse; font-size: 12px; }
+    .db-tbl th { text-align: left; font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); padding: 5px 14px; border-bottom: 1px solid var(--border); background: var(--bg); white-space: nowrap; }
+    .db-tbl td { padding: 6px 14px; border-bottom: 1px solid var(--border); vertical-align: middle; max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .db-tbl tr:last-child td { border-bottom: none; }
+    .db-tbl tr:hover td { background: var(--hover); cursor: pointer; }
+    .db-tbl .td-title { font-weight: 500; max-width: 260px; }
+    .db-overdue { color: #ef4444; font-weight: 600; }
+    .db-proj-row { display: flex; align-items: center; gap: 8px; padding: 6px 14px; border-bottom: 1px solid var(--border); font-size: 12px; cursor: pointer; }
+    .db-proj-row:last-child { border-bottom: none; }
+    .db-proj-row:hover { background: var(--hover); }
+    .db-proj-name { flex: 1; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .db-proj-bar { flex: 1; height: 6px; background: #e2e8f0; border-radius: 100px; overflow: hidden; max-width: 120px; }
+    .db-proj-bar-fill { height: 100%; background: #10b981; border-radius: 100px; }
+    .db-proj-pct { font-size: 11px; color: var(--muted); width: 70px; text-align: right; flex-shrink: 0; white-space: nowrap; }
+    .db-div-label { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .07em; color: var(--muted); padding: 6px 14px 3px; border-bottom: 1px solid var(--border); background: var(--bg); }
     /* ── Sprints tab ── */
     .pd-sprint-active-card { background: var(--surface); border: 1.5px solid var(--accent); border-radius: 10px; margin-bottom: 16px; overflow: hidden; }
     .pd-sprint-active-header { padding: 12px 16px 10px; border-bottom: 1px solid var(--border); }
@@ -648,6 +703,9 @@
     <div class="sidebar-logo"><span class="brand">TSP Task Manager</span></div>
 
     <div class="sidebar-section">
+      <div class="nav-item" data-view="dashboard" onclick="setView('dashboard')">
+        <span class="nav-label"><span class="nav-icon">🏠</span> Dashboard</span>
+      </div>
       <div class="nav-item" data-view="inbox" onclick="setView('inbox')">
         <span class="nav-label"><span class="nav-icon">📥</span> Inbox</span>
         <span class="nav-count" id="cnt-inbox">0</span>
@@ -656,9 +714,6 @@
         <select id="filter-project" onchange="applyFilters()">
           <option value="">All projects</option>
         </select>
-      </div>
-      <div class="sidebar-notes-search">
-        <input type="search" id="sidebar-notes-q" placeholder="Search notes…" oninput="sidebarNotesSearchDebounced(this.value)">
       </div>
       <div class="nav-item" data-view="all" onclick="setView('all')">
         <span class="nav-label"><span class="nav-icon">📋</span> All Tasks</span>
@@ -1164,6 +1219,14 @@
 <div class="overlay" id="pd-note-modal">
   <div class="modal" style="min-width:340px;max-width:900px;width:90vw">
     <h3 id="pd-note-modal-title">Add Note</h3>
+    <div id="pdn-proj-wrap" style="display:none;margin-bottom:8px">
+      <div class="field" style="margin:0">
+        <label style="font-size:11px">Project</label>
+        <select id="pdn-proj-select">
+          <option value="">No project</option>
+        </select>
+      </div>
+    </div>
     <div class="field-row" style="margin:0 0 8px;gap:8px;flex-wrap:wrap">
       <div class="field" style="flex:2;min-width:160px;margin:0">
         <label style="font-size:11px">Title</label>
@@ -1263,6 +1326,39 @@
     <div class="modal-btns">
       <button class="btn btn-ghost btn-sm" onclick="closeCatDeleteModal()">Cancel</button>
       <button class="btn btn-primary btn-sm" style="background:#ef4444;border-color:#ef4444" onclick="confirmDeleteCategory()">Delete</button>
+    </div>
+  </div>
+</div>
+
+<!-- Dashboard Quick-Add Task Modal -->
+<div class="overlay" id="db-quick-task-modal">
+  <div class="modal" style="max-width:420px">
+    <h3>Quick Add Task</h3>
+    <input type="text" id="dbt-title" placeholder="Task title (required)" autocomplete="off">
+    <div class="field-row" style="margin:0;gap:8px">
+      <div class="field" style="flex:1;margin:0">
+        <label style="font-size:11px">Priority</label>
+        <select id="dbt-priority">
+          <option value="medium">Medium</option>
+          <option value="urgent">🔴 Urgent</option>
+          <option value="high">🟠 High</option>
+          <option value="low">⚪ Low</option>
+        </select>
+      </div>
+      <div class="field" style="flex:1;margin:0">
+        <label style="font-size:11px">Due date</label>
+        <input type="date" id="dbt-due">
+      </div>
+    </div>
+    <div class="field" style="margin:0">
+      <label style="font-size:11px">Project</label>
+      <select id="dbt-project">
+        <option value="">No project (inbox)</option>
+      </select>
+    </div>
+    <div class="modal-btns">
+      <button class="btn btn-ghost btn-sm" onclick="closeDbQuickTask()">Cancel</button>
+      <button class="btn btn-primary btn-sm" onclick="saveDbQuickTask()">Add Task</button>
     </div>
   </div>
 </div>
@@ -1430,7 +1526,7 @@ function getWeekStart(date) {
 
 let state = {
   tasks: [], projects: [], templates: [], focusLists: [], divisions: [], categories: [],
-  view: 'inbox',
+  view: 'dashboard',
   filters: { priority: '', status: '', search: '', due: '', dueFrom: '', dueTo: '', project: '' },
   selectedId: null,
   timeLogs: [], subtasks: [], meetingNotes: [], taskUpdates: [],
@@ -1567,6 +1663,7 @@ function isOverdue(d) {
 }
 
 function viewTitle(view) {
+  if (view === 'dashboard')    return 'Dashboard';
   if (view === 'inbox')        return 'Inbox';
   if (view === 'all')          return 'All Tasks';
   if (view === 'all-projects') return 'All Projects';
@@ -1777,13 +1874,14 @@ function setView(view) {
   }
 
   state.boardMode = false;
+  const isDashboard   = view === 'dashboard';
   const isCalendar    = view === 'calendar';
   const isSettings    = view === 'settings';
   const isAllProjects = view === 'all-projects';
   const isProjectDetail = view.startsWith('project:');
   if (isProjectDetail) { pdState.sprintsLoaded = false; pdState.sprints = []; pdState.notesLoaded = false; pdState.notes = []; }
-  const isListable    = !isCalendar && !isSettings && !isAllProjects && !isProjectDetail;
-  document.getElementById('view-title').style.display    = isProjectDetail ? 'none' : '';
+  const isListable    = !isDashboard && !isCalendar && !isSettings && !isAllProjects && !isProjectDetail;
+  document.getElementById('view-title').style.display    = (isProjectDetail || isDashboard) ? 'none' : '';
   document.getElementById('search-wrap').style.display   = isListable ? '' : 'none';
   document.getElementById('filter-bar').style.display    = isListable ? '' : 'none';
   document.getElementById('quick-add-bar').style.display = isListable ? '' : 'none';
@@ -2827,6 +2925,9 @@ function openPdNoteModal(projId, note) {
   _pdNoteEditId  = note ? note.id : null;
   document.getElementById('pd-note-modal-title').textContent = note ? 'Edit Note' : 'Add Note';
   document.getElementById('pdn-save-btn').textContent        = note ? 'Save' : 'Add Note';
+  // Show/hide project picker (used when opening from dashboard with no project context)
+  const projWrap = document.getElementById('pdn-proj-wrap');
+  if (projWrap) projWrap.style.display = projId ? 'none' : '';
   // Try loading autosave draft
   const draftKey = `note_draft_${_pdNoteEditId || 'new'}_${projId}`;
   let draft = null;
@@ -2852,7 +2953,11 @@ function openPdNoteModal(projId, note) {
   document.getElementById('pd-note-modal').classList.add('open');
   setTimeout(() => document.getElementById('pdn-title').focus(), 50);
 }
-function closePdNoteModal() { document.getElementById('pd-note-modal').classList.remove('open'); }
+function closePdNoteModal() {
+  document.getElementById('pd-note-modal').classList.remove('open');
+  const projWrap = document.getElementById('pdn-proj-wrap');
+  if (projWrap) projWrap.style.display = 'none';
+}
 document.getElementById('pd-note-modal').addEventListener('click', e => { if (e.target===e.currentTarget) closePdNoteModal(); });
 
 async function savePdNote() {
@@ -2864,6 +2969,11 @@ async function savePdNote() {
   const category      = document.getElementById('pdn-category').value || null;
   const task_id       = document.getElementById('pdn-task').value     || null;
   const ai_summary_url= document.getElementById('pdn-ai-url').value.trim() || null;
+  // if opened from dashboard, read project from picker
+  if (_pdNoteProjId === null) {
+    const sel = document.getElementById('pdn-proj-select');
+    _pdNoteProjId = sel?.value ? Number(sel.value) : null;
+  }
   if (!title)     { toast('Enter a title'); return; }
   if (!note_date) { toast('Enter a date');  return; }
   try {
@@ -3005,7 +3115,425 @@ async function boardDrop(e, stage) {
   }
 }
 
+// ── Dashboard ─────────────────────────────────────────────────────────────────
+
+let _dbSearchTimer = null;
+let _dbSearchResults = { tasks: [], projects: [], notes: [], links: [] };
+let _dbSearchTab = 'all';
+let _dbSearchQuery = '';
+
+function dbSearchDebounced(q) {
+  clearTimeout(_dbSearchTimer);
+  _dbSearchQuery = q;
+  if (!q.trim()) {
+    const el = document.getElementById('db-search-results');
+    if (el) el.style.display = 'none';
+    return;
+  }
+  _dbSearchTimer = setTimeout(() => dbSearch(q.trim()), 250);
+}
+
+async function dbSearch(q) {
+  const qLow = q.toLowerCase();
+  const tasks = state.tasks.filter(t =>
+    t.title.toLowerCase().includes(qLow) || (t.notes||'').toLowerCase().includes(qLow)
+  ).slice(0, 20);
+  const projects = state.projects.filter(p => p.name.toLowerCase().includes(qLow)).slice(0, 20);
+  const [notes, links] = await Promise.all([
+    api('GET', `/api/notes/search?q=${encodeURIComponent(q)}`).catch(() => []),
+    api('GET', `/api/links/search?q=${encodeURIComponent(q)}`).catch(() => []),
+  ]);
+  _dbSearchResults = { tasks, projects, notes, links };
+  renderDbSearch(q);
+}
+
+function renderDbSearch(q) {
+  const el = document.getElementById('db-search-results');
+  if (!el) return;
+  const { tasks, projects, notes, links } = _dbSearchResults;
+  if (!q) { el.style.display = 'none'; return; }
+  el.style.display = '';
+
+  const allItems = [
+    ...projects.map(p => ({ type:'project', id:p.id, name:p.name, sub:'', action:`setView('project:${p.id}')` })),
+    ...tasks.map(t => ({ type:'task', id:t.id, name:t.title, sub:t.project||'inbox', action:`openDetail(${t.id})` })),
+    ...notes.map(n => ({ type:'note', id:n.id, name:n.title, sub:n.project_name||'', action:`openNoteResult(${n.id},${n.task_id||'null'},${n.project_id||'null'})` })),
+    ...links.map(l => ({ type:'link', id:l.id, name:l.label, sub:l.project_name||'', action:`window.open(${JSON.stringify(l.url)},'_blank')` })),
+  ];
+  const counts = { all: allItems.length, projects: projects.length, tasks: tasks.length, notes: notes.length, links: links.length };
+  const shown = _dbSearchTab === 'all' ? allItems :
+    allItems.filter(x => x.type === (_dbSearchTab === 'projects' ? 'project' : _dbSearchTab.slice(0,-1)));
+
+  const re = new RegExp(`(${q.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')})`, 'gi');
+  const typeIcon = { project:'🗂️', task:'✅', note:'📝', link:'🔗' };
+  const tabs = ['all','projects','tasks','notes','links'];
+
+  el.innerHTML = `<div class="db-search-box">
+    <div class="db-search-tabs">${tabs.map(t =>
+      `<button class="db-search-tab${_dbSearchTab===t?' active':''}" onclick="_dbSearchTab='${t}';renderDbSearch(${JSON.stringify(q)})">${t[0].toUpperCase()+t.slice(1)} (${counts[t]})</button>`
+    ).join('')}</div>
+    <div class="db-search-list">${shown.length ? shown.slice(0,30).map(r =>
+      `<div class="db-search-item" onclick="${esc(r.action)}">
+        <span class="db-si-badge">${typeIcon[r.type]} ${r.type}</span>
+        <span class="db-si-name">${esc(r.name).replace(re,'<mark>$1</mark>')}</span>
+        ${r.sub ? `<span class="db-si-proj">${esc(r.sub)}</span>` : ''}
+      </div>`
+    ).join('') : '<div class="db-section-empty">No results</div>'}</div>
+  </div>`;
+}
+
+function dbSectionTable(rows, cols, rowFn, viewAll, showMore) {
+  if (!rows.length) return '<div class="db-section-empty">None</div>';
+  const thead = `<thead><tr>${cols.map(c => `<th>${c}</th>`).join('')}</tr></thead>`;
+  const shown = rows.slice(0, 5);
+  const tbody = `<tbody>${shown.map(rowFn).join('')}</tbody>`;
+  const more = rows.length > 5
+    ? `<div class="db-section-more" onclick="${viewAll}">+${rows.length-5} more — view all</div>` : '';
+  return `<table class="db-tbl">${thead}${tbody}</table>${more}`;
+}
+
+function renderDbInbox() {
+  const inbox = state.tasks.filter(t => t.is_inbox === 1 || t.is_inbox === '1');
+  const count = inbox.length;
+  const body = dbSectionTable(inbox,
+    ['Task','Priority',''],
+    t => `<tr onclick="openDetail(${t.id})">
+      <td class="td-title">${esc(t.title)}</td>
+      <td><span class="pill pill-priority-${t.priority}">${t.priority}</span></td>
+      <td><button class="btn btn-ghost btn-sm" style="font-size:11px;padding:2px 6px" onclick="event.stopPropagation();openDetail(${t.id})">Sort →</button></td>
+    </tr>`,
+    "setView('inbox')"
+  );
+  return `<div class="db-section"><div class="db-section-head">📥 Inbox <span class="db-section-count">${count}</span></div>${body}</div>`;
+}
+
+function renderDbUrgentPastDue(todayStr) {
+  const tasks = state.tasks.filter(t => t.status !== 'complete' && (t.priority === 'urgent' || (t.due_date && t.due_date < todayStr)));
+  const count = tasks.length;
+  const body = dbSectionTable(tasks,
+    ['Task','Project','Category','Due'],
+    t => {
+      const overdue = t.due_date && t.due_date < todayStr;
+      return `<tr onclick="openDetail(${t.id})">
+        <td class="td-title">${esc(t.title)}</td>
+        <td>${t.project ? `<span style="cursor:pointer" onclick="event.stopPropagation();setView('project:${state.projects.find(p=>p.name===t.project)?.id||0}')">${esc(t.project)}</span>` : '<span style="color:var(--muted)">—</span>'}</td>
+        <td>${t.category ? catPill(t.category) : '<span style="color:var(--muted)">—</span>'}</td>
+        <td class="${overdue?'db-overdue':''}">${t.due_date ? fmtDate(t.due_date) : '<span style="color:var(--muted)">—</span>'}</td>
+      </tr>`;
+    },
+    "setView('due:past-due')"
+  );
+  return `<div class="db-section"><div class="db-section-head">🔥 Urgent &amp; Past Due <span class="db-section-count red">${count}</span></div>${body}</div>`;
+}
+
+function renderDbTodayWeek(todayStr, sunStr) {
+  const tasks = state.tasks.filter(t => t.status !== 'complete' && t.due_date && t.due_date >= todayStr && t.due_date <= sunStr);
+  const count = tasks.length;
+  const body = dbSectionTable(tasks,
+    ['Task','Project','Category','Due'],
+    t => `<tr onclick="openDetail(${t.id})">
+      <td class="td-title">${esc(t.title)}</td>
+      <td>${t.project ? esc(t.project) : '<span style="color:var(--muted)">—</span>'}</td>
+      <td>${t.category ? catPill(t.category) : '<span style="color:var(--muted)">—</span>'}</td>
+      <td>${fmtDate(t.due_date)}</td>
+    </tr>`,
+    "setView('due:this-week')"
+  );
+  return `<div class="db-section"><div class="db-section-head">📅 Today &amp; This Week <span class="db-section-count">${count}</span></div>${body}</div>`;
+}
+
+function renderDbNeedsReviewOnHold() {
+  const tasks = state.tasks.filter(t => t.status === 'needs-review' || t.status === 'on-hold');
+  const count = tasks.length;
+  const body = dbSectionTable(tasks,
+    ['Task','Status','Project','Category'],
+    t => `<tr onclick="openDetail(${t.id})">
+      <td class="td-title">${esc(t.title)}</td>
+      <td><span class="pill pill-status-${t.status}" style="font-size:11px">${STATUS_LABELS[t.status]||t.status}</span></td>
+      <td>${t.project ? esc(t.project) : '<span style="color:var(--muted)">—</span>'}</td>
+      <td>${t.category ? catPill(t.category) : '<span style="color:var(--muted)">—</span>'}</td>
+    </tr>`,
+    "setView('status:needs-review')"
+  );
+  return `<div class="db-section"><div class="db-section-head">👀 Needs Review &amp; On Hold <span class="db-section-count">${count}</span></div>${body}</div>`;
+}
+
+function renderDbProjectsByDivision() {
+  const td = today0();
+  const todayStr = dateStr(td);
+  // Compute per-project task stats
+  const projStats = {};
+  state.tasks.forEach(t => {
+    if (!t.project) return;
+    const p = state.projects.find(x => x.name === t.project);
+    if (!p) return;
+    if (!projStats[p.id]) projStats[p.id] = { total: 0, complete: 0 };
+    projStats[p.id].total++;
+    if (t.status === 'complete') projStats[p.id].complete++;
+  });
+
+  // Sort projects: least complete first (by pct), then alphabetically
+  const projs = [...state.projects].sort((a, b) => {
+    const pa = projStats[a.id] || { total:0, complete:0 };
+    const pb = projStats[b.id] || { total:0, complete:0 };
+    const pctA = pa.total ? pa.complete / pa.total : 1;
+    const pctB = pb.total ? pb.complete / pb.total : 1;
+    return pctA - pctB || a.name.localeCompare(b.name);
+  });
+
+  const divOrder = [...state.divisions].sort((a,b) => (a.sort_order||0)-(b.sort_order||0));
+  const ungrouped = projs.filter(p => !p.division_id);
+
+  function projRow(p) {
+    const s = projStats[p.id] || { total:0, complete:0 };
+    const pct = s.total ? Math.round(s.complete / s.total * 100) : 0;
+    const dot = p.division_color ? `<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${p.division_color};margin-right:6px;flex-shrink:0"></span>` : '';
+    return `<div class="db-proj-row" onclick="setView('project:${p.id}')">
+      ${dot}<span class="db-proj-name">${esc(p.name)}</span>
+      <div class="db-proj-bar"><div class="db-proj-bar-fill" style="width:${pct}%"></div></div>
+      <span class="db-proj-pct">${s.complete}/${s.total} · ${pct}%</span>
+    </div>`;
+  }
+
+  let html = '';
+  for (const div of divOrder) {
+    const group = projs.filter(p => p.division_id === div.id);
+    if (!group.length) continue;
+    html += `<div class="db-div-label" style="border-left:3px solid ${div.color};padding-left:10px">${esc(div.name)}</div>${group.map(projRow).join('')}`;
+  }
+  if (ungrouped.length) {
+    html += `${divOrder.length ? '<div class="db-div-label">Unassigned</div>' : ''}${ungrouped.map(projRow).join('')}`;
+  }
+
+  return `<div class="db-section-head">📊 Projects by Division <span class="db-section-count">${state.projects.length}</span></div>${html || '<div class="db-section-empty">No projects</div>'}`;
+}
+
+async function loadDashboardData(monStr, friStr) {
+  const [sprintTasks, recentNotes, weekBlocks] = await Promise.all([
+    api('GET', '/api/dashboard/sprint-tasks').catch(() => []),
+    api('GET', '/api/dashboard/recent-notes?limit=5').catch(() => []),
+    api('GET', `/api/time-blocks?from=${monStr}&to=${friStr}`).catch(() => []),
+  ]);
+
+  // Sprint tasks section
+  const sprintEl = document.getElementById('db-sprint-body');
+  const sprintCnt = document.getElementById('db-sprint-count');
+  if (sprintEl) {
+    if (sprintCnt) sprintCnt.textContent = sprintTasks.length;
+    if (!sprintTasks.length) {
+      sprintEl.innerHTML = '<div class="db-section-empty">No active sprint tasks</div>';
+    } else {
+      const shown = sprintTasks.slice(0,5);
+      const more = sprintTasks.length > 5
+        ? `<div class="db-section-more" onclick="setView('all')">+${sprintTasks.length-5} more — view all</div>` : '';
+      sprintEl.innerHTML = `<table class="db-tbl">
+        <thead><tr><th>Task</th><th>Project</th><th>Sprint</th><th>Category</th><th>Due</th></tr></thead>
+        <tbody>${shown.map(t => `<tr onclick="openDetail(${t.id})">
+          <td class="td-title">${esc(t.title)}</td>
+          <td>${esc(t.project_name||'')}</td>
+          <td><span style="font-size:11px;color:var(--muted)">${esc(t.sprint_name||'')}</span></td>
+          <td>${t.category ? catPill(t.category) : '<span style="color:var(--muted)">—</span>'}</td>
+          <td>${t.due_date ? fmtDate(t.due_date) : '<span style="color:var(--muted)">—</span>'}</td>
+        </tr>`).join('')}</tbody>
+      </table>${more}`;
+    }
+  }
+
+  // Recent notes section
+  const notesEl = document.getElementById('db-notes-body');
+  const notesCnt = document.getElementById('db-notes-count');
+  if (notesEl) {
+    if (notesCnt) notesCnt.textContent = recentNotes.length;
+    if (!recentNotes.length) {
+      notesEl.innerHTML = '<div class="db-section-empty">No notes yet</div>';
+    } else {
+      notesEl.innerHTML = `<table class="db-tbl">
+        <thead><tr><th>Title</th><th>Project</th><th>Linked Task</th><th>Date</th></tr></thead>
+        <tbody>${recentNotes.map(n => `<tr onclick="openNoteResult(${n.id},${n.task_id||'null'},${n.project_id||'null'})">
+          <td class="td-title">${esc(n.title)}</td>
+          <td>${n.project_name ? esc(n.project_name) : '<span style="color:var(--muted)">—</span>'}</td>
+          <td>${n.task_title ? `<span style="font-size:11px;color:var(--accent)">📌 ${esc(n.task_title)}</span>` : '<span style="color:var(--muted)">—</span>'}</td>
+          <td>${n.note_date}</td>
+        </tr>`).join('')}</tbody>
+      </table>`;
+    }
+  }
+
+  // Hours this week card
+  const hoursEl = document.getElementById('db-card-hours');
+  const hoursSub = document.getElementById('db-card-hours-sub');
+  if (hoursEl && hoursSub) {
+    const scheduled = weekBlocks.reduce((s,b) => s+b.duration_minutes, 0);
+    const logged    = state.tasks.reduce((s,t) => s+(t.actual_minutes||0), 0);
+    const capWeek   = state.daySettings.capacityMinutes * 5;
+    hoursEl.textContent = fmtMins(scheduled);
+    hoursSub.textContent = `of ${fmtMins(capWeek)} cap · ${fmtMins(logged)} logged`;
+  }
+}
+
+function renderDashboard() {
+  const list = document.getElementById('task-list');
+  const td = today0();
+  const todayStr = dateStr(td);
+  const day = td.getDay();
+  const mon = new Date(td); mon.setDate(td.getDate() - (day===0?6:day-1));
+  const sun = new Date(mon); sun.setDate(mon.getDate()+6);
+  const monStr = dateStr(mon);
+  const friStr = dateStr(new Date(mon.getTime() + 4*86400000));
+  const sunStr = dateStr(sun);
+  const sevenAgo = dateStr(new Date(td.getTime() - 7*86400000));
+
+  const allProjects  = state.projects;
+  const profProjects = allProjects.filter(p => (p.type||'professional') === 'professional');
+  const persProjects = allProjects.filter(p => p.type === 'personal');
+  const projectTasks = state.tasks.filter(t => t.project && !t.is_inbox);
+  const completeTasks  = projectTasks.filter(t => t.status === 'complete');
+  const openTasks      = state.tasks.filter(t => t.status !== 'complete');
+  const pastDueTasks   = openTasks.filter(t => t.due_date && t.due_date < todayStr);
+  const thisWeekTasks  = openTasks.filter(t => t.due_date && t.due_date >= todayStr && t.due_date <= sunStr);
+  const inProgressTasks  = openTasks.filter(t => t.status === 'in-progress');
+  const needsReviewTasks = openTasks.filter(t => t.status === 'needs-review');
+  const completedRecent  = state.tasks.filter(t => t.status === 'complete' && (t.updated_at||'').slice(0,10) >= sevenAgo);
+  const pctComplete = projectTasks.length ? Math.round(completeTasks.length / projectTasks.length * 100) : 0;
+
+  const dateLabel = td.toLocaleDateString('en-US', { weekday:'long', month:'long', day:'numeric', year:'numeric' });
+
+  list.innerHTML = `<div class="db-wrap">
+    <div class="db-header">
+      <div class="db-header-left">
+        <h2>🏠 Dashboard</h2>
+        <div class="db-header-date">${dateLabel}</div>
+      </div>
+      <div class="db-header-right">
+        <button class="btn btn-ghost btn-sm" onclick="openDashboardQuickTask()">＋ Quick Add Task</button>
+        <button class="btn btn-ghost btn-sm" onclick="openGlobalNoteModal()">＋ Add Note</button>
+        <button class="btn btn-primary btn-sm" onclick="openAddProject()">＋ New Project</button>
+      </div>
+    </div>
+
+    <div class="db-search-wrap">
+      <input type="search" id="db-search" placeholder="Search tasks, projects, notes, links…" autocomplete="off" oninput="dbSearchDebounced(this.value)" value="${esc(_dbSearchQuery)}">
+    </div>
+    <div id="db-search-results">${_dbSearchQuery ? '' : ''}</div>
+
+    <div class="db-cards">
+      <div class="db-card" onclick="setView('all-projects')" title="View all projects">
+        <div class="db-card-val">${allProjects.length}</div>
+        <div class="db-card-lbl">Projects</div>
+        <div class="db-card-sub">${profProjects.length} prof · ${persProjects.length} personal</div>
+      </div>
+      <div class="db-card" onclick="setView('all')" title="All tasks">
+        <div class="db-card-val">${pctComplete}%</div>
+        <div class="db-card-lbl">Overall complete</div>
+        <div class="db-card-bar"><div class="db-card-bar-fill" style="width:${pctComplete}%"></div></div>
+        <div class="db-card-sub">${completeTasks.length} / ${projectTasks.length}</div>
+      </div>
+      <div class="db-card" onclick="setView('all')" title="Open tasks">
+        <div class="db-card-val">${openTasks.length}</div>
+        <div class="db-card-lbl">Open tasks</div>
+      </div>
+      <div class="db-card" onclick="setView('due:past-due')">
+        <div class="db-card-val${pastDueTasks.length ? ' db-val-red' : ''}">${pastDueTasks.length}</div>
+        <div class="db-card-lbl">Past due</div>
+      </div>
+      <div class="db-card" onclick="setView('due:this-week')">
+        <div class="db-card-val">${thisWeekTasks.length}</div>
+        <div class="db-card-lbl">Due this week</div>
+      </div>
+      <div class="db-card" onclick="setView('status:in-progress')">
+        <div class="db-card-val">${inProgressTasks.length}</div>
+        <div class="db-card-lbl">In Progress</div>
+      </div>
+      <div class="db-card" onclick="setView('status:needs-review')">
+        <div class="db-card-val">${needsReviewTasks.length}</div>
+        <div class="db-card-lbl">Needs Review</div>
+      </div>
+      <div class="db-card" onclick="setView('status:complete')">
+        <div class="db-card-val">${completedRecent.length}</div>
+        <div class="db-card-lbl">Completed (7d)</div>
+      </div>
+      <div class="db-card" onclick="setView('calendar')">
+        <div class="db-card-val" id="db-card-hours">—</div>
+        <div class="db-card-lbl">Scheduled this week</div>
+        <div class="db-card-sub" id="db-card-hours-sub">Loading…</div>
+      </div>
+    </div>
+
+    <div class="db-sections">
+      ${renderDbInbox()}
+      ${renderDbUrgentPastDue(todayStr)}
+      ${renderDbTodayWeek(todayStr, sunStr)}
+      ${renderDbNeedsReviewOnHold()}
+      <div class="db-section db-section-full" id="db-sprint-section">
+        <div class="db-section-head">⚡ Active Sprint Tasks <span class="db-section-count" id="db-sprint-count">…</span></div>
+        <div id="db-sprint-body"><div class="db-section-empty">Loading…</div></div>
+      </div>
+      <div class="db-section db-section-full" id="db-divproj-section">
+        ${renderDbProjectsByDivision()}
+      </div>
+      <div class="db-section db-section-full" id="db-notes-section">
+        <div class="db-section-head">📝 Recent Notes <span class="db-section-count" id="db-notes-count">…</span></div>
+        <div id="db-notes-body"><div class="db-section-empty">Loading…</div></div>
+      </div>
+    </div>
+  </div>`;
+
+  // restore search if query exists
+  if (_dbSearchQuery) {
+    setTimeout(() => renderDbSearch(_dbSearchQuery), 0);
+  }
+
+  loadDashboardData(monStr, friStr);
+}
+
+// ── Dashboard quick-task modal ──────────────────────────────────────────────
+
+function openDashboardQuickTask() {
+  // populate project select
+  const sel = document.getElementById('dbt-project');
+  sel.innerHTML = '<option value="">No project (inbox)</option>' +
+    state.projects.map(p => `<option value="${esc(p.name)}">${esc(p.name)}</option>`).join('');
+  document.getElementById('dbt-title').value    = '';
+  document.getElementById('dbt-priority').value = 'medium';
+  document.getElementById('dbt-due').value      = '';
+  document.getElementById('db-quick-task-modal').classList.add('open');
+  setTimeout(() => document.getElementById('dbt-title').focus(), 50);
+}
+function closeDbQuickTask() { document.getElementById('db-quick-task-modal').classList.remove('open'); }
+document.getElementById('db-quick-task-modal').addEventListener('click', e => { if (e.target===e.currentTarget) closeDbQuickTask(); });
+document.getElementById('dbt-title').addEventListener('keydown', e => { if (e.key==='Enter') saveDbQuickTask(); });
+
+async function saveDbQuickTask() {
+  const title    = document.getElementById('dbt-title').value.trim();
+  const priority = document.getElementById('dbt-priority').value;
+  const due_date = document.getElementById('dbt-due').value || null;
+  const project  = document.getElementById('dbt-project').value || null;
+  if (!title) { toast('Enter a title'); return; }
+  try {
+    const task = await api('POST', '/api/tasks', { title, priority, due_date, project, status: 'new' });
+    state.tasks.push(task);
+    closeDbQuickTask();
+    toast('Task added');
+    if (state.view === 'dashboard') renderDashboard();
+    else renderSidebar();
+  } catch(e) { toast(e.message); }
+}
+
+// ── Global note modal (dashboard) ──────────────────────────────────────────
+
+function openGlobalNoteModal() {
+  const projSel = document.getElementById('pdn-proj-select');
+  if (projSel) {
+    projSel.innerHTML = '<option value="">No project</option>' +
+      state.projects.map(p => `<option value="${p.id}">${esc(p.name)}</option>`).join('');
+  }
+  const wrap = document.getElementById('pdn-proj-wrap');
+  if (wrap) wrap.style.display = '';
+  openPdNoteModal(null, null);
+}
+
 function renderTaskList() {
+  if (state.view === 'dashboard')     { renderDashboard();     return; }
   if (state.view === 'calendar')      { renderCalendar();      return; }
   if (state.view === 'settings')      { renderSettings();      return; }
   if (state.view === 'all-projects')  { renderAllProjects();   return; }

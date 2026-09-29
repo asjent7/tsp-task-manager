@@ -1365,6 +1365,47 @@ app.get('/api/calendar/google-events', async (req, res) => {
   }
 });
 
+// ── Dashboard endpoints ───────────────────────────────────────────────────────
+
+app.get('/api/dashboard/sprint-tasks', (req, res) => {
+  const rows = db.prepare(`
+    SELECT t.*, s.id AS sprint_id, s.name AS sprint_name, p.id AS project_id, p.name AS project_name
+    FROM sprint_tasks st
+    JOIN sprints s ON s.id = st.sprint_id AND s.status = 'active'
+    JOIN tasks t ON t.id = st.task_id
+    JOIN projects p ON p.name = t.project
+    WHERE t.status != 'complete'
+    ORDER BY p.name, s.name, t.title
+  `).all();
+  res.json(rows);
+});
+
+app.get('/api/dashboard/recent-notes', (req, res) => {
+  const limit = Math.min(Number(req.query.limit) || 5, 50);
+  const rows = db.prepare(`
+    SELECT n.id, n.title, n.type, n.note_date, n.task_id, n.project_id,
+           p.name AS project_name,
+           (SELECT title FROM tasks WHERE id = n.task_id) AS task_title
+    FROM notes n LEFT JOIN projects p ON p.id = n.project_id
+    ORDER BY n.note_date DESC, n.id DESC
+    LIMIT ?
+  `).all(limit);
+  res.json(rows);
+});
+
+app.get('/api/links/search', (req, res) => {
+  const { q = '' } = req.query;
+  if (!q.trim()) return res.json([]);
+  const like = `%${q.trim()}%`;
+  const rows = db.prepare(`
+    SELECT pl.*, p.name AS project_name
+    FROM project_links pl JOIN projects p ON p.id = pl.project_id
+    WHERE pl.label LIKE ? OR pl.url LIKE ?
+    ORDER BY pl.created_at DESC LIMIT 20
+  `).all(like, like);
+  res.json(rows);
+});
+
 // ── Note shares ───────────────────────────────────────────────────────────────
 
 const ACTIVE_SHARE = `s.revoked_at IS NULL AND (s.expires_at IS NULL OR s.expires_at > datetime('now'))`;
