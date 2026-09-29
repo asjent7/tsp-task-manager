@@ -1815,8 +1815,16 @@ function renderAllProjects() {
   }
 
   if (personal.length) {
-    const sorted = [...personal].sort((a,b) => a.name.localeCompare(b.name));
-    body += `<div class="proj-type-section"><div class="proj-type-label">Personal</div>${makeGrid(sorted)}</div>`;
+    body += `<div class="proj-type-section"><div class="proj-type-label">Personal</div>`;
+    const personalDivOrder = divOrder.filter(d => (d.type || 'professional') === 'personal');
+    for (const div of personalDivOrder) {
+      const group = personal.filter(p => p.division_id === div.id).sort((a,b) => a.name.localeCompare(b.name));
+      if (!group.length) continue;
+      body += `<div class="proj-subsection-label" style="border-left:3px solid ${div.color};padding-left:8px;">${esc(div.name)}</div>${makeGrid(group)}`;
+    }
+    const unassigned = personal.filter(p => !p.division_id).sort((a,b) => a.name.localeCompare(b.name));
+    if (unassigned.length) body += `${personalDivOrder.length ? '<div class="proj-subsection-label">Unassigned</div>' : ''}${makeGrid(unassigned)}`;
+    body += `</div>`;
   }
 
   if (!matched.length) {
@@ -3145,14 +3153,16 @@ async function deleteSubtask(id) {
 // ── Division helpers ──────────────────────────────────────────────────────────
 
 function populateDivisionSelects() {
-  const divOpts = '<option value="">No division</option>' +
-    state.divisions.map(d => `<option value="${d.id}">${esc(d.name)}</option>`).join('');
-  ['new-proj-division', 'edit-proj-division'].forEach(id => {
-    const el = document.getElementById(id);
-    if (!el) return;
-    const cur = el.value;
-    el.innerHTML = divOpts;
-    el.value = cur; // restore selection if still valid
+  ['new', 'edit'].forEach(prefix => {
+    const typeEl = document.getElementById(`${prefix}-proj-type`);
+    const divEl  = document.getElementById(`${prefix}-proj-division`);
+    if (!typeEl || !divEl) return;
+    const type = typeEl.value;
+    const cur  = divEl.value;
+    const filtered = state.divisions.filter(d => (d.type || 'professional') === type);
+    divEl.innerHTML = '<option value="">No division</option>' +
+      filtered.map(d => `<option value="${d.id}">${esc(d.name)}</option>`).join('');
+    divEl.value = cur; // restored only if still a valid option
   });
 }
 
@@ -3171,23 +3181,17 @@ function populateCategorySelects() {
 // ── Projects ──────────────────────────────────────────────────────────────────
 
 function toggleNewProjDivision() {
-  const isPro = document.getElementById('new-proj-type').value === 'professional';
-  const div   = document.getElementById('new-proj-division');
-  div.style.display = isPro ? '' : 'none';
-  if (!isPro) div.value = '';
+  populateDivisionSelects();
+  document.getElementById('new-proj-division').value = '';
 }
 function toggleEditProjDivision() {
-  const isPro = document.getElementById('edit-proj-type').value === 'professional';
-  const div   = document.getElementById('edit-proj-division');
-  div.style.display = isPro ? '' : 'none';
-  if (!isPro) div.value = '';
+  populateDivisionSelects();
 }
 
 function openAddProject() {
   document.getElementById('new-proj-name').value    = '';
   document.getElementById('new-proj-type').value    = 'professional';
   document.getElementById('new-proj-division').value = '';
-  document.getElementById('new-proj-division').style.display = '';
   populateDivisionSelects();
   document.getElementById('proj-modal').classList.add('open');
   setTimeout(() => document.getElementById('new-proj-name').focus(), 50);
@@ -3200,7 +3204,7 @@ async function createProject() {
   const name     = document.getElementById('new-proj-name').value.trim();
   if (!name) return;
   const type     = document.getElementById('new-proj-type').value;
-  const division_id = type === 'professional' ? (parseInt(document.getElementById('new-proj-division').value) || null) : null;
+  const division_id = parseInt(document.getElementById('new-proj-division').value) || null;
   try {
     const proj = await api('POST', '/api/projects', { name, type, division_id });
     state.projects.push(proj); state.projects.sort((a,b)=>a.name.localeCompare(b.name));
@@ -3229,7 +3233,7 @@ async function renameProject() {
   const name = document.getElementById('rename-proj-input').value.trim();
   if (!name) return;
   const type     = document.getElementById('edit-proj-type').value;
-  const division_id = type === 'professional' ? (parseInt(document.getElementById('edit-proj-division').value) || null) : null;
+  const division_id = parseInt(document.getElementById('edit-proj-division').value) || null;
   try {
     const updated = await api('PUT', `/api/projects/${renameProjId}`, { name, type, division_id });
     const oldName = state.projects.find(p => p.id === renameProjId)?.name;
@@ -4927,19 +4931,23 @@ function renderSettings() {
         </div>
       </div>
       <div class="settings-section" id="divisions-settings">
-        <div class="settings-section-title" style="display:flex;align-items:center;justify-content:space-between;">
-          <span>Divisions</span>
-          <button class="btn btn-ghost btn-sm" onclick="showAddDivisionForm()" style="font-size:12px;">+ Add Division</button>
-        </div>
-        <div id="div-list">${renderDivisionList()}</div>
-        <div id="div-add-wrap" style="display:none;">
-          <div class="div-add-form">
-            <input type="color" id="new-div-color" value="#6366f1">
-            <input type="text" id="new-div-name" placeholder="Division name">
-            <button class="btn btn-primary btn-sm" onclick="addDivision()">Add</button>
-            <button class="btn btn-ghost btn-sm" onclick="hideAddDivisionForm()">Cancel</button>
+        <div class="settings-section-title">Divisions</div>
+        ${['professional','personal'].map(t => `
+        <div>
+          <div style="display:flex;align-items:center;justify-content:space-between;padding:6px 16px 4px;background:var(--hover);">
+            <span style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);">${t==='professional'?'Professional':'Personal'}</span>
+            <button class="btn btn-ghost btn-sm" onclick="showAddDivisionForm('${t}')" style="font-size:12px;">+ Add</button>
           </div>
-        </div>
+          <div id="div-list-${t}">${renderDivisionList(t)}</div>
+          <div id="div-add-wrap-${t}" style="display:none;">
+            <div class="div-add-form">
+              <input type="color" id="new-div-color-${t}" value="#6366f1">
+              <input type="text" id="new-div-name-${t}" placeholder="Division name">
+              <button class="btn btn-primary btn-sm" onclick="addDivision('${t}')">Add</button>
+              <button class="btn btn-ghost btn-sm" onclick="hideAddDivisionForm('${t}')">Cancel</button>
+            </div>
+          </div>
+        </div>`).join('')}
       </div>
       <div class="settings-section" id="categories-settings">
         <div class="settings-section-title" style="display:flex;align-items:center;justify-content:space-between;">
@@ -4964,13 +4972,14 @@ function renderSettings() {
   setupCatDrag();
 }
 
-function renderDivisionList() {
-  if (!state.divisions.length) return `<div style="padding:12px 16px;font-size:13px;color:var(--muted);">No divisions yet.</div>`;
-  const divMap = {};
-  state.projects.forEach(p => { if (p.division_id) divMap[p.division_id] = (divMap[p.division_id] || 0) + 1; });
-  return state.divisions.map(d => {
-    const cnt = divMap[d.id] || 0;
-    return `<div class="div-settings-row" draggable="true" data-div-id="${d.id}" id="div-row-${d.id}">
+function renderDivisionList(type) {
+  const divs = state.divisions.filter(d => (d.type || 'professional') === type);
+  if (!divs.length) return `<div style="padding:10px 16px;font-size:13px;color:var(--muted);">No ${type} divisions yet.</div>`;
+  const projMap = {};
+  state.projects.forEach(p => { if (p.division_id) projMap[p.division_id] = (projMap[p.division_id] || 0) + 1; });
+  return divs.map(d => {
+    const cnt = projMap[d.id] || 0;
+    return `<div class="div-settings-row" draggable="true" data-div-id="${d.id}" data-div-type="${d.type||'professional'}" id="div-row-${d.id}">
       <span class="div-drag-handle" title="Drag to reorder">⠿</span>
       <span class="div-swatch" style="background:${d.color};"></span>
       <span class="div-row-name">${esc(d.name)}</span>
@@ -4981,29 +4990,38 @@ function renderDivisionList() {
   }).join('');
 }
 
-function showAddDivisionForm() {
-  document.getElementById('div-add-wrap').style.display = '';
-  document.getElementById('new-div-name').value = '';
-  document.getElementById('new-div-color').value = '#6366f1';
-  setTimeout(() => document.getElementById('new-div-name').focus(), 50);
+function refreshDivList(type) {
+  const el = document.getElementById(`div-list-${type}`);
+  if (el) el.innerHTML = renderDivisionList(type);
+  setupDivDrag();
 }
-function hideAddDivisionForm() { document.getElementById('div-add-wrap').style.display = 'none'; }
+
+function showAddDivisionForm(type) {
+  document.getElementById(`div-add-wrap-${type}`).style.display = '';
+  document.getElementById(`new-div-name-${type}`).value  = '';
+  document.getElementById(`new-div-color-${type}`).value = '#6366f1';
+  setTimeout(() => document.getElementById(`new-div-name-${type}`).focus(), 50);
+}
+function hideAddDivisionForm(type) { document.getElementById(`div-add-wrap-${type}`).style.display = 'none'; }
 
 document.addEventListener('keydown', e => {
-  if (e.key === 'Enter' && document.activeElement?.id === 'new-div-name') addDivision();
+  if (e.key === 'Enter') {
+    const id = document.activeElement?.id;
+    if (id === 'new-div-name-professional') addDivision('professional');
+    if (id === 'new-div-name-personal')     addDivision('personal');
+  }
 });
 
-async function addDivision() {
-  const name  = document.getElementById('new-div-name').value.trim();
-  const color = document.getElementById('new-div-color').value;
+async function addDivision(type) {
+  const name  = document.getElementById(`new-div-name-${type}`).value.trim();
+  const color = document.getElementById(`new-div-color-${type}`).value;
   if (!name) { toast('Enter a division name'); return; }
   try {
-    const div = await api('POST', '/api/divisions', { name, color });
+    const div = await api('POST', '/api/divisions', { name, color, type });
     state.divisions.push(div);
-    hideAddDivisionForm();
+    hideAddDivisionForm(type);
     populateDivisionSelects();
-    document.getElementById('div-list').innerHTML = renderDivisionList();
-    setupDivDrag();
+    refreshDivList(type);
   } catch(e) { toast(e.message); }
 }
 
@@ -5012,9 +5030,14 @@ function showEditDivisionRow(id) {
   if (!d) return;
   const row = document.getElementById(`div-row-${id}`);
   if (!row) return;
+  const t = d.type || 'professional';
   row.outerHTML = `<div class="div-edit-form" id="div-edit-${id}">
     <input type="color" id="edit-div-color-${id}" value="${d.color}">
     <input type="text" id="edit-div-name-${id}" value="${esc(d.name)}" onkeydown="if(event.key==='Enter')saveEditDivision(${id});if(event.key==='Escape')cancelEditDivision(${id})">
+    <select id="edit-div-type-${id}" style="font-size:12px;padding:4px 6px;border:1px solid var(--border);border-radius:6px;background:var(--bg);color:var(--text);">
+      <option value="professional"${t==='professional'?' selected':''}>Professional</option>
+      <option value="personal"${t==='personal'?' selected':''}>Personal</option>
+    </select>
     <button class="btn btn-primary btn-sm" onclick="saveEditDivision(${id})">Save</button>
     <button class="btn btn-ghost btn-sm" onclick="cancelEditDivision(${id})">Cancel</button>
   </div>`;
@@ -5022,22 +5045,23 @@ function showEditDivisionRow(id) {
 }
 
 function cancelEditDivision(id) {
-  document.getElementById('div-list').innerHTML = renderDivisionList();
-  setupDivDrag();
+  const d = state.divisions.find(d => d.id === id);
+  refreshDivList(d?.type || 'professional');
 }
 
 async function saveEditDivision(id) {
   const name  = document.getElementById(`edit-div-name-${id}`)?.value.trim();
   const color = document.getElementById(`edit-div-color-${id}`)?.value;
+  const type  = document.getElementById(`edit-div-type-${id}`)?.value;
   if (!name) { toast('Enter a name'); return; }
   try {
-    const updated = await api('PUT', `/api/divisions/${id}`, { name, color });
+    const updated = await api('PUT', `/api/divisions/${id}`, { name, color, type });
+    const oldType = state.divisions.find(d => d.id === id)?.type || 'professional';
     state.divisions = state.divisions.map(d => d.id === id ? updated : d);
-    // Update division name/color on projects in memory
     state.projects = state.projects.map(p => p.division_id === id ? { ...p, division: updated.name, division_color: updated.color } : p);
     populateDivisionSelects();
-    document.getElementById('div-list').innerHTML = renderDivisionList();
-    setupDivDrag();
+    refreshDivList(oldType);
+    if (updated.type !== oldType) refreshDivList(updated.type);
     renderSidebar(); renderTaskList();
     toast('Division updated');
   } catch(e) { toast(e.message); }
@@ -5048,22 +5072,22 @@ async function deleteDivision(id) {
   if (!div) return;
   const count = state.projects.filter(p => p.division_id === id).length;
   if (count > 0) {
-    // Need reassignment — open modal
     _divDeleteId = id;
     document.getElementById('div-delete-msg').textContent =
       `"${div.name}" is assigned to ${count} project${count !== 1 ? 's' : ''}. Move them to:`;
     const reassignSel = document.getElementById('div-delete-reassign');
     reassignSel.innerHTML = '<option value="">Unassigned</option>' +
-      state.divisions.filter(d => d.id !== id).map(d => `<option value="${d.id}">${esc(d.name)}</option>`).join('');
+      state.divisions.filter(d => d.id !== id && (d.type||'professional') === (div.type||'professional'))
+        .map(d => `<option value="${d.id}">${esc(d.name)}</option>`).join('');
     document.getElementById('div-delete-modal').classList.add('open');
   } else {
     if (!confirm(`Delete division "${div.name}"?`)) return;
     try {
       await api('DELETE', `/api/divisions/${id}`, { reassign_to_id: null });
+      const t = div.type || 'professional';
       state.divisions = state.divisions.filter(d => d.id !== id);
       populateDivisionSelects();
-      document.getElementById('div-list').innerHTML = renderDivisionList();
-      setupDivDrag();
+      refreshDivList(t);
       toast('Division deleted');
     } catch(e) { toast(e.message); }
   }
@@ -5076,6 +5100,7 @@ document.getElementById('div-delete-modal').addEventListener('click', e => { if 
 async function confirmDeleteDivision() {
   const reassignVal = document.getElementById('div-delete-reassign').value;
   const reassignId  = reassignVal ? parseInt(reassignVal) : null;
+  const deletedDiv  = state.divisions.find(d => d.id === _divDeleteId);
   try {
     await api('DELETE', `/api/divisions/${_divDeleteId}`, { reassign_to_id: reassignId });
     const reassignDiv = reassignId ? state.divisions.find(d => d.id === reassignId) : null;
@@ -5085,8 +5110,7 @@ async function confirmDeleteDivision() {
     state.divisions = state.divisions.filter(d => d.id !== _divDeleteId);
     closeDivDeleteModal();
     populateDivisionSelects();
-    document.getElementById('div-list').innerHTML = renderDivisionList();
-    setupDivDrag();
+    if (deletedDiv) refreshDivList(deletedDiv.type || 'professional');
     renderSidebar(); renderTaskList();
     toast('Division deleted');
   } catch(e) { toast(e.message); }
@@ -5095,7 +5119,7 @@ async function confirmDeleteDivision() {
 // Drag-to-reorder for division list
 let _divDragId = null;
 function setupDivDrag() {
-  const rows = document.querySelectorAll('#div-list [data-div-id]');
+  const rows = document.querySelectorAll('#div-list-professional [data-div-id], #div-list-personal [data-div-id]');
   rows.forEach(row => {
     row.addEventListener('dragstart', e => {
       _divDragId = parseInt(row.dataset.divId);
@@ -5114,21 +5138,20 @@ function setupDivDrag() {
       e.preventDefault();
       const targetId = parseInt(row.dataset.divId);
       if (_divDragId === null || _divDragId === targetId) return;
-      // Reorder in local state
+      const dragDiv   = state.divisions.find(d => d.id === _divDragId);
+      const targetDiv = state.divisions.find(d => d.id === targetId);
+      if (!dragDiv || !targetDiv || (dragDiv.type||'professional') !== (targetDiv.type||'professional')) return;
       const ids = state.divisions.map(d => d.id);
       const fromIdx = ids.indexOf(_divDragId);
       const toIdx   = ids.indexOf(targetId);
       if (fromIdx === -1 || toIdx === -1) return;
       state.divisions.splice(toIdx, 0, state.divisions.splice(fromIdx, 1)[0]);
-      document.getElementById('div-list').innerHTML = renderDivisionList();
-      setupDivDrag();
-      // Persist order
+      refreshDivList(dragDiv.type || 'professional');
       try {
         const ordered = await api('PATCH', '/api/divisions/reorder', { order: state.divisions.map(d => d.id) });
         state.divisions = ordered;
-        document.getElementById('div-list').innerHTML = renderDivisionList();
-        setupDivDrag();
-        renderTaskList(); // refreshes the project sections order
+        refreshDivList(dragDiv.type || 'professional');
+        renderTaskList();
       } catch(e) { toast(e.message); }
     });
   });

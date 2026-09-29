@@ -194,6 +194,7 @@ db.exec(`CREATE TABLE IF NOT EXISTS divisions (
     try { db.prepare('INSERT OR IGNORE INTO divisions (name,color,sort_order) VALUES (?,?,?)').run(name,color,sort_order); } catch(e) {}
   });
 try { db.prepare('ALTER TABLE projects ADD COLUMN division_id INTEGER REFERENCES divisions(id)').run(); } catch(e) {}
+try { db.prepare("ALTER TABLE divisions ADD COLUMN type TEXT NOT NULL DEFAULT 'professional'").run(); } catch(e) {}
 
 // One-time migration: map projects.division (text) → division_id
 if (!db.prepare("SELECT value FROM settings WHERE key='divisions_migration_v1'").get()) {
@@ -645,11 +646,11 @@ app.get('/api/divisions', (req, res) => {
 });
 
 app.post('/api/divisions', (req, res) => {
-  const { name, color = '#6366f1' } = req.body;
+  const { name, color = '#6366f1', type = 'professional' } = req.body;
   if (!name?.trim()) return res.status(400).json({ error: 'name required' });
   const maxOrd = db.prepare('SELECT MAX(sort_order) AS m FROM divisions').get()?.m || 0;
   try {
-    const r = db.prepare('INSERT INTO divisions (name,color,sort_order) VALUES (?,?,?)').run(name.trim(), color, maxOrd + 1);
+    const r = db.prepare('INSERT INTO divisions (name,color,sort_order,type) VALUES (?,?,?,?)').run(name.trim(), color, maxOrd + 1, type);
     res.status(201).json(db.prepare('SELECT * FROM divisions WHERE id=?').get(r.lastInsertRowid));
   } catch(e) {
     if (e.message.includes('UNIQUE')) return res.status(409).json({ error: 'Division name already exists' });
@@ -660,9 +661,13 @@ app.post('/api/divisions', (req, res) => {
 app.put('/api/divisions/:id', (req, res) => {
   const div = db.prepare('SELECT * FROM divisions WHERE id=?').get(req.params.id);
   if (!div) return res.status(404).json({ error: 'Division not found' });
-  const { name, color } = req.body;
+  const { name, color, type } = req.body;
+  if (type && type !== div.type) {
+    const cnt = db.prepare('SELECT COUNT(*) AS n FROM projects WHERE division_id=?').get(div.id).n;
+    if (cnt > 0) return res.status(409).json({ error: `Cannot change type: ${cnt} project${cnt!==1?'s':''} use this division` });
+  }
   try {
-    db.prepare('UPDATE divisions SET name=?,color=? WHERE id=?').run(name?.trim()??div.name, color??div.color, div.id);
+    db.prepare('UPDATE divisions SET name=?,color=?,type=? WHERE id=?').run(name?.trim()??div.name, color??div.color, type??div.type, div.id);
     res.json(db.prepare('SELECT * FROM divisions WHERE id=?').get(div.id));
   } catch(e) {
     if (e.message.includes('UNIQUE')) return res.status(409).json({ error: 'Division name already exists' });
