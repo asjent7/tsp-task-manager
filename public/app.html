@@ -1282,7 +1282,7 @@ let state = {
   calSelectedDay: null,
   calDayStr: dateStr(new Date()),
   timeBlocks: [],
-  daySettings: { capacityMinutes: 480, startHour: 7, endHour: 21 },
+  daySettings: { capacityMinutes: 480, startHour: 5, endHour: 21 },
   googleCalConnected: false,
   googleCalConnectedAt: null,
   googleEvents: [],
@@ -1465,7 +1465,7 @@ async function loadAll() {
   state.templates = templates; state.focusLists = focusLists;
   state.daySettings = {
     capacityMinutes: parseInt(settings.daily_capacity_minutes || 480),
-    startHour:       parseInt(settings.day_start_hour || 7),
+    startHour:       parseInt(settings.day_start_hour || 5),
     endHour:         parseInt(settings.day_end_hour || 21),
   };
   state.googleCalConnected   = googleStatus.connected;
@@ -4628,7 +4628,7 @@ document.getElementById('day-settings-modal').addEventListener('click', e => { i
 
 async function saveDaySettings() {
   const cap   = parseFloat(document.getElementById('day-cap-input').value)   || 8;
-  const start = parseInt(document.getElementById('day-start-input').value)   || 7;
+  const start = parseInt(document.getElementById('day-start-input').value)   || 5;
   const end   = parseInt(document.getElementById('day-end-input').value)     || 21;
   if (start >= end) { toast('Start must be before end'); return; }
   try {

@@ -191,7 +191,7 @@ db.prepare('UPDATE tasks SET legacy_status = status WHERE legacy_status IS NULL'
 });
 
 // Default settings
-[['daily_capacity_minutes','480'],['day_start_hour','7'],['day_end_hour','21']]
+[['daily_capacity_minutes','480'],['day_start_hour','5'],['day_end_hour','21']]
   .forEach(([k,v]) => db.prepare('INSERT OR IGNORE INTO settings (key,value) VALUES (?,?)').run(k,v));
 
 app.use(express.json());
