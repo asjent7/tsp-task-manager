@@ -182,6 +182,39 @@ try { db.prepare("ALTER TABLE project_links ADD COLUMN type TEXT NOT NULL DEFAUL
 try { db.prepare('ALTER TABLE project_links ADD COLUMN phase TEXT').run(); } catch(e) {}
 try { db.prepare('ALTER TABLE project_links ADD COLUMN category TEXT').run(); } catch(e) {}
 
+// Unified notes store
+db.exec(`CREATE TABLE IF NOT EXISTS notes (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  project_id INTEGER REFERENCES projects(id) ON DELETE CASCADE,
+  task_id    INTEGER REFERENCES tasks(id) ON DELETE SET NULL,
+  title      TEXT NOT NULL,
+  body       TEXT,
+  type       TEXT NOT NULL DEFAULT 'meeting-notes',
+  phase      TEXT,
+  category   TEXT,
+  note_date  TEXT NOT NULL,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+)`);
+
+// One-time migration: project_notes + task_meeting_notes → notes
+if (!db.prepare("SELECT value FROM settings WHERE key='notes_migration_v1'").get()) {
+  try {
+    db.transaction(() => {
+      db.prepare(`INSERT INTO notes (project_id,task_id,title,body,type,phase,category,note_date,created_at)
+        SELECT project_id,task_id,title,body,type,phase,category,date,created_at FROM project_notes`).run();
+      db.prepare(`INSERT INTO notes (project_id,task_id,title,body,type,note_date,created_at)
+        SELECT (SELECT p.id FROM projects p JOIN tasks t2 ON t2.project=p.name WHERE t2.id=mn.task_id LIMIT 1),
+               mn.task_id,
+               COALESCE(NULLIF(TRIM(mn.label),''),'Meeting Note'),
+               mn.url, 'meeting-link', mn.date, mn.created_at
+        FROM task_meeting_notes mn`).run();
+      db.prepare("INSERT INTO settings (key,value) VALUES ('notes_migration_v1','1')").run();
+    })();
+    console.log('[migration] notes_migration_v1 complete');
+  } catch(e) { console.error('[migration] notes_migration_v1 failed:', e.message); }
+}
+
 // 6-stage workflow: preserve old statuses, then remap
 try { db.prepare('ALTER TABLE tasks ADD COLUMN legacy_status TEXT').run(); } catch(e) {}
 db.prepare('UPDATE tasks SET legacy_status = status WHERE legacy_status IS NULL').run();
@@ -229,10 +262,11 @@ app.get('/api/tasks', (req, res) => {
   subRows.forEach(r => { cmap[r.task_id] = r; });
 
   const mnCounts = {};
-  db.prepare('SELECT task_id, COUNT(*) AS cnt FROM task_meeting_notes GROUP BY task_id').all()
+  db.prepare('SELECT task_id, COUNT(*) AS cnt FROM notes WHERE task_id IS NOT NULL GROUP BY task_id').all()
     .forEach(r => { mnCounts[r.task_id] = { cnt: r.cnt }; });
-  db.prepare(`SELECT mn.task_id, mn.url FROM task_meeting_notes mn
-    WHERE mn.id = (SELECT id FROM task_meeting_notes WHERE task_id = mn.task_id ORDER BY date DESC, id DESC LIMIT 1)`).all()
+  db.prepare(`SELECT n.task_id, n.body AS url FROM notes n
+    WHERE n.task_id IS NOT NULL AND n.type='meeting-link'
+    AND n.id=(SELECT id FROM notes WHERE task_id=n.task_id AND type='meeting-link' ORDER BY note_date DESC,id DESC LIMIT 1)`).all()
     .forEach(r => { if (mnCounts[r.task_id]) mnCounts[r.task_id].latest_url = r.url; });
 
   const flRows = db.prepare('SELECT task_id, focus_list_id FROM task_focus_lists').all();
@@ -584,6 +618,49 @@ app.delete('/api/project-notes/:id', (req, res) => {
   const result = db.prepare('DELETE FROM project_notes WHERE id = ?').run(req.params.id);
   if (!result.changes) return res.status(404).json({ error: 'Note not found' });
   res.status(204).end();
+});
+
+// ── Unified Notes ─────────────────────────────────────────────────────────────
+
+app.get('/api/notes', (req, res) => {
+  const { project_id, task_id } = req.query;
+  if (project_id) return res.json(db.prepare('SELECT * FROM notes WHERE project_id=? ORDER BY note_date DESC,id DESC').all(Number(project_id)));
+  if (task_id)    return res.json(db.prepare('SELECT * FROM notes WHERE task_id=? ORDER BY note_date DESC,id DESC').all(Number(task_id)));
+  res.status(400).json({ error: 'project_id or task_id required' });
+});
+
+app.post('/api/notes', (req, res) => {
+  const { project_id, task_id, title, body, type='meeting-notes', phase, category, note_date } = req.body;
+  if (!title?.trim())     return res.status(400).json({ error: 'title required' });
+  if (!note_date?.trim()) return res.status(400).json({ error: 'note_date required' });
+  const r = db.prepare(`INSERT INTO notes (project_id,task_id,title,body,type,phase,category,note_date) VALUES (?,?,?,?,?,?,?,?)`)
+    .run(project_id||null, task_id||null, title.trim(), body||null, type, phase||null, category||null, note_date.trim());
+  res.status(201).json(db.prepare('SELECT * FROM notes WHERE id=?').get(r.lastInsertRowid));
+});
+
+app.put('/api/notes/:id', (req, res) => {
+  const note = db.prepare('SELECT * FROM notes WHERE id=?').get(req.params.id);
+  if (!note) return res.status(404).json({ error: 'Note not found' });
+  const { title, body, type, phase, category, note_date, task_id, project_id } = req.body;
+  db.prepare(`UPDATE notes SET title=?,body=?,type=?,phase=?,category=?,note_date=?,task_id=?,project_id=?,updated_at=datetime('now') WHERE id=?`)
+    .run(
+      title?.trim()  ?? note.title,
+      body  !== undefined ? (body||null)  : note.body,
+      type  ?? note.type,
+      phase !== undefined ? (phase||null) : note.phase,
+      category !== undefined ? (category||null) : note.category,
+      note_date?.trim() ?? note.note_date,
+      task_id    !== undefined ? (task_id||null)    : note.task_id,
+      project_id !== undefined ? (project_id||null) : note.project_id,
+      note.id
+    );
+  res.json(db.prepare('SELECT * FROM notes WHERE id=?').get(note.id));
+});
+
+app.delete('/api/notes/:id', (req, res) => {
+  const result = db.prepare('DELETE FROM notes WHERE id=?').run(req.params.id);
+  if (!result.changes) return res.status(404).json({ error: 'Note not found' });
+  res.json({ ok: true });
 });
 
 // ── Sprints ───────────────────────────────────────────────────────────────────
