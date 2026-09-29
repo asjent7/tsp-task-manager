@@ -223,7 +223,7 @@
     .toast-undo:hover { background:rgba(255,255,255,.18); }
 
     /* ── Google Calendar overlay ── */
-    .cal-gcal-block { position:absolute; left:4px; right:4px; border-radius:6px; padding:4px 7px; overflow:hidden; z-index:9; pointer-events:none; background-color:#4285f4; background-image:repeating-linear-gradient(45deg,rgba(255,255,255,.2) 0,rgba(255,255,255,.2) 3px,transparent 3px,transparent 9px); border:1px solid rgba(66,133,244,.45); box-shadow:0 1px 4px rgba(66,133,244,.2); }
+    .cal-gcal-block { position:absolute; left:4px; right:4px; border-radius:6px; padding:4px 7px; overflow:hidden; z-index:9; pointer-events:auto; cursor:pointer; background-color:#4285f4; background-image:repeating-linear-gradient(45deg,rgba(255,255,255,.2) 0,rgba(255,255,255,.2) 3px,transparent 3px,transparent 9px); border:1px solid rgba(66,133,244,.45); box-shadow:0 1px 4px rgba(66,133,244,.2); }
     .cal-gcal-block-title { font-size:11px; font-weight:600; color:white; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
     .cal-gcal-block-sub { font-size:10px; color:rgba(255,255,255,.85); margin-top:1px; }
     .cal-gcal-allday { display:flex; flex-wrap:wrap; gap:4px; padding:5px 8px; background:#eff6ff; border-bottom:1px solid #bfdbfe; }
@@ -240,6 +240,15 @@
     .cal-week-gcal-event.free .cal-week-gcal-title { color:#60a5fa; }
     .cal-week-gcal-event.free .cal-week-gcal-time { color:#93c5fd; }
     .cal-week-gcal-event.free .gcal-g-badge { background:#3b82f6; color:white; }
+    /* GCal event popover */
+    #gcal-popover { position:fixed; z-index:9999; background:white; border:1px solid #e2e8f0; border-radius:8px; padding:12px 14px; box-shadow:0 4px 20px rgba(0,0,0,.14); width:240px; }
+    .gcal-pop-task { font-size:11px; padding:4px 6px; border-radius:4px; cursor:pointer; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .gcal-pop-task:hover { background:#f1f5f9; }
+    /* Reconnect banner (calendar page) */
+    .cal-reconnect-banner { background:#fef2f2; border:1px solid #fecaca; border-radius:6px; padding:7px 12px; margin-bottom:8px; font-size:12px; color:#b91c1c; }
+    .cal-reconnect-banner a { color:#b91c1c; font-weight:600; margin-left:4px; }
+    /* Linked GCal block badge on task blocks */
+    .gcal-linked-badge { display:inline-flex; align-items:center; justify-content:center; width:11px; height:11px; background:rgba(255,255,255,.9); color:#4285f4; border-radius:50%; font-size:7px; font-weight:700; margin-left:2px; vertical-align:middle; flex-shrink:0; }
 
     /* ── Category blocks (theme blocks) ── */
     .cal-cat-block { position:absolute; left:2px; right:2px; border-radius:6px; overflow:hidden; z-index:6; cursor:pointer; border:2px solid; }
@@ -261,7 +270,7 @@
     .cal-wtg-half-line { position:absolute; left:0; right:0; border-top:1px dashed rgba(0,0,0,.06); pointer-events:none; }
     .cal-wtg-block { position:absolute; left:1px; right:1px; border-radius:3px; overflow:hidden; font-size:9px; cursor:pointer; z-index:10; }
     .cal-wtg-block-title { padding:1px 3px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; color:white; font-weight:600; }
-    .cal-wtg-gcal { position:absolute; left:1px; right:1px; border-radius:3px; overflow:hidden; font-size:9px; z-index:9; pointer-events:none; background-color:#4285f4; background-image:repeating-linear-gradient(45deg,rgba(255,255,255,.2) 0,rgba(255,255,255,.2) 2px,transparent 2px,transparent 6px); }
+    .cal-wtg-gcal { position:absolute; left:1px; right:1px; border-radius:3px; overflow:hidden; font-size:9px; z-index:9; pointer-events:auto; cursor:pointer; background-color:#4285f4; background-image:repeating-linear-gradient(45deg,rgba(255,255,255,.2) 0,rgba(255,255,255,.2) 2px,transparent 2px,transparent 6px); }
     .cal-wtg-gcal.free { background-color:rgba(66,133,244,.12); background-image:none; border:1px dashed #93c5fd; }
     .cal-wtg-gcal-title { padding:1px 3px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; color:white; }
     .cal-wtg-gcal.free .cal-wtg-gcal-title { color:#3b82f6; }
@@ -1557,6 +1566,7 @@ let state = {
   daySettings: { capacityMinutes: 480, startHour: 5, endHour: 21 },
   googleCalConnected: false,
   googleCalConnectedAt: null,
+  googleCalWriteScope: false,
   googleEvents: [],
   googleWeekEvents: {},
   categoryBlocks: [],      // day view: current day's theme blocks
@@ -1751,6 +1761,7 @@ async function loadAll() {
   };
   state.googleCalConnected   = googleStatus.connected;
   state.googleCalConnectedAt = googleStatus.connected_at;
+  state.googleCalWriteScope  = !!googleStatus.write_scope;
 
   const urlParams = new URLSearchParams(window.location.search);
   if (urlParams.get('google_connected')) {
@@ -4734,9 +4745,53 @@ async function loadTimeBlocks(date) {
       : Promise.resolve([]),
     api('GET', `/api/category-blocks?date=${date}`).catch(() => [])
   ]);
-  state.timeBlocks      = blocks;
-  state.googleEvents    = gcalEvts;
-  state.categoryBlocks  = catBlocks;
+  state.timeBlocks     = blocks;
+  state.googleEvents   = gcalEvts;
+  state.categoryBlocks = catBlocks;
+
+  if (gcalEvts.length) {
+    let changed = false;
+    const ownedIds = new Set(blocks.map(b => b.gcal_event_id).filter(Boolean));
+
+    // Sync moved/deleted linked blocks
+    for (const b of blocks.filter(x => x.gcal_linked)) {
+      const evt = gcalEvts.find(e => e.id === b.gcal_event_id);
+      if (!evt) {
+        await api('DELETE', `/api/time-blocks/${b.id}`).catch(() => {});
+        changed = true;
+      } else {
+        const evtStart = new Date(evt.start);
+        const evtEnd   = evt.end ? new Date(evt.end) : new Date(evtStart.getTime() + 3600000);
+        const newDate  = `${evtStart.getFullYear()}-${String(evtStart.getMonth()+1).padStart(2,'0')}-${String(evtStart.getDate()).padStart(2,'0')}`;
+        const newTime  = `${String(evtStart.getHours()).padStart(2,'0')}:${String(evtStart.getMinutes()).padStart(2,'0')}`;
+        const newDur   = Math.round((evtEnd - evtStart) / 60000);
+        if (newDate !== b.date || newTime !== b.start_time || newDur !== b.duration_minutes) {
+          await api('PATCH', `/api/time-blocks/${b.id}`, { date: newDate, start_time: newTime, duration_minutes: newDur }).catch(() => {});
+          changed = true;
+        }
+      }
+    }
+
+    // Auto-link events whose description contains an app task URL
+    for (const evt of gcalEvts) {
+      if (ownedIds.has(evt.id) || !evt.description) continue;
+      const m = evt.description.match(/\/app\.html\?task=(\d+)/);
+      if (!m) continue;
+      const taskId = Number(m[1]);
+      if (!state.tasks.find(t => t.id === taskId)) continue;
+      const evtStart = new Date(evt.start);
+      const evtEnd   = evt.end ? new Date(evt.end) : new Date(evtStart.getTime() + 3600000);
+      const newDate  = `${evtStart.getFullYear()}-${String(evtStart.getMonth()+1).padStart(2,'0')}-${String(evtStart.getDate()).padStart(2,'0')}`;
+      const newTime  = `${String(evtStart.getHours()).padStart(2,'0')}:${String(evtStart.getMinutes()).padStart(2,'0')}`;
+      const dur      = Math.round((evtEnd - evtStart) / 60000);
+      await api('POST', '/api/gcal/link', { task_id: taskId, gcal_event_id: evt.id, date: newDate, start_time: newTime, duration_minutes: dur }).catch(() => {});
+      changed = true;
+    }
+
+    if (changed) {
+      state.timeBlocks = await api('GET', `/api/time-blocks?date=${date}`).catch(() => state.timeBlocks);
+    }
+  }
 }
 
 function renderCalendarDay() {
@@ -4786,15 +4841,17 @@ function renderCalendarDay() {
       ? `<button class="cal-day-block-log" onclick="event.stopPropagation();calDayLogBlock(${b.id})">⏱ Log ${fmtMins(b.duration_minutes)}</button>`
       : b.logged ? `<span style="font-size:9px;color:rgba(255,255,255,.65);">✓ logged</span>` : '';
 
-    const syncIcon = (state.googleCalConnected && !b.gcal_event_id)
+    const syncIcon = (state.googleCalConnected && !b.gcal_event_id && !b.gcal_linked)
       ? `<span title="Not synced to Google Calendar" style="position:absolute;top:2px;right:18px;font-size:9px;opacity:.85;">⚠</span>` : '';
+    const linkedBadge = b.gcal_linked
+      ? `<span class="gcal-linked-badge" title="Linked from Google Calendar">G</span>` : '';
     blocksHtml += `<div class="cal-day-block${b.logged?' logged':''}"
       data-block-id="${b.id}" data-task-id="${b.task_id}"
       style="top:${y}px;height:${h}px;background:${col};"
       onmousedown="calDayBlockMouseDown(event,${b.id},${y})">
       <button class="cal-day-block-remove" onmousedown="event.stopPropagation()" onclick="event.stopPropagation();calDayDeleteBlock(${b.id})" title="Remove block">×</button>
       ${syncIcon}
-      <div class="cal-day-block-title">${esc(b.task_title)}</div>
+      <div class="cal-day-block-title">${linkedBadge}${esc(b.task_title)}</div>
       ${h >= 36 ? `<div class="cal-day-block-sub">${fmt12(b.start_time)} · ${fmtMins(b.duration_minutes)}</div>` : ''}
       ${h >= 50 ? logBtn : ''}
       <div class="cal-day-resize" onmousedown="calDayResizeStart(event,${b.id},${b.duration_minutes})"></div>
@@ -4826,7 +4883,8 @@ function renderCalendarDay() {
     const startLocal = gcalLocalTime(evt.start);
     const endLocal   = gcalLocalTime(evt.end);
     gcalBlocksHtml += `<div class="cal-gcal-block${isFree ? ' free' : ''}" style="top:${y}px;height:${h}px;"
-      title="${esc(evt.title)} · ${fmt12(startLocal)}${endLocal ? ' – ' + fmt12(endLocal) : ''}${isFree ? ' (free)' : ''}">
+      title="${esc(evt.title)} · ${fmt12(startLocal)}${endLocal ? ' – ' + fmt12(endLocal) : ''}${isFree ? ' (free)' : ''}"
+      onclick="event.stopPropagation();openGcalPopover('${evt.id}',event)">
       <div class="cal-gcal-block-title"><span class="gcal-g-badge">G</span>${esc(evt.title)}</div>
       ${h >= 36 ? `<div class="cal-gcal-block-sub">${fmt12(startLocal)}${endLocal ? ' – ' + fmt12(endLocal) : ''}${isFree ? ' · free' : ''}</div>` : ''}
     </div>`;
@@ -4859,7 +4917,11 @@ function renderCalendarDay() {
   const dropAttrs = isSun ? '' :
     `ondragover="calDayDragOver(event)" ondragleave="calDayDragLeave(event)" ondrop="calDayDrop(event)"`;
 
+  const reconnectBanner = (state.googleCalConnected && !state.googleCalWriteScope)
+    ? `<div class="cal-reconnect-banner">⚠️ Google Calendar needs write access to sync task blocks. <a href="/api/auth/google">Reconnect →</a></div>` : '';
+
   const html = `
+    ${reconnectBanner}
     <div class="cal-toolbar">
       <button class="btn btn-ghost btn-sm" onclick="calDayNav(-1)">← Prev</button>
       <span class="cal-nav-label">${label}${isSun ? ' <span style="font-size:11px;color:#94a3b8;font-weight:400;">(Sunday — blocked)</span>' : ''}</span>
@@ -5664,7 +5726,8 @@ function renderCalendarWeekGrid() {
       const y = (Math.max(evtS, gsMs) - gsMs) / 3600000 * PX_PER_HOUR_WEEK;
       const h = Math.max((Math.min(evtE, geMs) - Math.max(evtS, gsMs)) / 3600000 * PX_PER_HOUR_WEEK, 8);
       const isFree = evt.transparency === 'transparent';
-      gcalHtml += `<div class="cal-wtg-gcal${isFree?' free':''}" style="top:${y}px;height:${h}px;" title="${esc(evt.title)}${isFree?' (free)':''}">
+      gcalHtml += `<div class="cal-wtg-gcal${isFree?' free':''}" style="top:${y}px;height:${h}px;" title="${esc(evt.title)}${isFree?' (free)':''}"
+        onclick="event.stopPropagation();openGcalPopover('${evt.id}',event)">
         <div class="cal-wtg-gcal-title">${esc(evt.title)}</div>
       </div>`;
     });
@@ -5676,7 +5739,11 @@ function renderCalendarWeekGrid() {
     </div>`;
   });
 
+  const wkReconnectBanner = (state.googleCalConnected && !state.googleCalWriteScope)
+    ? `<div class="cal-reconnect-banner">⚠️ Google Calendar needs write access to sync task blocks. <a href="/api/auth/google">Reconnect →</a></div>` : '';
+
   const html = `
+    ${wkReconnectBanner}
     <div class="cal-toolbar">
       <button class="btn btn-ghost btn-sm" onclick="calNav(-1)">← Prev</button>
       <span class="cal-nav-label">${label}</span>
@@ -5788,6 +5855,7 @@ async function openDaySettings() {
   if (state.googleCalConnected) {
     gcalSection.style.display = '';
     document.getElementById('gcal-sync-status').textContent = '';
+    document.getElementById('gcal-scope-warn').style.display = state.googleCalWriteScope ? 'none' : '';
     try {
       const cals = await api('GET', '/api/gcal/calendars');
       const sel  = document.getElementById('gcal-cal-select');
@@ -6439,6 +6507,108 @@ function connectGoogle() {
   window.location.href = '/api/auth/google';
 }
 
+// ── GCal event popover ────────────────────────────────────────────────────────
+
+let gcalPopoverEvtId = null;
+
+function closeGcalPopover() {
+  const p = document.getElementById('gcal-popover');
+  if (p) p.style.display = 'none';
+  gcalPopoverEvtId = null;
+}
+
+function openGcalPopover(evtId, clickEvent) {
+  // Find event in day or week state
+  const allEvts = [...(state.googleEvents || [])];
+  Object.values(state.googleWeekEvents || {}).forEach(arr => allEvts.push(...arr));
+  const evt = allEvts.find(e => e.id === evtId);
+  if (!evt) return;
+  gcalPopoverEvtId = evtId;
+
+  // Find any existing linked block for this event
+  const allBlocks = [...state.timeBlocks, ...Object.values(state.weekBlocks).flat()];
+  const linkedBlock = allBlocks.find(b => b.gcal_linked && b.gcal_event_id === evtId);
+
+  const startLocal = gcalLocalTime(evt.start);
+  const endLocal   = gcalLocalTime(evt.end);
+  const timeStr    = (startLocal ? fmt12(startLocal) : '') + (endLocal ? ' – ' + fmt12(endLocal) : '');
+  const openLink   = evt.htmlLink
+    ? `<a href="${esc(evt.htmlLink)}" target="_blank" rel="noopener" style="font-size:11px;color:#3b82f6;text-decoration:none;display:inline-block;margin-top:4px;">Open in Google →</a>`
+    : '';
+
+  let linkSection = '';
+  if (linkedBlock) {
+    const t = state.tasks.find(t => t.id === linkedBlock.task_id);
+    linkSection = `<div style="margin-top:10px;border-top:1px solid #e2e8f0;padding-top:8px;">
+      <div style="font-size:11px;color:#475569;">Linked: <strong>${esc(t?.title || 'Unknown')}</strong></div>
+      <button onclick="gcalUnlinkBlock(${linkedBlock.id})" style="margin-top:5px;font-size:11px;padding:3px 10px;border:1px solid #fca5a5;border-radius:4px;background:#fef2f2;color:#b91c1c;cursor:pointer;">Unlink</button>
+    </div>`;
+  } else {
+    const taskOpts = state.tasks
+      .filter(t => t.status !== 'complete')
+      .map(t => `<div class="gcal-pop-task" data-title="${esc(t.title).toLowerCase()}" onclick="gcalLinkTask('${evtId}',${t.id},event)">${esc(t.title)}</div>`)
+      .join('');
+    linkSection = `<div style="margin-top:10px;border-top:1px solid #e2e8f0;padding-top:8px;">
+      <div style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:#94a3b8;margin-bottom:5px;">Link to task</div>
+      <input type="text" id="gcal-pop-search" placeholder="Search tasks…" oninput="filterGcalPopTasks()" style="width:100%;font-size:12px;padding:4px 7px;border:1px solid #e2e8f0;border-radius:4px;box-sizing:border-box;margin-bottom:4px;" autocomplete="off">
+      <div id="gcal-pop-tasks" style="max-height:130px;overflow-y:auto;">${taskOpts}</div>
+    </div>`;
+  }
+
+  const p = document.getElementById('gcal-popover');
+  p.innerHTML = `
+    <button onclick="closeGcalPopover()" style="position:absolute;top:5px;right:8px;background:none;border:none;cursor:pointer;font-size:16px;color:#94a3b8;line-height:1;padding:0;">×</button>
+    <div style="font-size:13px;font-weight:600;color:#0f172a;padding-right:16px;margin-bottom:2px;">${esc(evt.title)}</div>
+    <div style="font-size:11px;color:#64748b;">${timeStr}</div>
+    ${openLink}
+    ${linkSection}`;
+
+  // Position near click, keep within viewport
+  const x = Math.min(clickEvent.clientX, window.innerWidth - 260);
+  const y = Math.min(clickEvent.clientY + 8, window.innerHeight - 300);
+  p.style.left = x + 'px';
+  p.style.top  = y + 'px';
+  p.style.display = 'block';
+  setTimeout(() => { const s = document.getElementById('gcal-pop-search'); if (s) s.focus(); }, 30);
+}
+
+function filterGcalPopTasks() {
+  const q = (document.getElementById('gcal-pop-search')?.value || '').toLowerCase();
+  document.querySelectorAll('#gcal-pop-tasks .gcal-pop-task').forEach(el => {
+    el.style.display = el.dataset.title.includes(q) ? '' : 'none';
+  });
+}
+
+async function gcalLinkTask(evtId, taskId, clickEvent) {
+  if (clickEvent) clickEvent.stopPropagation();
+  const allEvts = [...(state.googleEvents || [])];
+  Object.values(state.googleWeekEvents || {}).forEach(arr => allEvts.push(...arr));
+  const evt = allEvts.find(e => e.id === evtId);
+  if (!evt) return;
+  const evtStart = new Date(evt.start);
+  const evtEnd   = evt.end ? new Date(evt.end) : new Date(evtStart.getTime() + 3600000);
+  const date      = `${evtStart.getFullYear()}-${String(evtStart.getMonth()+1).padStart(2,'0')}-${String(evtStart.getDate()).padStart(2,'0')}`;
+  const startTime = `${String(evtStart.getHours()).padStart(2,'0')}:${String(evtStart.getMinutes()).padStart(2,'0')}`;
+  const dur       = Math.round((evtEnd - evtStart) / 60000);
+  try {
+    await api('POST', '/api/gcal/link', { task_id: taskId, gcal_event_id: evtId, date, start_time: startTime, duration_minutes: dur });
+    closeGcalPopover();
+    if (state.calMode === 'day') { await loadTimeBlocks(state.calDayStr); renderCalendarDay(); }
+    else renderCalendar();
+    toast('Event linked to task');
+  } catch(e) { toast(e.message); }
+}
+
+async function gcalUnlinkBlock(blockId) {
+  try {
+    await api('DELETE', `/api/gcal/link/${blockId}`);
+    closeGcalPopover();
+    if (state.calMode === 'day') { await loadTimeBlocks(state.calDayStr); renderCalendarDay(); }
+    else renderCalendar();
+    toast('Event unlinked');
+  } catch(e) { toast(e.message); }
+}
+
 async function disconnectGoogle() {
   if (!confirm('Disconnect Google Calendar?\n\nGoogle Calendar events will no longer appear in the calendar views.')) return;
   try {
@@ -6454,7 +6624,12 @@ async function disconnectGoogle() {
 
 // ── Init ──────────────────────────────────────────────────────────────────────
 
+document.addEventListener('click', e => {
+  if (gcalPopoverEvtId && !e.target.closest('#gcal-popover')) closeGcalPopover();
+});
+
 loadAll();
 </script>
+<div id="gcal-popover" style="display:none;position:fixed;z-index:9999;background:white;border:1px solid #e2e8f0;border-radius:8px;padding:12px 14px;box-shadow:0 4px 20px rgba(0,0,0,.14);width:240px;"></div>
 </body>
 </html>

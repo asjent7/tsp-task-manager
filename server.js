@@ -177,6 +177,7 @@ try { db.prepare('ALTER TABLE task_meeting_notes ADD COLUMN label TEXT').run(); 
 try { db.prepare('ALTER TABLE time_blocks ADD COLUMN parent_category_block_id INTEGER').run(); } catch(e) {}
 try { db.prepare('ALTER TABLE category_blocks ADD COLUMN google_event_id TEXT').run(); } catch(e) {}
 try { db.prepare('ALTER TABLE time_blocks ADD COLUMN gcal_event_id TEXT').run(); } catch(e) {}
+try { db.prepare('ALTER TABLE time_blocks ADD COLUMN gcal_linked INTEGER NOT NULL DEFAULT 0').run(); } catch(e) {}
 try { db.prepare("ALTER TABLE projects ADD COLUMN type TEXT NOT NULL DEFAULT 'professional'").run(); } catch(e) {}
 try { db.prepare('ALTER TABLE projects ADD COLUMN division TEXT').run(); } catch(e) {}
 
@@ -1049,6 +1050,30 @@ app.get('/api/gcal/calendars', async (req, res) => {
   } catch(e) { console.error('List calendars error:', e.message); res.json([]); }
 });
 
+// Link a GCal event to a task — creates a gcal_linked=1 block
+app.post('/api/gcal/link', (req, res) => {
+  const { task_id, gcal_event_id, date, start_time, duration_minutes } = req.body;
+  if (!task_id || !gcal_event_id || !date || !start_time)
+    return res.status(400).json({ error: 'task_id, gcal_event_id, date, start_time required' });
+  if (!db.prepare('SELECT id FROM tasks WHERE id=?').get(Number(task_id)))
+    return res.status(404).json({ error: 'Task not found' });
+  const existing = db.prepare('SELECT id FROM time_blocks WHERE gcal_event_id=?').get(gcal_event_id);
+  if (existing) return res.status(409).json({ error: 'Already linked', block_id: existing.id });
+  const r = db.prepare(
+    'INSERT INTO time_blocks (task_id, date, start_time, duration_minutes, gcal_event_id, gcal_linked) VALUES (?,?,?,?,?,1)'
+  ).run(Number(task_id), date, start_time, Number(duration_minutes || 60), gcal_event_id);
+  res.status(201).json(blockWithTask(r.lastInsertRowid));
+});
+
+// Unlink — removes the block but does NOT delete the GCal event
+app.delete('/api/gcal/link/:id', (req, res) => {
+  const block = db.prepare('SELECT id, gcal_linked FROM time_blocks WHERE id=?').get(req.params.id);
+  if (!block) return res.status(404).json({ error: 'Block not found' });
+  if (!block.gcal_linked) return res.status(400).json({ error: 'Not a linked block' });
+  db.prepare('DELETE FROM time_blocks WHERE id=?').run(req.params.id);
+  res.status(204).end();
+});
+
 app.post('/api/time-blocks/backfill', async (req, res) => {
   const auth = db.prepare('SELECT refresh_token FROM google_auth WHERE id=1').get();
   if (!auth) return res.status(400).json({ error: 'Google Calendar not connected' });
@@ -1132,10 +1157,10 @@ app.patch('/api/time-blocks/:id', async (req, res) => {
 });
 
 app.delete('/api/time-blocks/:id', (req, res) => {
-  const block = db.prepare('SELECT gcal_event_id FROM time_blocks WHERE id=?').get(req.params.id);
+  const block = db.prepare('SELECT gcal_event_id, gcal_linked FROM time_blocks WHERE id=?').get(req.params.id);
   if (!block) return res.status(404).json({ error: 'Time block not found' });
   db.prepare('DELETE FROM time_blocks WHERE id=?').run(req.params.id);
-  if (block.gcal_event_id) deleteGoogleTaskBlockEvent(block.gcal_event_id);
+  if (block.gcal_event_id && !block.gcal_linked) deleteGoogleTaskBlockEvent(block.gcal_event_id);
   res.status(204).end();
 });
 
@@ -1330,7 +1355,7 @@ async function deleteGoogleCatBlockEvent(eventId) {
 
 async function getTaskCalendarId(token) {
   const setting = db.prepare("SELECT value FROM settings WHERE key='gcal_task_calendar_id'").get();
-  if (setting) return setting.value;
+  if (setting?.value) return setting.value;
   try {
     const cals = await httpsReq({ hostname:'www.googleapis.com', path:'/calendar/v3/users/me/calendarList', method:'GET', headers:{ Authorization:'Bearer '+token } });
     if (cals?.error) return 'primary';
@@ -1351,6 +1376,7 @@ async function getTaskCalendarId(token) {
 }
 
 async function syncTaskBlockToGoogle(block, existingEventId) {
+  if (block.gcal_linked) return null; // owned by Google, never push back
   const auth = db.prepare('SELECT refresh_token FROM google_auth WHERE id = 1').get();
   if (!auth) return null;
   try {
@@ -1364,7 +1390,7 @@ async function syncTaskBlockToGoogle(block, existingEventId) {
     if (task.project)  descParts.push(`Project: ${task.project}`);
     if (task.category) descParts.push(`Category: ${task.category}`);
     if (task.due_date) descParts.push(`Due: ${task.due_date}`);
-    descParts.push(`${APP_BASE_URL}/app.html`);
+    descParts.push(`${APP_BASE_URL}/app.html?task=${block.task_id}`);
     const body = JSON.stringify({
       summary:      `🎯 ${task.title}`,
       description:  descParts.join('\n'),
@@ -1425,7 +1451,7 @@ app.get('/api/auth/google', (req, res) => {
     client_id:     process.env.GOOGLE_CLIENT_ID,
     redirect_uri:  GOOGLE_REDIRECT_URI,
     response_type: 'code',
-    scope:         'https://www.googleapis.com/auth/calendar.events https://www.googleapis.com/auth/calendar.readonly',
+    scope:         'https://www.googleapis.com/auth/calendar https://www.googleapis.com/auth/userinfo.email',
     access_type:   'offline',
     prompt:        'consent'
   });
@@ -1457,9 +1483,20 @@ app.get('/api/auth/google/callback', async (req, res) => {
   }
 });
 
-app.get('/api/auth/google/status', (req, res) => {
-  const row = db.prepare('SELECT connected_at FROM google_auth WHERE id = 1').get();
-  res.json({ connected: !!row, connected_at: row?.connected_at || null });
+app.get('/api/auth/google/status', async (req, res) => {
+  const row = db.prepare('SELECT refresh_token, connected_at FROM google_auth WHERE id = 1').get();
+  if (!row) return res.json({ connected: false, connected_at: null, email: null, write_scope: false });
+  try {
+    const token = await googleAccessToken(row.refresh_token);
+    // tokeninfo tells us which scopes were actually granted
+    const info = await httpsReq({ hostname:'www.googleapis.com', path:`/oauth2/v1/tokeninfo?access_token=${token}`, method:'GET', headers:{} });
+    const grantedScopes = info?.scope || '';
+    const writeScope = grantedScopes.includes('auth/calendar') || grantedScopes.includes('auth/calendar.events');
+    const email = info?.email || null;
+    res.json({ connected: true, connected_at: row.connected_at, email, write_scope: writeScope });
+  } catch(e) {
+    res.json({ connected: true, connected_at: row.connected_at, email: null, write_scope: false });
+  }
 });
 
 app.delete('/api/auth/google', (req, res) => {
@@ -1497,7 +1534,9 @@ app.get('/api/calendar/google-events', async (req, res) => {
       start:        e.start?.dateTime || e.start?.date,
       end:          e.end?.dateTime   || e.end?.date,
       all_day:      !e.start?.dateTime,
-      transparency: e.transparency || 'opaque'
+      transparency: e.transparency || 'opaque',
+      htmlLink:     e.htmlLink || null,
+      description:  e.description || null,
     })));
   } catch(e) {
     console.error('Google Calendar events error:', e.message);
