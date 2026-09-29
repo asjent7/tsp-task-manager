@@ -1,5 +1,6 @@
 const express = require('express');
 const Database = require('better-sqlite3');
+const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 const https = require('https');
@@ -226,6 +227,16 @@ db.exec(`CREATE TABLE IF NOT EXISTS notes (
 
 // additive column migrations for notes
 try { db.prepare("ALTER TABLE notes ADD COLUMN ai_summary_url TEXT").run(); } catch(e) {}
+
+db.exec(`CREATE TABLE IF NOT EXISTS note_shares (
+  id                 INTEGER PRIMARY KEY AUTOINCREMENT,
+  note_id            INTEGER NOT NULL REFERENCES notes(id) ON DELETE CASCADE,
+  token              TEXT NOT NULL UNIQUE,
+  created_at         TEXT NOT NULL DEFAULT (datetime('now')),
+  expires_at         TEXT,
+  revoked_at         TEXT,
+  include_ai_summary INTEGER NOT NULL DEFAULT 0
+)`);
 
 // One-time migration: project_notes + task_meeting_notes → notes
 if (!db.prepare("SELECT value FROM settings WHERE key='notes_migration_v1'").get()) {
@@ -798,10 +809,15 @@ app.get('/api/notes/search', (req, res) => {
   res.json(db.prepare(sql).all(...params));
 });
 
+const NOTE_WITH_SHARES = `SELECT n.*,
+  (SELECT COUNT(*) FROM note_shares s WHERE s.note_id=n.id AND s.revoked_at IS NULL
+   AND (s.expires_at IS NULL OR s.expires_at > datetime('now'))) AS active_share_count
+FROM notes n`;
+
 app.get('/api/notes', (req, res) => {
   const { project_id, task_id } = req.query;
-  if (project_id) return res.json(db.prepare('SELECT * FROM notes WHERE project_id=? ORDER BY note_date DESC,id DESC').all(Number(project_id)));
-  if (task_id)    return res.json(db.prepare('SELECT * FROM notes WHERE task_id=? ORDER BY note_date DESC,id DESC').all(Number(task_id)));
+  if (project_id) return res.json(db.prepare(`${NOTE_WITH_SHARES} WHERE n.project_id=? ORDER BY n.note_date DESC,n.id DESC`).all(Number(project_id)));
+  if (task_id)    return res.json(db.prepare(`${NOTE_WITH_SHARES} WHERE n.task_id=? ORDER BY n.note_date DESC,n.id DESC`).all(Number(task_id)));
   res.status(400).json({ error: 'project_id or task_id required' });
 });
 
@@ -1347,6 +1363,61 @@ app.get('/api/calendar/google-events', async (req, res) => {
     console.error('Google Calendar events error:', e.message);
     res.json([]);
   }
+});
+
+// ── Note shares ───────────────────────────────────────────────────────────────
+
+const ACTIVE_SHARE = `s.revoked_at IS NULL AND (s.expires_at IS NULL OR s.expires_at > datetime('now'))`;
+
+app.get('/api/notes/:id/shares', (req, res) => {
+  const note = db.prepare('SELECT id FROM notes WHERE id=?').get(req.params.id);
+  if (!note) return res.status(404).json({ error: 'Note not found' });
+  const shares = db.prepare(`SELECT * FROM note_shares s WHERE s.note_id=? AND ${ACTIVE_SHARE} ORDER BY s.created_at DESC`).all(note.id);
+  res.json(shares);
+});
+
+app.post('/api/notes/:id/shares', (req, res) => {
+  const note = db.prepare('SELECT id FROM notes WHERE id=?').get(req.params.id);
+  if (!note) return res.status(404).json({ error: 'Note not found' });
+  const { expires_in_days, include_ai_summary = 0 } = req.body;
+  const token = crypto.randomBytes(24).toString('hex'); // 48 hex chars
+  const expires_at = expires_in_days
+    ? db.prepare("SELECT datetime('now', ? || ' days') AS t").get(`+${Number(expires_in_days)}`).t
+    : null;
+  const r = db.prepare('INSERT INTO note_shares (note_id,token,expires_at,include_ai_summary) VALUES (?,?,?,?)')
+    .run(note.id, token, expires_at, include_ai_summary ? 1 : 0);
+  res.status(201).json(db.prepare('SELECT * FROM note_shares WHERE id=?').get(r.lastInsertRowid));
+});
+
+app.delete('/api/shares/:token', (req, res) => {
+  const share = db.prepare('SELECT id FROM note_shares WHERE token=?').get(req.params.token);
+  if (!share) return res.status(404).json({ error: 'Share not found' });
+  db.prepare("UPDATE note_shares SET revoked_at=datetime('now') WHERE id=?").run(share.id);
+  res.json({ ok: true });
+});
+
+// Public endpoint — returns only the fields the share page needs
+app.get('/api/share/:token', (req, res) => {
+  const share = db.prepare('SELECT * FROM note_shares WHERE token=?').get(req.params.token);
+  if (!share) return res.status(404).json({ error: 'Not found' });
+  if (share.revoked_at) return res.status(410).json({ error: 'revoked' });
+  if (share.expires_at && share.expires_at < new Date().toISOString().replace('T',' ').slice(0,19)) {
+    return res.status(410).json({ error: 'expired' });
+  }
+  const note = db.prepare('SELECT n.title, n.note_date, n.body, n.ai_summary_url, p.name AS project_name FROM notes n LEFT JOIN projects p ON p.id=n.project_id WHERE n.id=?').get(share.note_id);
+  if (!note) return res.status(404).json({ error: 'Not found' });
+  res.json({
+    title:         note.title,
+    note_date:     note.note_date,
+    body:          note.body,
+    project_name:  note.project_name,
+    ai_summary_url: share.include_ai_summary ? note.ai_summary_url : null,
+  });
+});
+
+// Serve share page for /share/n/:token
+app.get('/share/n/:token', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'share.html'));
 });
 
 // ── Start ─────────────────────────────────────────────────────────────────────

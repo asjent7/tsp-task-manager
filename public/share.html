@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="robots" content="noindex, nofollow">
+  <title>Shared Note</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      font-size: 15px;
+      line-height: 1.6;
+      color: #1e293b;
+      background: #f8fafc;
+      margin: 0;
+      padding: 0;
+    }
+    .page {
+      max-width: 720px;
+      margin: 0 auto;
+      padding: 40px 24px 80px;
+    }
+    .brand {
+      font-size: 12px;
+      color: #94a3b8;
+      margin-bottom: 32px;
+      letter-spacing: .05em;
+      text-transform: uppercase;
+    }
+    .note-title {
+      font-size: 26px;
+      font-weight: 700;
+      color: #0f172a;
+      margin: 0 0 8px;
+      line-height: 1.3;
+    }
+    .note-meta {
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+      font-size: 13px;
+      color: #64748b;
+      margin-bottom: 28px;
+      border-bottom: 1px solid #e2e8f0;
+      padding-bottom: 16px;
+    }
+    .note-body {
+      font-size: 15px;
+      line-height: 1.7;
+      color: #1e293b;
+    }
+    .note-body h2 { font-size: 17px; font-weight: 700; margin: 24px 0 6px; color: #0f172a; }
+    .note-body h3 { font-size: 15px; font-weight: 600; margin: 18px 0 4px; color: #0f172a; }
+    .note-body p  { margin: 0 0 10px; }
+    .note-body ul { margin: 0 0 10px; padding-left: 20px; }
+    .note-body ul[style*="list-style:none"] { padding-left: 4px; }
+    .note-body li { margin-bottom: 4px; }
+    .note-body a  { color: #3b82f6; text-decoration: none; }
+    .note-body a:hover { text-decoration: underline; }
+    .note-body code { background: #f1f5f9; padding: 2px 5px; border-radius: 3px; font-size: 13px; }
+    .note-body input[type=checkbox] { margin-right: 6px; pointer-events: none; cursor: default; }
+    .ai-link {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      margin-bottom: 20px;
+      padding: 7px 14px;
+      background: #eff6ff;
+      border: 1px solid #bfdbfe;
+      border-radius: 6px;
+      color: #3b82f6;
+      font-size: 13px;
+      font-weight: 500;
+      text-decoration: none;
+    }
+    .ai-link:hover { background: #dbeafe; }
+    .actions {
+      margin-top: 32px;
+      padding-top: 20px;
+      border-top: 1px solid #e2e8f0;
+      display: flex;
+      gap: 10px;
+    }
+    .btn-print {
+      padding: 8px 18px;
+      border: 1px solid #cbd5e1;
+      border-radius: 6px;
+      background: #fff;
+      font-size: 13px;
+      cursor: pointer;
+      color: #475569;
+    }
+    .btn-print:hover { background: #f1f5f9; }
+    .error-state {
+      text-align: center;
+      padding: 80px 0;
+      color: #64748b;
+    }
+    .error-state .icon { font-size: 40px; margin-bottom: 12px; }
+    .error-state h2 { font-size: 20px; color: #1e293b; margin: 0 0 8px; }
+    .loading { color: #94a3b8; padding: 40px 0; }
+    @media print {
+      body { background: #fff; }
+      .actions, .brand { display: none; }
+      .page { padding: 0; }
+    }
+  </style>
+</head>
+<body>
+<div class="page">
+  <div class="brand">TSP Task Manager · Shared Note</div>
+  <div id="content"><p class="loading">Loading…</p></div>
+</div>
+<script>
+function esc(s) {
+  if (!s) return '';
+  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function inlineMd(text) {
+  if (!text) return '';
+  let s = esc(text);
+  s = s.replace(/\*\*\*(.+?)\*\*\*/g, '<strong><em>$1</em></strong>');
+  s = s.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+  s = s.replace(/\*([^*]+)\*/g, '<em>$1</em>');
+  s = s.replace(/\[([^\]]+)\]\((https?:\/\/[^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
+  s = s.replace(/(?<![">])(https?:\/\/[^\s<>"]+)/g, '<a href="$1" target="_blank" rel="noopener">$1</a>');
+  s = s.replace(/`([^`]+)`/g, '<code>$1</code>');
+  return s;
+}
+
+function renderMd(md) {
+  if (!md) return '';
+  let html = '';
+  const lines = md.split('\n');
+  let inList = false;
+  for (const line of lines) {
+    if (line.startsWith('## ')) {
+      if (inList) { html += '</ul>'; inList = false; }
+      html += `<h2>${inlineMd(line.slice(3))}</h2>`;
+    } else if (line.startsWith('### ')) {
+      if (inList) { html += '</ul>'; inList = false; }
+      html += `<h3>${inlineMd(line.slice(4))}</h3>`;
+    } else if (/^- \[( |x)\] /i.test(line)) {
+      if (!inList) { html += '<ul style="list-style:none;padding-left:4px">'; inList = true; }
+      const checked = line[3].toLowerCase() === 'x';
+      const rest = inlineMd(line.slice(6));
+      html += `<li><input type="checkbox" ${checked ? 'checked' : ''} disabled> ${rest}</li>`;
+    } else if (line.startsWith('- ')) {
+      if (!inList) { html += '<ul>'; inList = true; }
+      html += `<li>${inlineMd(line.slice(2))}</li>`;
+    } else {
+      if (inList) { html += '</ul>'; inList = false; }
+      const t = inlineMd(line);
+      html += t ? `<p>${t}</p>` : '<p style="margin:2px 0"></p>';
+    }
+  }
+  if (inList) html += '</ul>';
+  return html;
+}
+
+async function load() {
+  const token = location.pathname.split('/').pop();
+  const el = document.getElementById('content');
+  try {
+    const res = await fetch(`/api/share/${encodeURIComponent(token)}`);
+    if (res.status === 410) {
+      const { error } = await res.json();
+      el.innerHTML = `<div class="error-state"><div class="icon">🔗</div><h2>This link is no longer available</h2><p>${error === 'revoked' ? 'The owner has revoked access to this note.' : 'This share link has expired.'}</p></div>`;
+      document.title = 'Link unavailable';
+      return;
+    }
+    if (!res.ok) {
+      el.innerHTML = `<div class="error-state"><div class="icon">❓</div><h2>Note not found</h2><p>This link may be invalid.</p></div>`;
+      return;
+    }
+    const note = await res.json();
+    document.title = note.title + ' — Shared Note';
+
+    const aiBtn = note.ai_summary_url
+      ? `<a href="${esc(note.ai_summary_url)}" target="_blank" rel="noopener" class="ai-link">✨ View AI Summary</a><br>`
+      : '';
+
+    el.innerHTML = `
+      <h1 class="note-title">${esc(note.title)}</h1>
+      <div class="note-meta">
+        <span>${esc(note.note_date)}</span>
+        ${note.project_name ? `<span>📁 ${esc(note.project_name)}</span>` : ''}
+      </div>
+      ${aiBtn}
+      <div class="note-body">${renderMd(note.body || '')}</div>
+      <div class="actions">
+        <button class="btn-print" onclick="window.print()">🖨️ Print / Save as PDF</button>
+      </div>`;
+  } catch(e) {
+    el.innerHTML = `<div class="error-state"><div class="icon">⚠️</div><h2>Failed to load</h2><p>${esc(e.message)}</p></div>`;
+  }
+}
+
+load();
+</script>
+</body>
+</html>

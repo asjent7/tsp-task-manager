@@ -610,6 +610,14 @@
     .nsr-meta  { font-size: 11px; color: var(--muted); margin-bottom: 6px; display: flex; gap: 8px; flex-wrap: wrap; }
     .nsr-snippet { font-size: 12px; color: var(--text); line-height: 1.5; }
     .nsr-snippet mark { background: #fef08a; border-radius: 2px; padding: 0 1px; }
+    /* ── Share ── */
+    .note-shared-badge { font-size: 10px; background: #ecfdf5; color: #059669; border-radius: 3px; padding: 1px 6px; border: 1px solid #a7f3d0; }
+    .share-link-box { display: flex; gap: 6px; align-items: center; margin-top: 8px; }
+    .share-link-box input { flex: 1; font-size: 12px; padding: 5px 8px; border: 1px solid var(--border); border-radius: 5px; background: var(--bg); color: var(--text); outline: none; }
+    .share-row { display: flex; align-items: center; gap: 6px; padding: 6px 0; border-bottom: 1px solid var(--border); font-size: 12px; }
+    .share-row:last-child { border-bottom: none; }
+    .share-row-url { flex: 1; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .share-row-exp { font-size: 11px; color: var(--muted); flex-shrink: 0; }
     /* ── Sprints tab ── */
     .pd-sprint-active-card { background: var(--surface); border: 1.5px solid var(--accent); border-radius: 10px; margin-bottom: 16px; overflow: hidden; }
     .pd-sprint-active-header { padding: 12px 16px 10px; border-bottom: 1px solid var(--border); }
@@ -1255,6 +1263,42 @@
     <div class="modal-btns">
       <button class="btn btn-ghost btn-sm" onclick="closeCatDeleteModal()">Cancel</button>
       <button class="btn btn-primary btn-sm" style="background:#ef4444;border-color:#ef4444" onclick="confirmDeleteCategory()">Delete</button>
+    </div>
+  </div>
+</div>
+
+<!-- Note Share Modal -->
+<div class="overlay" id="note-share-modal">
+  <div class="modal" style="max-width:480px">
+    <h3>Share Note</h3>
+    <div class="modal-sub" id="note-share-modal-title" style="font-weight:600;color:var(--text);margin-bottom:12px;"></div>
+    <div id="note-share-create" style="border:1px solid var(--border);border-radius:8px;padding:14px;margin-bottom:14px;">
+      <div style="font-size:12px;font-weight:600;color:var(--muted);margin-bottom:10px;text-transform:uppercase;letter-spacing:.04em">Create share link</div>
+      <div class="field-row" style="margin:0 0 10px;gap:10px;flex-wrap:wrap">
+        <div class="field" style="flex:1;min-width:130px;margin:0">
+          <label style="font-size:11px">Expiry</label>
+          <select id="note-share-expiry" style="width:100%">
+            <option value="">Never</option>
+            <option value="7">7 days</option>
+            <option value="30">30 days</option>
+          </select>
+        </div>
+        <div class="field" style="flex:1;min-width:160px;margin:0;display:flex;align-items:flex-end">
+          <label style="display:flex;align-items:center;gap:6px;font-size:12px;cursor:pointer">
+            <input type="checkbox" id="note-share-include-ai">
+            Include AI summary link
+          </label>
+        </div>
+      </div>
+      <button class="btn btn-primary btn-sm" onclick="createShareLink()">Create link</button>
+    </div>
+    <div id="note-share-result" style="display:none;margin-bottom:14px;"></div>
+    <div id="note-share-list-wrap">
+      <div style="font-size:12px;font-weight:600;color:var(--muted);margin-bottom:8px;text-transform:uppercase;letter-spacing:.04em">Active links</div>
+      <div id="note-share-list"><p style="color:var(--muted);font-size:13px">Loading…</p></div>
+    </div>
+    <div class="modal-btns">
+      <button class="btn btn-ghost btn-sm" onclick="closeShareModal()">Close</button>
     </div>
   </div>
 </div>
@@ -2412,14 +2456,19 @@ async function renderNotesSearch() {
       })();
       const titleHl = esc(n.title).replace(re, '<mark>$1</mark>');
       const typeLabel = {'meeting-notes':'Meeting Notes','meeting-link':'Meeting Link','other':'Other'}[n.type]||n.type;
-      return `<div class="notes-search-result" onclick="openNoteResult(${n.id},${n.task_id||'null'},${n.project_id||'null'})">
-        <div class="nsr-title">${titleHl}</div>
-        <div class="nsr-meta">
-          <span>${n.note_date}</span>
-          <span class="pill pill-cat" style="font-size:10px;padding:1px 5px">${typeLabel}</span>
-          ${n.project_name ? `<span>📁 ${esc(n.project_name)}</span>` : ''}
+      return `<div class="notes-search-result">
+        <div style="display:flex;align-items:flex-start;gap:8px">
+          <div style="flex:1;cursor:pointer" onclick="openNoteResult(${n.id},${n.task_id||'null'},${n.project_id||'null'})">
+            <div class="nsr-title">${titleHl}</div>
+            <div class="nsr-meta">
+              <span>${n.note_date}</span>
+              <span class="pill pill-cat" style="font-size:10px;padding:1px 5px">${typeLabel}</span>
+              ${n.project_name ? `<span>📁 ${esc(n.project_name)}</span>` : ''}
+            </div>
+            ${snippet ? `<div class="nsr-snippet">${snippet}</div>` : ''}
+          </div>
+          <button class="btn btn-ghost btn-sm" style="flex-shrink:0;margin-top:2px" onclick="event.stopPropagation();openShareDialog(${n.id})">Share</button>
         </div>
-        ${snippet ? `<div class="nsr-snippet">${snippet}</div>` : ''}
       </div>`;
     }).join('');
   }
@@ -2464,6 +2513,103 @@ function pdnAutosave() {
   }, 800);
 }
 
+// ── Note share dialog ─────────────────────────────────────────────────────────
+let _shareNoteId = null;
+
+function openShareDialog(noteId) {
+  _shareNoteId = noteId;
+  // find note title from any loaded source
+  const note = pdState.notes.find(n => n.id === noteId)
+            || state.meetingNotes.find(n => n.id === noteId);
+  document.getElementById('note-share-modal-title').textContent = note?.title || `Note #${noteId}`;
+  document.getElementById('note-share-expiry').value = '';
+  document.getElementById('note-share-include-ai').checked = false;
+  document.getElementById('note-share-result').style.display = 'none';
+  document.getElementById('note-share-result').innerHTML = '';
+  document.getElementById('note-share-modal').classList.add('open');
+  loadSharesForNote(noteId);
+}
+
+function closeShareModal() {
+  document.getElementById('note-share-modal').classList.remove('open');
+  _shareNoteId = null;
+}
+document.getElementById('note-share-modal').addEventListener('click', e => { if (e.target === e.currentTarget) closeShareModal(); });
+
+async function loadSharesForNote(noteId) {
+  const el = document.getElementById('note-share-list');
+  el.innerHTML = '<p style="color:var(--muted);font-size:13px">Loading…</p>';
+  try {
+    const shares = await api('GET', `/api/notes/${noteId}/shares`);
+    renderShareList(shares);
+  } catch(e) {
+    el.innerHTML = '<p style="color:#ef4444;font-size:13px">Failed to load shares</p>';
+  }
+}
+
+function renderShareList(shares) {
+  const el = document.getElementById('note-share-list');
+  if (!shares.length) {
+    el.innerHTML = '<p style="color:var(--muted);font-size:13px">No active links</p>';
+    return;
+  }
+  el.innerHTML = shares.map(s => {
+    const url = `${location.origin}/share/n/${s.token}`;
+    const exp = s.expires_at ? `Expires ${s.expires_at.slice(0,10)}` : 'Never expires';
+    const ai  = s.include_ai_summary ? ' · AI ✓' : '';
+    return `<div class="share-row">
+      <span class="share-row-url" title="${url}">${url}</span>
+      <span class="share-row-exp">${exp}${ai}</span>
+      <button class="btn btn-ghost btn-sm" style="flex-shrink:0" onclick="copyShareUrl('${url}')">Copy</button>
+      <button class="btn btn-ghost btn-sm" style="flex-shrink:0;color:#ef4444" onclick="revokeShare('${s.token}')">Revoke</button>
+    </div>`;
+  }).join('');
+}
+
+async function createShareLink() {
+  if (!_shareNoteId) return;
+  const expires_in_days = document.getElementById('note-share-expiry').value || null;
+  const include_ai_summary = document.getElementById('note-share-include-ai').checked ? 1 : 0;
+  try {
+    const share = await api('POST', `/api/notes/${_shareNoteId}/shares`, { expires_in_days: expires_in_days ? Number(expires_in_days) : null, include_ai_summary });
+    const url = `${location.origin}/share/n/${share.token}`;
+    const resultEl = document.getElementById('note-share-result');
+    resultEl.style.display = '';
+    resultEl.innerHTML = `<div style="background:#f0fdf4;border:1px solid #86efac;border-radius:6px;padding:10px 12px;font-size:13px">
+      <div style="font-weight:600;color:#166534;margin-bottom:6px">Link created!</div>
+      <div class="share-link-box">
+        <input type="text" value="${url}" readonly onclick="this.select()">
+        <button class="btn btn-primary btn-sm" onclick="copyShareUrl('${url}')">Copy</button>
+      </div>
+    </div>`;
+    // update badge on source note without full re-render
+    const noteInPd = pdState.notes.find(n => n.id === _shareNoteId);
+    if (noteInPd) { noteInPd.active_share_count = (noteInPd.active_share_count || 0) + 1; }
+    const noteInMn = state.meetingNotes.find(n => n.id === _shareNoteId);
+    if (noteInMn) { noteInMn.active_share_count = (noteInMn.active_share_count || 0) + 1; }
+    loadSharesForNote(_shareNoteId);
+  } catch(e) { toast(e.message); }
+}
+
+async function revokeShare(token) {
+  if (!confirm('Revoke this link? Anyone with it will lose access immediately.')) return;
+  try {
+    await api('DELETE', `/api/shares/${token}`);
+    toast('Link revoked');
+    if (_shareNoteId) {
+      loadSharesForNote(_shareNoteId);
+      const noteInPd = pdState.notes.find(n => n.id === _shareNoteId);
+      if (noteInPd && noteInPd.active_share_count > 0) noteInPd.active_share_count--;
+      const noteInMn = state.meetingNotes.find(n => n.id === _shareNoteId);
+      if (noteInMn && noteInMn.active_share_count > 0) noteInMn.active_share_count--;
+    }
+  } catch(e) { toast(e.message); }
+}
+
+function copyShareUrl(url) {
+  navigator.clipboard.writeText(url).then(() => toast('Link copied'));
+}
+
 function pdRenderNotes(proj, f) {
   f = f || pdFilters(proj.id);
   let notes = [...pdState.notes];
@@ -2486,9 +2632,11 @@ function pdRenderNotes(proj, f) {
         <span class="pill pill-cat" style="font-size:11px">${typeLabel}</span>
         ${n.phase    ? `<span class="pill pill-status-${n.phase}" style="font-size:11px">${STATUS_LABELS[n.phase]||n.phase}</span>` : ''}
         ${catPill(n.category,'font-size:11px')}
+        ${n.active_share_count ? `<span class="note-shared-badge">Shared</span>` : ''}
         <span class="pd-note-card-date">${n.note_date}</span>
         <div class="pd-note-card-actions">
           ${n.ai_summary_url ? `<a href="${esc(n.ai_summary_url)}" target="_blank" rel="noopener" class="btn btn-ghost btn-sm" style="text-decoration:none">✨ AI Summary</a>` : ''}
+          <button class="btn btn-ghost btn-sm" onclick="openShareDialog(${n.id})">Share</button>
           <button class="btn btn-ghost btn-sm" onclick="notesCopyBody(${n.id})">Copy</button>
           <button class="btn btn-ghost btn-sm" onclick="pdEditNote(${proj.id},${n.id})">Edit</button>
           <button class="btn btn-ghost btn-sm" style="color:#ef4444" onclick="deletePdNote(${proj.id},${n.id})">Delete</button>
@@ -3633,7 +3781,9 @@ function renderMeetingNotes() {
       <div style="padding:0 10px 4px;"><span class="pill pill-cat" style="font-size:10px;padding:1px 5px;">${typeLabel(n.type)}</span></div>
       ${bodyHtml}
       <div class="mn-note-acts">
+        ${n.active_share_count ? `<span class="note-shared-badge">Shared</span>` : ''}
         ${n.ai_summary_url ? `<a href="${esc(n.ai_summary_url)}" target="_blank" rel="noopener" class="btn btn-ghost btn-sm" style="text-decoration:none;font-size:11px">✨ AI Summary</a>` : ''}
+        <button class="btn btn-ghost btn-sm" onclick="openShareDialog(${n.id})">Share</button>
         <button class="btn btn-ghost btn-sm" onclick="notesCopyBody(${n.id})">Copy</button>
         <button class="btn btn-ghost btn-sm" onclick="mnEditNote(${n.id})">Edit</button>
         <button class="btn btn-ghost btn-sm" style="color:#ef4444" onclick="mnDeleteNote(${n.id})">Delete</button>
