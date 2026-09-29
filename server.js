@@ -224,6 +224,9 @@ db.exec(`CREATE TABLE IF NOT EXISTS notes (
   updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 )`);
 
+// additive column migrations for notes
+try { db.prepare("ALTER TABLE notes ADD COLUMN ai_summary_url TEXT").run(); } catch(e) {}
+
 // One-time migration: project_notes + task_meeting_notes → notes
 if (!db.prepare("SELECT value FROM settings WHERE key='notes_migration_v1'").get()) {
   try {
@@ -783,6 +786,18 @@ app.delete('/api/project-notes/:id', (req, res) => {
 
 // ── Unified Notes ─────────────────────────────────────────────────────────────
 
+app.get('/api/notes/search', (req, res) => {
+  const { q = '', type, project_id } = req.query;
+  if (!q.trim()) return res.json([]);
+  const like = `%${q.trim()}%`;
+  let sql = `SELECT n.*, p.name AS project_name FROM notes n LEFT JOIN projects p ON p.id=n.project_id WHERE (n.title LIKE ? OR n.body LIKE ?)`;
+  const params = [like, like];
+  if (type)       { sql += ` AND n.type=?`;       params.push(type); }
+  if (project_id) { sql += ` AND n.project_id=?`; params.push(Number(project_id)); }
+  sql += ` ORDER BY n.note_date DESC, n.id DESC LIMIT 50`;
+  res.json(db.prepare(sql).all(...params));
+});
+
 app.get('/api/notes', (req, res) => {
   const { project_id, task_id } = req.query;
   if (project_id) return res.json(db.prepare('SELECT * FROM notes WHERE project_id=? ORDER BY note_date DESC,id DESC').all(Number(project_id)));
@@ -791,19 +806,19 @@ app.get('/api/notes', (req, res) => {
 });
 
 app.post('/api/notes', (req, res) => {
-  const { project_id, task_id, title, body, type='meeting-notes', phase, category, note_date } = req.body;
+  const { project_id, task_id, title, body, type='meeting-notes', phase, category, note_date, ai_summary_url } = req.body;
   if (!title?.trim())     return res.status(400).json({ error: 'title required' });
   if (!note_date?.trim()) return res.status(400).json({ error: 'note_date required' });
-  const r = db.prepare(`INSERT INTO notes (project_id,task_id,title,body,type,phase,category,note_date) VALUES (?,?,?,?,?,?,?,?)`)
-    .run(project_id||null, task_id||null, title.trim(), body||null, type, phase||null, category||null, note_date.trim());
+  const r = db.prepare(`INSERT INTO notes (project_id,task_id,title,body,type,phase,category,note_date,ai_summary_url) VALUES (?,?,?,?,?,?,?,?,?)`)
+    .run(project_id||null, task_id||null, title.trim(), body||null, type, phase||null, category||null, note_date.trim(), ai_summary_url||null);
   res.status(201).json(db.prepare('SELECT * FROM notes WHERE id=?').get(r.lastInsertRowid));
 });
 
 app.put('/api/notes/:id', (req, res) => {
   const note = db.prepare('SELECT * FROM notes WHERE id=?').get(req.params.id);
   if (!note) return res.status(404).json({ error: 'Note not found' });
-  const { title, body, type, phase, category, note_date, task_id, project_id } = req.body;
-  db.prepare(`UPDATE notes SET title=?,body=?,type=?,phase=?,category=?,note_date=?,task_id=?,project_id=?,updated_at=datetime('now') WHERE id=?`)
+  const { title, body, type, phase, category, note_date, task_id, project_id, ai_summary_url } = req.body;
+  db.prepare(`UPDATE notes SET title=?,body=?,type=?,phase=?,category=?,note_date=?,task_id=?,project_id=?,ai_summary_url=?,updated_at=datetime('now') WHERE id=?`)
     .run(
       title?.trim()  ?? note.title,
       body  !== undefined ? (body||null)  : note.body,
@@ -813,6 +828,7 @@ app.put('/api/notes/:id', (req, res) => {
       note_date?.trim() ?? note.note_date,
       task_id    !== undefined ? (task_id||null)    : note.task_id,
       project_id !== undefined ? (project_id||null) : note.project_id,
+      ai_summary_url !== undefined ? (ai_summary_url||null) : note.ai_summary_url,
       note.id
     );
   res.json(db.prepare('SELECT * FROM notes WHERE id=?').get(note.id));

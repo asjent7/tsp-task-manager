@@ -576,10 +576,40 @@
     .pd-note-card-actions { display: flex; gap: 4px; flex-shrink: 0; }
     .pd-note-task-tag { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; color: var(--accent); background: #eff6ff; border-radius: 4px; padding: 2px 7px; cursor: pointer; }
     .pd-note-task-tag:hover { background: #dbeafe; }
-    .pd-note-body { padding: 0 14px 12px; font-size: 13px; line-height: 1.55; color: var(--text); white-space: pre-wrap; word-break: break-word; }
+    .pd-note-body { padding: 0 14px 12px; font-size: 13px; line-height: 1.55; color: var(--text); word-break: break-word; }
     .pd-note-body a { color: var(--accent); }
     .pd-note-readonly { border-left: 3px solid #e2e8f0; opacity: .8; }
     .pd-note-readonly-badge { font-size: 10px; background: #f1f5f9; color: var(--muted); border-radius: 3px; padding: 1px 5px; }
+    /* ── Markdown note styles ── */
+    .note-md h2 { font-size: 14px; font-weight: 700; margin: 10px 0 4px; }
+    .note-md h3 { font-size: 13px; font-weight: 600; margin: 8px 0 3px; }
+    .note-md p  { margin: 0 0 6px; }
+    .note-md ul { margin: 0 0 6px; padding-left: 18px; }
+    .note-md li { margin-bottom: 2px; }
+    .note-md a  { color: var(--accent); }
+    .note-md input[type=checkbox] { margin-right: 5px; cursor: pointer; }
+    .note-md code { background: var(--hover); padding: 1px 4px; border-radius: 3px; font-size: 12px; }
+    /* ── Note editor modal tabs+toolbar ── */
+    .note-modal-tabs { display: flex; gap: 0; margin-bottom: 8px; border-bottom: 1px solid var(--border); }
+    .note-tab-btn { background: none; border: none; padding: 6px 14px; font-size: 13px; color: var(--muted); cursor: pointer; border-bottom: 2px solid transparent; margin-bottom: -1px; }
+    .note-tab-btn.active { color: var(--accent); border-bottom-color: var(--accent); font-weight: 600; }
+    .note-md-toolbar { display: flex; gap: 4px; flex-wrap: wrap; margin-bottom: 6px; }
+    .note-tb-btn { background: var(--surface); border: 1px solid var(--border); border-radius: 4px; padding: 3px 7px; font-size: 12px; cursor: pointer; color: var(--text); }
+    .note-tb-btn:hover { background: var(--hover); }
+    .note-preview-box { min-height: 140px; padding: 10px; background: var(--surface); border: 1px solid var(--border); border-radius: 6px; overflow-y: auto; font-size: 13px; line-height: 1.55; }
+    /* ── Notes search sidebar ── */
+    .sidebar-notes-search { padding: 4px 12px 0; }
+    .sidebar-notes-search input { width: 100%; font-size: 12px; padding: 5px 8px; border: 1px solid var(--border); border-radius: 5px; background: var(--surface); color: var(--text); outline: none; box-sizing: border-box; }
+    .sidebar-notes-search input:focus { border-color: var(--accent); }
+    /* ── Notes search results ── */
+    .notes-search-wrap { padding: 16px 20px; }
+    .notes-search-filters { display: flex; gap: 8px; margin-bottom: 14px; flex-wrap: wrap; }
+    .notes-search-result { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 12px 14px; margin-bottom: 10px; cursor: pointer; }
+    .notes-search-result:hover { border-color: var(--accent); }
+    .nsr-title { font-size: 13px; font-weight: 600; margin-bottom: 4px; }
+    .nsr-meta  { font-size: 11px; color: var(--muted); margin-bottom: 6px; display: flex; gap: 8px; flex-wrap: wrap; }
+    .nsr-snippet { font-size: 12px; color: var(--text); line-height: 1.5; }
+    .nsr-snippet mark { background: #fef08a; border-radius: 2px; padding: 0 1px; }
     /* ── Sprints tab ── */
     .pd-sprint-active-card { background: var(--surface); border: 1.5px solid var(--accent); border-radius: 10px; margin-bottom: 16px; overflow: hidden; }
     .pd-sprint-active-header { padding: 12px 16px 10px; border-bottom: 1px solid var(--border); }
@@ -618,6 +648,9 @@
         <select id="filter-project" onchange="applyFilters()">
           <option value="">All projects</option>
         </select>
+      </div>
+      <div class="sidebar-notes-search">
+        <input type="search" id="sidebar-notes-q" placeholder="Search notes…" oninput="sidebarNotesSearchDebounced(this.value)">
       </div>
       <div class="nav-item" data-view="all" onclick="setView('all')">
         <span class="nav-label"><span class="nav-icon">📋</span> All Tasks</span>
@@ -862,13 +895,22 @@
           <input type="text" id="mn-title" placeholder="Title">
           <div style="display:flex;gap:6px;">
             <input type="date" id="mn-date" style="flex:1;">
-            <select id="mn-type" style="flex:1;">
+            <select id="mn-type" style="flex:1;" onchange="mnTypeChange()">
               <option value="meeting-notes">Meeting Notes</option>
               <option value="meeting-link">Meeting Link</option>
               <option value="other">Other</option>
             </select>
           </div>
-          <textarea id="mn-body" placeholder="Notes… URLs become clickable links" style="min-height:70px;resize:vertical;"></textarea>
+          <div class="note-md-toolbar" style="gap:3px;">
+            <button class="note-tb-btn" onclick="mdTool('mn-body','h2')" title="H2" style="font-size:11px;padding:2px 5px">H2</button>
+            <button class="note-tb-btn" onclick="mdTool('mn-body','bold')" title="Bold" style="font-size:11px;padding:2px 5px"><b>B</b></button>
+            <button class="note-tb-btn" onclick="mdTool('mn-body','italic')" title="Italic" style="font-size:11px;padding:2px 5px"><i>I</i></button>
+            <button class="note-tb-btn" onclick="mdTool('mn-body','ul')" title="Bullet" style="font-size:11px;padding:2px 5px">•</button>
+            <button class="note-tb-btn" onclick="mdTool('mn-body','check')" title="Checklist" style="font-size:11px;padding:2px 5px">☑</button>
+            <button class="note-tb-btn" onclick="mdTool('mn-body','template')" title="Template" style="font-size:11px;padding:2px 5px">📋</button>
+          </div>
+          <textarea id="mn-body" placeholder="Notes… markdown supported" style="min-height:70px;resize:vertical;font-family:monospace;font-size:12px;"></textarea>
+          <input type="url" id="mn-ai-url" placeholder="AI summary URL (optional)" style="font-size:12px;">
           <div style="display:flex;gap:6px;justify-content:flex-end;">
             <button class="btn btn-ghost btn-sm" onclick="hideMnForm()">Cancel</button>
             <button class="btn btn-primary btn-sm" onclick="saveMnNote()">Save</button>
@@ -1112,35 +1154,75 @@
 </div>
 
 <div class="overlay" id="pd-note-modal">
-  <div class="modal" style="min-width:380px;max-width:480px">
+  <div class="modal" style="min-width:340px;max-width:900px;width:90vw">
     <h3 id="pd-note-modal-title">Add Note</h3>
-    <input type="text" id="pdn-title" placeholder="Title">
-    <div class="field-row" style="margin:0;gap:6px">
-      <input type="date" id="pdn-date" style="flex:1">
-      <select id="pdn-type" style="flex:1">
-        <option value="meeting-notes">Meeting Notes</option>
-        <option value="meeting-link">Meeting Link</option>
-        <option value="other">Other</option>
-      </select>
+    <div class="field-row" style="margin:0 0 8px;gap:8px;flex-wrap:wrap">
+      <div class="field" style="flex:2;min-width:160px;margin:0">
+        <label style="font-size:11px">Title</label>
+        <input type="text" id="pdn-title" placeholder="Note title" oninput="pdnAutosave()">
+      </div>
+      <div class="field" style="flex:1;min-width:120px;margin:0">
+        <label style="font-size:11px">Date</label>
+        <input type="date" id="pdn-date" oninput="pdnAutosave()">
+      </div>
+      <div class="field" style="flex:1;min-width:130px;margin:0">
+        <label style="font-size:11px">Type</label>
+        <select id="pdn-type" onchange="pdnTypeChange()">
+          <option value="meeting-notes">Meeting Notes</option>
+          <option value="meeting-link">Meeting Link</option>
+          <option value="other">Other</option>
+        </select>
+      </div>
     </div>
-    <textarea id="pdn-body" placeholder="Body (URLs become clickable links)" style="min-height:100px;resize:vertical;font-size:13px;padding:8px;border:1px solid var(--border);border-radius:7px;font-family:inherit;width:100%;outline:none;"></textarea>
-    <div class="field-row" style="margin:0;gap:6px">
-      <select id="pdn-phase" style="flex:1">
-        <option value="">No phase</option>
-        <option value="new">New</option>
-        <option value="assigned">Assigned</option>
-        <option value="in-progress">In Progress</option>
-        <option value="on-hold">On Hold</option>
-        <option value="needs-review">Needs Review</option>
-        <option value="complete">Complete</option>
-      </select>
-      <select id="pdn-category" style="flex:1">
-        <option value="">No category</option>
-      </select>
+    <div class="field-row" style="margin:0 0 8px;gap:8px;flex-wrap:wrap">
+      <div class="field" style="flex:1;min-width:120px;margin:0">
+        <label style="font-size:11px">Phase</label>
+        <select id="pdn-phase">
+          <option value="">No phase</option>
+          <option value="new">New</option>
+          <option value="assigned">Assigned</option>
+          <option value="in-progress">In Progress</option>
+          <option value="on-hold">On Hold</option>
+          <option value="needs-review">Needs Review</option>
+          <option value="complete">Complete</option>
+        </select>
+      </div>
+      <div class="field" style="flex:1;min-width:120px;margin:0">
+        <label style="font-size:11px">Category</label>
+        <select id="pdn-category">
+          <option value="">No category</option>
+        </select>
+      </div>
+      <div class="field" style="flex:2;min-width:160px;margin:0">
+        <label style="font-size:11px">Linked Task</label>
+        <select id="pdn-task">
+          <option value="">No linked task</option>
+        </select>
+      </div>
     </div>
-    <select id="pdn-task">
-      <option value="">No linked task</option>
-    </select>
+    <div class="field" style="margin:0 0 4px">
+      <label style="font-size:11px">AI Summary URL <span style="color:var(--muted)">(optional)</span></label>
+      <input type="url" id="pdn-ai-url" placeholder="https://…" style="font-size:12px" oninput="pdnAutosave()">
+    </div>
+    <div class="note-modal-tabs">
+      <button class="note-tab-btn active" id="pdn-tab-write" onclick="pdnSetTab('write')">Write</button>
+      <button class="note-tab-btn" id="pdn-tab-preview" onclick="pdnSetTab('preview')">Preview</button>
+    </div>
+    <div id="pdn-write-pane">
+      <div class="note-md-toolbar">
+        <button class="note-tb-btn" onclick="mdTool('pdn-body','h2')" title="Heading">H2</button>
+        <button class="note-tb-btn" onclick="mdTool('pdn-body','bold')" title="Bold"><b>B</b></button>
+        <button class="note-tb-btn" onclick="mdTool('pdn-body','italic')" title="Italic"><i>I</i></button>
+        <button class="note-tb-btn" onclick="mdTool('pdn-body','ul')" title="Bullet list">• List</button>
+        <button class="note-tb-btn" onclick="mdTool('pdn-body','check')" title="Checklist">☑ Check</button>
+        <button class="note-tb-btn" onclick="mdTool('pdn-body','link')" title="Link">🔗 Link</button>
+        <button class="note-tb-btn" onclick="mdTool('pdn-body','template')" title="Insert meeting template">📋 Template</button>
+      </div>
+      <textarea id="pdn-body" placeholder="Write markdown… URLs become links" style="min-height:200px;resize:vertical;font-size:13px;padding:8px;border:1px solid var(--border);border-radius:7px;font-family:monospace;width:100%;box-sizing:border-box;outline:none;" oninput="pdnAutosave()"></textarea>
+    </div>
+    <div id="pdn-preview-pane" style="display:none">
+      <div class="note-preview-box note-md" id="pdn-preview-content" style="min-height:200px;max-height:400px;overflow-y:auto;"></div>
+    </div>
     <div class="modal-btns">
       <button class="btn btn-ghost btn-sm" onclick="closePdNoteModal()">Cancel</button>
       <button class="btn btn-primary btn-sm" id="pdn-save-btn" onclick="savePdNote()">Save</button>
@@ -1447,6 +1529,7 @@ function viewTitle(view) {
   if (view === 'calendar')     return 'Calendar';
   if (view === 'blocked')      return 'Blocked Tasks';
   if (view === 'settings')     return 'Settings';
+  if (view === 'notes-search') return `Notes: "${state._notesSearchQ || ''}"`;
   const [type, val] = view.split(':');
   if (type === 'status')   return STATUS_LABELS[val] || val.replace(/-/g,' ').replace(/\b\w/g, c => c.toUpperCase());
   if (type === 'category') return catName(val);
@@ -2149,6 +2232,238 @@ function linkifyText(text) {
   return esc(text).replace(/https?:\/\/[^\s<>"]+/g, url => `<a href="${url}" target="_blank" rel="noopener">${url}</a>`);
 }
 
+// ── Markdown renderer ──────────────────────────────────────────────────────────
+const MEETING_TEMPLATE = `## Attendees\n- \n\n## Agenda\n- \n\n## Notes\n\n\n## Action Items\n- [ ] \n\n## Decisions\n\n`;
+
+function renderMd(md, noteId) {
+  if (!md) return '';
+  // Escape first, then apply markdown patterns on safe text
+  let html = '';
+  const lines = md.split('\n');
+  let inList = false;
+  for (let i = 0; i < lines.length; i++) {
+    let line = lines[i];
+    if (line.startsWith('## ')) {
+      if (inList) { html += '</ul>'; inList = false; }
+      html += `<h2>${inlineMd(line.slice(3))}</h2>`;
+    } else if (line.startsWith('### ')) {
+      if (inList) { html += '</ul>'; inList = false; }
+      html += `<h3>${inlineMd(line.slice(4))}</h3>`;
+    } else if (/^- \[( |x)\] /i.test(line)) {
+      if (!inList) { html += '<ul style="list-style:none;padding-left:4px">'; inList = true; }
+      const checked = line[3].toLowerCase() === 'x';
+      const rest = inlineMd(line.slice(6));
+      const cbAttr = noteId ? `onchange="mdCheckboxChange(this,${noteId},${i})"` : '';
+      html += `<li><input type="checkbox" ${checked?'checked':''} ${cbAttr}> ${rest}</li>`;
+    } else if (line.startsWith('- ')) {
+      if (!inList) { html += '<ul>'; inList = true; }
+      html += `<li>${inlineMd(line.slice(2))}</li>`;
+    } else {
+      if (inList) { html += '</ul>'; inList = false; }
+      const t = inlineMd(line);
+      html += t ? `<p>${t}</p>` : '<p style="margin:2px 0"></p>';
+    }
+  }
+  if (inList) html += '</ul>';
+  return html;
+}
+
+function inlineMd(text) {
+  if (!text) return '';
+  let s = esc(text);
+  // bold+italic, bold, italic
+  s = s.replace(/\*\*\*(.+?)\*\*\*/g, '<strong><em>$1</em></strong>');
+  s = s.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+  s = s.replace(/\*([^*]+)\*/g, '<em>$1</em>');
+  // [text](url)
+  s = s.replace(/\[([^\]]+)\]\((https?:\/\/[^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
+  // bare URLs
+  s = s.replace(/(?<![">])(https?:\/\/[^\s<>"]+)/g, '<a href="$1" target="_blank" rel="noopener">$1</a>');
+  // inline code
+  s = s.replace(/`([^`]+)`/g, '<code>$1</code>');
+  return s;
+}
+
+function mdTool(taId, action) {
+  const ta = document.getElementById(taId);
+  if (!ta) return;
+  const s = ta.selectionStart, e = ta.selectionEnd;
+  const sel = ta.value.slice(s, e);
+  const before = ta.value.slice(0, s);
+  const after  = ta.value.slice(e);
+  let ins = '', newCursor = s;
+  if (action === 'h2')       { ins = `## ${sel||'Heading'}`; newCursor = s + ins.length; }
+  else if (action === 'bold'){ ins = `**${sel||'bold'}**`;   newCursor = s + ins.length - 2; }
+  else if (action === 'italic'){ ins = `*${sel||'italic'}*`; newCursor = s + ins.length - 1; }
+  else if (action === 'ul')  { ins = `- ${sel||'item'}`;     newCursor = s + ins.length; }
+  else if (action === 'check'){ ins = `- [ ] ${sel||'task'}`;newCursor = s + ins.length; }
+  else if (action === 'link') {
+    const url = sel.startsWith('http') ? sel : 'https://';
+    ins = `[link text](${url})`;
+    newCursor = s + 1;
+  } else if (action === 'template') {
+    if (ta.value.trim()) { if (!confirm('Replace body with meeting template?')) return; }
+    ta.value = MEETING_TEMPLATE;
+    ta.dispatchEvent(new Event('input'));
+    ta.focus();
+    return;
+  }
+  ta.value = before + ins + after;
+  ta.focus();
+  ta.setSelectionRange(newCursor, newCursor);
+  ta.dispatchEvent(new Event('input'));
+}
+
+function mdCheckboxChange(el, noteId, lineIndex) {
+  // Find the note in pdState.notes or state.meetingNotes
+  const note = pdState.notes.find(n => n.id === noteId) || state.meetingNotes.find(n => n.id === noteId);
+  if (!note || !note.body) return;
+  const lines = note.body.split('\n');
+  if (lineIndex >= lines.length) return;
+  const checked = el.checked;
+  lines[lineIndex] = lines[lineIndex].replace(/^(- \[)( |x)(\] )/i, (_, a, _b, c) => a + (checked ? 'x' : ' ') + c);
+  const newBody = lines.join('\n');
+  note.body = newBody;
+  api('PUT', `/api/notes/${noteId}`, { body: newBody }).catch(() => {});
+}
+
+function pdnSetTab(tab) {
+  document.getElementById('pdn-write-pane').style.display   = tab === 'write'   ? '' : 'none';
+  document.getElementById('pdn-preview-pane').style.display = tab === 'preview' ? '' : 'none';
+  document.getElementById('pdn-tab-write').classList.toggle('active',   tab === 'write');
+  document.getElementById('pdn-tab-preview').classList.toggle('active', tab === 'preview');
+  if (tab === 'preview') {
+    document.getElementById('pdn-preview-content').innerHTML = renderMd(document.getElementById('pdn-body').value) || '<span style="color:var(--muted)">Nothing to preview</span>';
+  }
+}
+
+function pdnTypeChange() {
+  const type = document.getElementById('pdn-type').value;
+  const body = document.getElementById('pdn-body');
+  if (type === 'meeting-notes' && !body.value.trim()) {
+    body.value = MEETING_TEMPLATE;
+    body.dispatchEvent(new Event('input'));
+  }
+}
+
+function mnTypeChange() {
+  const type = document.getElementById('mn-type').value;
+  const body = document.getElementById('mn-body');
+  if (type === 'meeting-notes' && !body.value.trim()) {
+    body.value = MEETING_TEMPLATE;
+  }
+}
+
+function notesCopyBody(id) {
+  const note = pdState.notes.find(n => n.id === id) || state.meetingNotes.find(n => n.id === id);
+  navigator.clipboard.writeText(note?.body || '').then(() => toast('Copied'));
+}
+
+// ── Notes search ───────────────────────────────────────────────────────────────
+let _notesSearchTimer = null;
+function sidebarNotesSearchDebounced(q) {
+  clearTimeout(_notesSearchTimer);
+  _notesSearchTimer = setTimeout(() => {
+    if (q.trim()) {
+      state._notesSearchQ = q.trim();
+      setView('notes-search');
+    } else if (state.view === 'notes-search') {
+      state._notesSearchQ = '';
+      setView('all');
+    }
+  }, 300);
+}
+
+async function renderNotesSearch() {
+  const q = state._notesSearchQ || '';
+  const list = document.getElementById('task-list');
+  if (!q) { list.innerHTML = ''; return; }
+  list.innerHTML = `<div class="notes-search-wrap"><p style="color:var(--muted);font-size:13px">Searching…</p></div>`;
+  const type = state._notesSearchType || '';
+  const projId = state._notesSearchProj || '';
+  const params = new URLSearchParams({ q });
+  if (type)   params.set('type', type);
+  if (projId) params.set('project_id', projId);
+  const results = await api('GET', `/api/notes/search?${params}`);
+
+  const projOpts = '<option value="">All projects</option>' +
+    state.projects.map(p => `<option value="${p.id}"${projId==p.id?' selected':''}>${esc(p.name)}</option>`).join('');
+  const typeOpts = [['','All types'],['meeting-notes','Meeting Notes'],['meeting-link','Meeting Link'],['other','Other']]
+    .map(([v,l]) => `<option value="${v}"${type===v?' selected':''}>${l}</option>`).join('');
+
+  let html = `<div class="notes-search-wrap">
+    <div class="notes-search-filters">
+      <select style="font-size:12px;padding:4px 8px;border:1px solid var(--border);border-radius:5px;background:var(--surface);color:var(--text)" onchange="state._notesSearchType=this.value;renderNotesSearch()">${typeOpts}</select>
+      <select style="font-size:12px;padding:4px 8px;border:1px solid var(--border);border-radius:5px;background:var(--surface);color:var(--text)" onchange="state._notesSearchProj=this.value;renderNotesSearch()">${projOpts}</select>
+      <span style="font-size:12px;color:var(--muted);align-self:center">${results.length} result${results.length!==1?'s':''}</span>
+    </div>`;
+  if (!results.length) {
+    html += `<div class="empty-state" style="padding:40px 0"><div class="icon">📝</div><p>No notes match "<strong>${esc(q)}</strong>"</p></div>`;
+  } else {
+    const re = new RegExp(`(${q.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')})`, 'gi');
+    html += results.map(n => {
+      const snippet = (() => {
+        const body = n.body || '';
+        const idx = body.toLowerCase().indexOf(q.toLowerCase());
+        if (idx === -1) return '';
+        const start = Math.max(0, idx - 60);
+        const end   = Math.min(body.length, idx + q.length + 100);
+        return (start > 0 ? '…' : '') + esc(body.slice(start, end)).replace(re, '<mark>$1</mark>') + (end < body.length ? '…' : '');
+      })();
+      const titleHl = esc(n.title).replace(re, '<mark>$1</mark>');
+      const typeLabel = {'meeting-notes':'Meeting Notes','meeting-link':'Meeting Link','other':'Other'}[n.type]||n.type;
+      return `<div class="notes-search-result" onclick="openNoteResult(${n.id},${n.task_id||'null'},${n.project_id||'null'})">
+        <div class="nsr-title">${titleHl}</div>
+        <div class="nsr-meta">
+          <span>${n.note_date}</span>
+          <span class="pill pill-cat" style="font-size:10px;padding:1px 5px">${typeLabel}</span>
+          ${n.project_name ? `<span>📁 ${esc(n.project_name)}</span>` : ''}
+        </div>
+        ${snippet ? `<div class="nsr-snippet">${snippet}</div>` : ''}
+      </div>`;
+    }).join('');
+  }
+  html += '</div>';
+  list.innerHTML = html;
+}
+
+function openNoteResult(noteId, taskId, projectId) {
+  if (projectId) {
+    const proj = state.projects.find(p => p.id === projectId);
+    if (proj) {
+      setView(`project:${projectId}`);
+      setTimeout(() => {
+        pdState.tabHistory[projectId] = 'notes';
+        renderProjectDetail(proj);
+        setTimeout(() => {
+          const card = document.querySelector(`[data-note-id="${noteId}"]`);
+          if (card) card.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }, 100);
+      }, 50);
+      return;
+    }
+  }
+  if (taskId) {
+    const task = state.tasks.find(t => t.id === taskId);
+    if (task) openDetail(task.id);
+  }
+}
+
+let _pdnAutosaveTimer = null;
+function pdnAutosave() {
+  clearTimeout(_pdnAutosaveTimer);
+  _pdnAutosaveTimer = setTimeout(() => {
+    const key = `note_draft_${_pdNoteEditId || 'new'}_${_pdNoteProjId}`;
+    try {
+      localStorage.setItem(key, JSON.stringify({
+        title: document.getElementById('pdn-title').value,
+        body:  document.getElementById('pdn-body').value,
+        ai_summary_url: document.getElementById('pdn-ai-url')?.value || '',
+      }));
+    } catch(e) {}
+  }, 800);
+}
+
 function pdRenderNotes(proj, f) {
   f = f || pdFilters(proj.id);
   let notes = [...pdState.notes];
@@ -2173,13 +2488,14 @@ function pdRenderNotes(proj, f) {
         ${catPill(n.category,'font-size:11px')}
         <span class="pd-note-card-date">${n.note_date}</span>
         <div class="pd-note-card-actions">
-          <button class="btn btn-ghost btn-sm" onclick="navigator.clipboard.writeText(${JSON.stringify(n.body||'')}).then(()=>toast('Copied'))">Copy</button>
+          ${n.ai_summary_url ? `<a href="${esc(n.ai_summary_url)}" target="_blank" rel="noopener" class="btn btn-ghost btn-sm" style="text-decoration:none">✨ AI Summary</a>` : ''}
+          <button class="btn btn-ghost btn-sm" onclick="notesCopyBody(${n.id})">Copy</button>
           <button class="btn btn-ghost btn-sm" onclick="pdEditNote(${proj.id},${n.id})">Edit</button>
           <button class="btn btn-ghost btn-sm" style="color:#ef4444" onclick="deletePdNote(${proj.id},${n.id})">Delete</button>
         </div>
       </div>
       ${linkedTask ? `<div style="padding:0 14px 6px"><span class="pd-note-task-tag" onclick="openDetail(${linkedTask.id})">📌 Task: ${esc(linkedTask.title)}</span></div>` : ''}
-      ${n.body ? `<div class="pd-note-body">${linkifyText(n.body)}</div>` : ''}
+      ${n.body ? `<div class="pd-note-body note-md">${renderMd(n.body, n.id)}</div>` : ''}
     </div>`;
   }).join('');
 }
@@ -2363,18 +2679,28 @@ function openPdNoteModal(projId, note) {
   _pdNoteEditId  = note ? note.id : null;
   document.getElementById('pd-note-modal-title').textContent = note ? 'Edit Note' : 'Add Note';
   document.getElementById('pdn-save-btn').textContent        = note ? 'Save' : 'Add Note';
-  document.getElementById('pdn-title').value    = note?.title    || '';
-  document.getElementById('pdn-date').value     = note?.note_date || new Date().toISOString().slice(0,10);
-  document.getElementById('pdn-body').value     = note?.body     || '';
-  document.getElementById('pdn-type').value     = note?.type     || 'meeting-notes';
-  document.getElementById('pdn-phase').value    = note?.phase    || '';
-  document.getElementById('pdn-category').value = note?.category || '';
+  // Try loading autosave draft
+  const draftKey = `note_draft_${_pdNoteEditId || 'new'}_${projId}`;
+  let draft = null;
+  try { draft = JSON.parse(localStorage.getItem(draftKey)); } catch(e) {}
+  document.getElementById('pdn-title').value       = draft?.title ?? note?.title    ?? '';
+  document.getElementById('pdn-date').value        = note?.note_date || new Date().toISOString().slice(0,10);
+  document.getElementById('pdn-body').value        = draft?.body  ?? note?.body     ?? '';
+  document.getElementById('pdn-type').value        = note?.type     || 'meeting-notes';
+  document.getElementById('pdn-phase').value       = note?.phase    || '';
+  document.getElementById('pdn-category').value    = note?.category || '';
+  document.getElementById('pdn-ai-url').value      = draft?.ai_summary_url ?? note?.ai_summary_url ?? '';
+  // auto-fill template for new meeting notes
+  if (!note && !draft && document.getElementById('pdn-type').value === 'meeting-notes') {
+    document.getElementById('pdn-body').value = MEETING_TEMPLATE;
+  }
   // populate task selector with project tasks
   const projTasks = state.tasks.filter(t => t.project === (state.projects.find(p=>p.id==projId)?.name));
   const taskSel = document.getElementById('pdn-task');
   taskSel.innerHTML = '<option value="">No linked task</option>' +
     projTasks.map(t => `<option value="${t.id}">${esc(t.title)}</option>`).join('');
   taskSel.value = note?.task_id || '';
+  pdnSetTab('write');
   document.getElementById('pd-note-modal').classList.add('open');
   setTimeout(() => document.getElementById('pdn-title').focus(), 50);
 }
@@ -2382,25 +2708,27 @@ function closePdNoteModal() { document.getElementById('pd-note-modal').classList
 document.getElementById('pd-note-modal').addEventListener('click', e => { if (e.target===e.currentTarget) closePdNoteModal(); });
 
 async function savePdNote() {
-  const title    = document.getElementById('pdn-title').value.trim();
-  const note_date= document.getElementById('pdn-date').value;
-  const body     = document.getElementById('pdn-body').value;
-  const type     = document.getElementById('pdn-type').value;
-  const phase    = document.getElementById('pdn-phase').value    || null;
-  const category = document.getElementById('pdn-category').value || null;
-  const task_id  = document.getElementById('pdn-task').value     || null;
+  const title         = document.getElementById('pdn-title').value.trim();
+  const note_date     = document.getElementById('pdn-date').value;
+  const body          = document.getElementById('pdn-body').value;
+  const type          = document.getElementById('pdn-type').value;
+  const phase         = document.getElementById('pdn-phase').value    || null;
+  const category      = document.getElementById('pdn-category').value || null;
+  const task_id       = document.getElementById('pdn-task').value     || null;
+  const ai_summary_url= document.getElementById('pdn-ai-url').value.trim() || null;
   if (!title)     { toast('Enter a title'); return; }
   if (!note_date) { toast('Enter a date');  return; }
   try {
     if (_pdNoteEditId) {
-      const updated = await api('PUT', `/api/notes/${_pdNoteEditId}`, { title, note_date, body, type, phase, category, task_id });
+      const updated = await api('PUT', `/api/notes/${_pdNoteEditId}`, { title, note_date, body, type, phase, category, task_id, ai_summary_url });
       pdState.notes = pdState.notes.map(n => n.id === _pdNoteEditId ? updated : n);
       toast('Note updated');
     } else {
-      const note = await api('POST', '/api/notes', { project_id: _pdNoteProjId, task_id, title, note_date, body, type, phase, category });
+      const note = await api('POST', '/api/notes', { project_id: _pdNoteProjId, task_id, title, note_date, body, type, phase, category, ai_summary_url });
       pdState.notes.unshift(note);
       toast('Note added');
     }
+    try { localStorage.removeItem(`note_draft_${_pdNoteEditId || 'new'}_${_pdNoteProjId}`); } catch(e) {}
     closePdNoteModal();
     const proj = state.projects.find(p => p.id == _pdNoteProjId);
     if (proj) renderProjectDetail(proj);
@@ -2530,9 +2858,10 @@ async function boardDrop(e, stage) {
 }
 
 function renderTaskList() {
-  if (state.view === 'calendar')     { renderCalendar();     return; }
-  if (state.view === 'settings')     { renderSettings();     return; }
-  if (state.view === 'all-projects') { renderAllProjects();  return; }
+  if (state.view === 'calendar')      { renderCalendar();      return; }
+  if (state.view === 'settings')      { renderSettings();      return; }
+  if (state.view === 'all-projects')  { renderAllProjects();   return; }
+  if (state.view === 'notes-search')  { renderNotesSearch();   return; }
   if (state.view.startsWith('project:')) {
     const proj = state.projects.find(p => p.id == state.view.slice(8));
     if (proj) { renderProjectDetail(proj); return; }
@@ -3294,8 +3623,8 @@ function renderMeetingNotes() {
     const preview = lines.slice(0, 3).join('\n');
     const hasMore = lines.length > 3;
     const bodyHtml = n.body ? `
-      <div class="mn-note-preview" id="mn-preview-${n.id}">${linkifyText(preview)}${hasMore ? `\n<button class="mn-show-more" onclick="mnToggleBody(${n.id})">Show more</button>` : ''}</div>
-      <div class="mn-note-preview" id="mn-full-${n.id}" style="display:none;">${linkifyText(n.body)}<br><button class="mn-show-more" onclick="mnToggleBody(${n.id})">Show less</button></div>` : '';
+      <div class="mn-note-preview note-md" id="mn-preview-${n.id}">${renderMd(lines.slice(0,3).join('\n'))}${hasMore ? `<button class="mn-show-more" onclick="mnToggleBody(${n.id})">Show more</button>` : ''}</div>
+      <div class="mn-note-preview note-md" id="mn-full-${n.id}" style="display:none;">${renderMd(n.body)}<button class="mn-show-more" onclick="mnToggleBody(${n.id})">Show less</button></div>` : '';
     return `<div class="mn-note-card">
       <div class="mn-note-card-hdr">
         <span class="mn-note-card-title">${esc(n.title)}</span>
@@ -3304,7 +3633,8 @@ function renderMeetingNotes() {
       <div style="padding:0 10px 4px;"><span class="pill pill-cat" style="font-size:10px;padding:1px 5px;">${typeLabel(n.type)}</span></div>
       ${bodyHtml}
       <div class="mn-note-acts">
-        <button class="btn btn-ghost btn-sm" onclick="navigator.clipboard.writeText(${JSON.stringify(n.body||'')}).then(()=>toast('Copied'))">Copy</button>
+        ${n.ai_summary_url ? `<a href="${esc(n.ai_summary_url)}" target="_blank" rel="noopener" class="btn btn-ghost btn-sm" style="text-decoration:none;font-size:11px">✨ AI Summary</a>` : ''}
+        <button class="btn btn-ghost btn-sm" onclick="notesCopyBody(${n.id})">Copy</button>
         <button class="btn btn-ghost btn-sm" onclick="mnEditNote(${n.id})">Edit</button>
         <button class="btn btn-ghost btn-sm" style="color:#ef4444" onclick="mnDeleteNote(${n.id})">Delete</button>
       </div>
@@ -3327,10 +3657,15 @@ function showMnForm(note) {
   _mnEditId = note ? note.id : null;
   document.getElementById('mn-add-form').style.display = '';
   document.getElementById('mn-add-btn').style.display  = 'none';
-  document.getElementById('mn-title').value = note?.title     || '';
-  document.getElementById('mn-date').value  = note?.note_date || new Date().toISOString().slice(0, 10);
-  document.getElementById('mn-type').value  = note?.type      || 'meeting-notes';
-  document.getElementById('mn-body').value  = note?.body      || '';
+  document.getElementById('mn-title').value  = note?.title          || '';
+  document.getElementById('mn-date').value   = note?.note_date      || new Date().toISOString().slice(0, 10);
+  document.getElementById('mn-type').value   = note?.type           || 'meeting-notes';
+  document.getElementById('mn-body').value   = note?.body           || '';
+  document.getElementById('mn-ai-url').value = note?.ai_summary_url || '';
+  // auto-fill meeting template for new meeting notes
+  if (!note && document.getElementById('mn-type').value === 'meeting-notes') {
+    document.getElementById('mn-body').value = MEETING_TEMPLATE;
+  }
   document.getElementById('mn-title').focus();
 }
 
@@ -3346,21 +3681,22 @@ function mnEditNote(id) {
 }
 
 async function saveMnNote() {
-  const title = document.getElementById('mn-title').value.trim();
-  const date  = document.getElementById('mn-date').value;
-  const type  = document.getElementById('mn-type').value;
-  const body  = document.getElementById('mn-body').value;
+  const title         = document.getElementById('mn-title').value.trim();
+  const date          = document.getElementById('mn-date').value;
+  const type          = document.getElementById('mn-type').value;
+  const body          = document.getElementById('mn-body').value;
+  const ai_summary_url= document.getElementById('mn-ai-url')?.value.trim() || null;
   if (!title) { toast('Enter a title'); return; }
   if (!date)  { toast('Enter a date');  return; }
   const task = state.tasks.find(t => t.id === state.selectedId);
   const proj = task?.project ? state.projects.find(p => p.name === task.project) : null;
   try {
     if (_mnEditId) {
-      const updated = await api('PUT', `/api/notes/${_mnEditId}`, { title, note_date: date, type, body });
+      const updated = await api('PUT', `/api/notes/${_mnEditId}`, { title, note_date: date, type, body, ai_summary_url });
       state.meetingNotes = state.meetingNotes.map(n => n.id === _mnEditId ? updated : n);
       toast('Note updated');
     } else {
-      const note = await api('POST', '/api/notes', { task_id: state.selectedId, project_id: proj?.id || null, title, note_date: date, type, body });
+      const note = await api('POST', '/api/notes', { task_id: state.selectedId, project_id: proj?.id || null, title, note_date: date, type, body, ai_summary_url });
       state.meetingNotes.unshift(note);
       if (task) task.meeting_notes_count = (task.meeting_notes_count || 0) + 1;
       toast('Note added');
