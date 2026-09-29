@@ -182,6 +182,32 @@ try { db.prepare("ALTER TABLE project_links ADD COLUMN type TEXT NOT NULL DEFAUL
 try { db.prepare('ALTER TABLE project_links ADD COLUMN phase TEXT').run(); } catch(e) {}
 try { db.prepare('ALTER TABLE project_links ADD COLUMN category TEXT').run(); } catch(e) {}
 
+// Editable divisions
+db.exec(`CREATE TABLE IF NOT EXISTS divisions (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL UNIQUE,
+  color TEXT NOT NULL DEFAULT '#6366f1',
+  sort_order INTEGER NOT NULL DEFAULT 0
+)`);
+[['TSP','#3b82f6',1],['Legendary Stages','#8b5cf6',2],['Xtrava','#10b981',3],['WOW Speakers','#f59e0b',4]]
+  .forEach(([name,color,sort_order]) => {
+    try { db.prepare('INSERT OR IGNORE INTO divisions (name,color,sort_order) VALUES (?,?,?)').run(name,color,sort_order); } catch(e) {}
+  });
+try { db.prepare('ALTER TABLE projects ADD COLUMN division_id INTEGER REFERENCES divisions(id)').run(); } catch(e) {}
+
+// One-time migration: map projects.division (text) → division_id
+if (!db.prepare("SELECT value FROM settings WHERE key='divisions_migration_v1'").get()) {
+  try {
+    db.transaction(() => {
+      db.prepare("UPDATE projects SET division_id=(SELECT id FROM divisions WHERE name=projects.division) WHERE division IS NOT NULL").run();
+      const broken = db.prepare("SELECT COUNT(*) AS n FROM projects WHERE division IS NOT NULL AND division_id IS NULL").get().n;
+      if (broken > 0) throw new Error(`${broken} project(s) could not be mapped to a division`);
+      db.prepare("INSERT INTO settings (key,value) VALUES ('divisions_migration_v1','1')").run();
+    })();
+    console.log('[migration] divisions_migration_v1 complete');
+  } catch(e) { console.error('[migration] divisions_migration_v1 failed:', e.message); }
+}
+
 // Unified notes store
 db.exec(`CREATE TABLE IF NOT EXISTS notes (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -487,20 +513,27 @@ app.delete('/api/updates/:id', (req, res) => {
 
 // ── Projects ──────────────────────────────────────────────────────────────────
 
-const withLinks = (proj) => ({
-  ...proj,
-  links: db.prepare('SELECT * FROM project_links WHERE project_id = ? ORDER BY created_at ASC').all(proj.id)
-});
+const withLinks = (proj) => {
+  const div = proj.division_id ? db.prepare('SELECT name,color FROM divisions WHERE id=?').get(proj.division_id) : null;
+  return { ...proj, division: div?.name||null, division_color: div?.color||null,
+    links: db.prepare('SELECT * FROM project_links WHERE project_id = ? ORDER BY created_at ASC').all(proj.id) };
+};
 
 app.get('/api/projects', (req, res) => {
-  res.json(db.prepare('SELECT * FROM projects ORDER BY name ASC').all().map(withLinks));
+  const divMap = {};
+  db.prepare('SELECT * FROM divisions').all().forEach(d => { divMap[d.id] = d; });
+  res.json(db.prepare('SELECT * FROM projects ORDER BY name ASC').all().map(p => {
+    const div = p.division_id ? divMap[p.division_id] : null;
+    return { ...p, division: div?.name||null, division_color: div?.color||null,
+      links: db.prepare('SELECT * FROM project_links WHERE project_id = ? ORDER BY created_at ASC').all(p.id) };
+  }));
 });
 
 app.post('/api/projects', (req, res) => {
-  const { name, type = 'professional', division } = req.body;
+  const { name, type = 'professional', division_id } = req.body;
   if (!name?.trim()) return res.status(400).json({ error: 'Project name is required' });
   try {
-    const result = db.prepare('INSERT INTO projects (name, type, division) VALUES (?, ?, ?)').run(name.trim(), type, division || null);
+    const result = db.prepare('INSERT INTO projects (name, type, division_id) VALUES (?, ?, ?)').run(name.trim(), type, division_id||null);
     res.status(201).json(withLinks(db.prepare('SELECT * FROM projects WHERE id = ?').get(result.lastInsertRowid)));
   } catch (e) {
     if (e.message.includes('UNIQUE')) return res.status(409).json({ error: 'Project already exists' });
@@ -511,14 +544,14 @@ app.post('/api/projects', (req, res) => {
 app.put('/api/projects/:id', (req, res) => {
   const proj = db.prepare('SELECT * FROM projects WHERE id = ?').get(req.params.id);
   if (!proj) return res.status(404).json({ error: 'Project not found' });
-  const { name, type, division } = req.body;
+  const { name, type, division_id } = req.body;
   if (!name?.trim()) return res.status(400).json({ error: 'Project name is required' });
-  const newType     = type     !== undefined ? type     : proj.type;
-  const newDivision = division !== undefined ? (division || null) : proj.division;
+  const newType  = type       !== undefined ? type                  : proj.type;
+  const newDivId = division_id !== undefined ? (division_id||null) : proj.division_id;
   try {
     db.transaction(() => {
-      db.prepare('UPDATE projects SET name = ?, type = ?, division = ? WHERE id = ?').run(name.trim(), newType, newDivision, req.params.id);
-      db.prepare('UPDATE tasks SET project = ?, updated_at = datetime(\'now\') WHERE project = ?').run(name.trim(), proj.name);
+      db.prepare('UPDATE projects SET name=?, type=?, division_id=? WHERE id=?').run(name.trim(), newType, newDivId, req.params.id);
+      db.prepare("UPDATE tasks SET project=?, updated_at=datetime('now') WHERE project=?").run(name.trim(), proj.name);
     })();
     res.json(withLinks(db.prepare('SELECT * FROM projects WHERE id = ?').get(req.params.id)));
   } catch (e) {
@@ -582,6 +615,57 @@ app.delete('/api/project-links/:id', (req, res) => {
   const result = db.prepare('DELETE FROM project_links WHERE id = ?').run(req.params.id);
   if (!result.changes) return res.status(404).json({ error: 'Link not found' });
   res.status(204).end();
+});
+
+// ── Divisions ─────────────────────────────────────────────────────────────────
+
+app.get('/api/divisions', (req, res) => {
+  res.json(db.prepare('SELECT * FROM divisions ORDER BY sort_order, name').all());
+});
+
+app.post('/api/divisions', (req, res) => {
+  const { name, color = '#6366f1' } = req.body;
+  if (!name?.trim()) return res.status(400).json({ error: 'name required' });
+  const maxOrd = db.prepare('SELECT MAX(sort_order) AS m FROM divisions').get()?.m || 0;
+  try {
+    const r = db.prepare('INSERT INTO divisions (name,color,sort_order) VALUES (?,?,?)').run(name.trim(), color, maxOrd + 1);
+    res.status(201).json(db.prepare('SELECT * FROM divisions WHERE id=?').get(r.lastInsertRowid));
+  } catch(e) {
+    if (e.message.includes('UNIQUE')) return res.status(409).json({ error: 'Division name already exists' });
+    throw e;
+  }
+});
+
+app.put('/api/divisions/:id', (req, res) => {
+  const div = db.prepare('SELECT * FROM divisions WHERE id=?').get(req.params.id);
+  if (!div) return res.status(404).json({ error: 'Division not found' });
+  const { name, color } = req.body;
+  try {
+    db.prepare('UPDATE divisions SET name=?,color=? WHERE id=?').run(name?.trim()??div.name, color??div.color, div.id);
+    res.json(db.prepare('SELECT * FROM divisions WHERE id=?').get(div.id));
+  } catch(e) {
+    if (e.message.includes('UNIQUE')) return res.status(409).json({ error: 'Division name already exists' });
+    throw e;
+  }
+});
+
+app.patch('/api/divisions/reorder', (req, res) => {
+  const { order } = req.body;
+  if (!Array.isArray(order)) return res.status(400).json({ error: 'order must be array' });
+  const upd = db.prepare('UPDATE divisions SET sort_order=? WHERE id=?');
+  db.transaction(() => order.forEach((id, i) => upd.run(i + 1, id)))();
+  res.json(db.prepare('SELECT * FROM divisions ORDER BY sort_order').all());
+});
+
+app.delete('/api/divisions/:id', (req, res) => {
+  const div = db.prepare('SELECT * FROM divisions WHERE id=?').get(req.params.id);
+  if (!div) return res.status(404).json({ error: 'Division not found' });
+  const { reassign_to_id } = req.body;
+  db.transaction(() => {
+    db.prepare('UPDATE projects SET division_id=? WHERE division_id=?').run(reassign_to_id||null, div.id);
+    db.prepare('DELETE FROM divisions WHERE id=?').run(div.id);
+  })();
+  res.json({ ok: true });
 });
 
 // ── Project Notes ─────────────────────────────────────────────────────────────

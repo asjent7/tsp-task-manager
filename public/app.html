@@ -271,6 +271,23 @@
     .cal-wtg-now-line { position:absolute; left:0; right:0; border-top:2px solid #ef4444; z-index:15; pointer-events:none; }
     .cal-wtg-now-line::before { content:''; position:absolute; left:-3px; top:-4px; width:6px; height:6px; border-radius:50%; background:#ef4444; }
 
+    /* ── Division settings ── */
+    .div-settings-row { display:flex; align-items:center; gap:8px; padding:9px 16px; border-bottom:1px solid var(--border); }
+    .div-settings-row:last-child { border-bottom:none; }
+    .div-drag-handle { color:var(--muted); cursor:grab; font-size:18px; flex-shrink:0; user-select:none; }
+    .div-drag-handle:active { cursor:grabbing; }
+    .div-swatch { width:14px; height:14px; border-radius:3px; flex-shrink:0; display:inline-block; border:1px solid rgba(0,0,0,.1); }
+    .div-row-name { flex:1; font-size:13px; font-weight:500; }
+    .div-row-count { font-size:12px; color:var(--muted); flex-shrink:0; }
+    .div-edit-form { display:flex; align-items:center; gap:6px; padding:8px 16px; border-bottom:1px solid var(--border); flex-wrap:wrap; }
+    .div-edit-form input[type="text"] { flex:1; min-width:120px; padding:5px 8px; border:1px solid var(--border); border-radius:5px; font-size:13px; font-family:inherit; outline:none; }
+    .div-edit-form input[type="text"]:focus { border-color:var(--accent); }
+    .div-edit-form input[type="color"] { width:32px; height:28px; border:1px solid var(--border); border-radius:4px; padding:2px; cursor:pointer; flex-shrink:0; }
+    .div-add-form { display:flex; align-items:center; gap:6px; padding:10px 16px; }
+    .div-add-form input[type="text"] { flex:1; padding:6px 8px; border:1px solid var(--border); border-radius:5px; font-size:13px; font-family:inherit; outline:none; }
+    .div-add-form input[type="text"]:focus { border-color:var(--accent); }
+    .div-add-form input[type="color"] { width:32px; height:28px; border:1px solid var(--border); border-radius:4px; padding:2px; cursor:pointer; flex-shrink:0; }
+    .div-dragging { opacity:.4; }
     /* ── Settings panel ── */
     .settings-wrap { max-width:560px; padding:24px 0; }
     .settings-section { background:var(--surface); border:1px solid var(--border); border-radius:10px; overflow:hidden; margin-bottom:16px; }
@@ -934,10 +951,6 @@
     </select>
     <select id="new-proj-division">
       <option value="">No division</option>
-      <option value="TSP">TSP</option>
-      <option value="Legendary Stages">Legendary Stages</option>
-      <option value="Xtrava">Xtrava</option>
-      <option value="WOW Speakers">WOW Speakers</option>
     </select>
     <div class="modal-btns">
       <button class="btn btn-ghost btn-sm" onclick="closeAddProject()">Cancel</button>
@@ -958,10 +971,6 @@
     </select>
     <select id="edit-proj-division">
       <option value="">No division</option>
-      <option value="TSP">TSP</option>
-      <option value="Legendary Stages">Legendary Stages</option>
-      <option value="Xtrava">Xtrava</option>
-      <option value="WOW Speakers">WOW Speakers</option>
     </select>
     <div class="modal-btns">
       <button class="btn btn-ghost btn-sm" onclick="closeRenameProject()">Cancel</button>
@@ -1163,6 +1172,21 @@
   </div>
 </div>
 
+<!-- Division Delete Modal -->
+<div class="overlay" id="div-delete-modal">
+  <div class="modal" style="max-width:360px">
+    <h3>Delete Division</h3>
+    <div class="modal-sub" id="div-delete-msg"></div>
+    <select id="div-delete-reassign">
+      <option value="">Unassigned</option>
+    </select>
+    <div class="modal-btns">
+      <button class="btn btn-ghost btn-sm" onclick="closeDivDeleteModal()">Cancel</button>
+      <button class="btn btn-primary btn-sm" style="background:#ef4444;border-color:#ef4444" onclick="confirmDeleteDivision()">Delete</button>
+    </div>
+  </div>
+</div>
+
 <!-- Block Edit Modal -->
 <div class="overlay" id="block-edit-modal">
   <div class="modal">
@@ -1292,7 +1316,7 @@ function getWeekStart(date) {
 }
 
 let state = {
-  tasks: [], projects: [], templates: [], focusLists: [],
+  tasks: [], projects: [], templates: [], focusLists: [], divisions: [],
   view: 'inbox',
   filters: { priority: '', status: '', search: '', due: '', dueFrom: '', dueTo: '', project: '' },
   selectedId: null,
@@ -1476,14 +1500,17 @@ function dueDateMatches(dueDate, filter, fromStr, toStr) {
 // ── Load data ─────────────────────────────────────────────────────────────────
 
 async function loadAll() {
-  const [tasks, projects, templates, focusLists, settings, googleStatus] = await Promise.all([
+  const [tasks, projects, templates, focusLists, settings, googleStatus, divisions] = await Promise.all([
     api('GET', '/api/tasks'), api('GET', '/api/projects'),
     api('GET', '/api/templates'), api('GET', '/api/focus-lists'),
     api('GET', '/api/settings'),
-    api('GET', '/api/auth/google/status').catch(() => ({ connected: false, connected_at: null }))
+    api('GET', '/api/auth/google/status').catch(() => ({ connected: false, connected_at: null })),
+    api('GET', '/api/divisions')
   ]);
   state.tasks = tasks; state.projects = projects;
   state.templates = templates; state.focusLists = focusLists;
+  state.divisions = divisions;
+  populateDivisionSelects();
   state.daySettings = {
     capacityMinutes: parseInt(settings.daily_capacity_minutes || 480),
     startHour:       parseInt(settings.day_start_hour || 5),
@@ -1563,7 +1590,7 @@ function renderSidebar() {
 
   document.getElementById('proj-nav').innerHTML = state.projects.map(p => `
     <div class="nav-item" data-view="project:${p.id}" onclick="setView('project:${p.id}')">
-      <span class="nav-label"><span class="nav-icon">📁</span> ${esc(p.name)}${p.division ? ` <span class="proj-div-tag">${esc(p.division)}</span>` : ''}</span>
+      <span class="nav-label"><span class="nav-icon">📁</span> ${esc(p.name)}${p.division ? ` <span class="proj-div-tag" style="background:${p.division_color||'rgba(255,255,255,.1)'};color:#fff;">${esc(p.division)}</span>` : ''}</span>
       <div class="nav-right">
         <span class="nav-count">${counts['proj:'+p.id] || 0}</span>
         <button class="proj-action-btn" onclick="event.stopPropagation();openRenameProject(${p.id},'${esc(p.name)}')" title="Edit">✏️</button>
@@ -1779,7 +1806,7 @@ function renderAllProjects() {
     return `<div class="proj-card-grid">${projects.map(makeCard).join('')}</div>`;
   }
 
-  const DIVISIONS = ['TSP', 'Legendary Stages', 'Xtrava', 'WOW Speakers'];
+  const divOrder = [...state.divisions].sort((a,b) => a.sort_order - b.sort_order);
   const professional = matched.filter(p => (p.type || 'professional') === 'professional');
   const personal     = matched.filter(p => p.type === 'personal');
 
@@ -1787,12 +1814,12 @@ function renderAllProjects() {
 
   if (professional.length) {
     body += `<div class="proj-type-section"><div class="proj-type-label">Professional</div>`;
-    for (const div of DIVISIONS) {
-      const group = professional.filter(p => p.division === div).sort((a,b) => a.name.localeCompare(b.name));
+    for (const div of divOrder) {
+      const group = professional.filter(p => p.division_id === div.id).sort((a,b) => a.name.localeCompare(b.name));
       if (!group.length) continue;
-      body += `<div class="proj-subsection-label">${esc(div)}</div>${makeGrid(group)}`;
+      body += `<div class="proj-subsection-label" style="border-left:3px solid ${div.color};padding-left:8px;">${esc(div.name)}</div>${makeGrid(group)}`;
     }
-    const unassigned = professional.filter(p => !p.division).sort((a,b) => a.name.localeCompare(b.name));
+    const unassigned = professional.filter(p => !p.division_id).sort((a,b) => a.name.localeCompare(b.name));
     if (unassigned.length) body += `<div class="proj-subsection-label">Unassigned</div>${makeGrid(unassigned)}`;
     body += `</div>`;
   }
@@ -1907,7 +1934,7 @@ function renderProjectDetail(proj) {
   const headerHtml = `<div class="pd-header">
     <div class="pd-dot" style="background:${dot}"></div>
     <span class="pd-name">${esc(proj.name)}</span>
-    ${proj.division ? `<span class="pd-div-tag">${esc(proj.division)}</span>` : ''}
+    ${proj.division ? `<span class="pd-div-tag" style="background:${proj.division_color||'#f1f5f9'}20;color:${proj.division_color||'#64748b'};border:1px solid ${proj.division_color||'#e2e8f0'}40;">${esc(proj.division)}</span>` : ''}
     <div class="pd-header-actions">
       <button class="btn btn-primary btn-sm" onclick="pdContextAction('${tab}',${proj.id})">${ctxLabels[tab]}</button>
       <button class="btn btn-ghost btn-sm" onclick="openRenameProject(${proj.id},'${esc(proj.name)}')">Edit Project</button>
@@ -3125,6 +3152,20 @@ async function deleteSubtask(id) {
   renderSubtasks(); renderTaskList();
 }
 
+// ── Division helpers ──────────────────────────────────────────────────────────
+
+function populateDivisionSelects() {
+  const divOpts = '<option value="">No division</option>' +
+    state.divisions.map(d => `<option value="${d.id}">${esc(d.name)}</option>`).join('');
+  ['new-proj-division', 'edit-proj-division'].forEach(id => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    const cur = el.value;
+    el.innerHTML = divOpts;
+    el.value = cur; // restore selection if still valid
+  });
+}
+
 // ── Projects ──────────────────────────────────────────────────────────────────
 
 function toggleNewProjDivision() {
@@ -3145,6 +3186,7 @@ function openAddProject() {
   document.getElementById('new-proj-type').value    = 'professional';
   document.getElementById('new-proj-division').value = '';
   document.getElementById('new-proj-division').style.display = '';
+  populateDivisionSelects();
   document.getElementById('proj-modal').classList.add('open');
   setTimeout(() => document.getElementById('new-proj-name').focus(), 50);
 }
@@ -3156,9 +3198,9 @@ async function createProject() {
   const name     = document.getElementById('new-proj-name').value.trim();
   if (!name) return;
   const type     = document.getElementById('new-proj-type').value;
-  const division = type === 'professional' ? (document.getElementById('new-proj-division').value || null) : null;
+  const division_id = type === 'professional' ? (parseInt(document.getElementById('new-proj-division').value) || null) : null;
   try {
-    const proj = await api('POST', '/api/projects', { name, type, division });
+    const proj = await api('POST', '/api/projects', { name, type, division_id });
     state.projects.push(proj); state.projects.sort((a,b)=>a.name.localeCompare(b.name));
     closeAddProject(); populateProjectSelect(); renderSidebar(); renderTaskList();
     toast(`Project "${name}" created`);
@@ -3171,7 +3213,8 @@ function openRenameProject(id, name) {
   const proj = state.projects.find(p => p.id === id);
   document.getElementById('rename-proj-input').value  = name;
   document.getElementById('edit-proj-type').value     = proj?.type     || 'professional';
-  document.getElementById('edit-proj-division').value = proj?.division || '';
+  populateDivisionSelects();
+  document.getElementById('edit-proj-division').value = proj?.division_id || '';
   toggleEditProjDivision();
   document.getElementById('rename-proj-modal').classList.add('open');
   setTimeout(() => document.getElementById('rename-proj-input').focus(), 50);
@@ -3184,9 +3227,9 @@ async function renameProject() {
   const name = document.getElementById('rename-proj-input').value.trim();
   if (!name) return;
   const type     = document.getElementById('edit-proj-type').value;
-  const division = type === 'professional' ? (document.getElementById('edit-proj-division').value || null) : null;
+  const division_id = type === 'professional' ? (parseInt(document.getElementById('edit-proj-division').value) || null) : null;
   try {
-    const updated = await api('PUT', `/api/projects/${renameProjId}`, { name, type, division });
+    const updated = await api('PUT', `/api/projects/${renameProjId}`, { name, type, division_id });
     const oldName = state.projects.find(p => p.id === renameProjId)?.name;
     state.projects = state.projects.map(p => p.id === renameProjId ? updated : p);
     state.projects.sort((a,b) => a.name.localeCompare(b.name));
@@ -4881,7 +4924,195 @@ function renderSettings() {
           <div style="display:flex;flex-direction:column;align-items:flex-end;gap:6px;flex-shrink:0;">${statusHtml}</div>
         </div>
       </div>
+      <div class="settings-section" id="divisions-settings">
+        <div class="settings-section-title" style="display:flex;align-items:center;justify-content:space-between;">
+          <span>Divisions</span>
+          <button class="btn btn-ghost btn-sm" onclick="showAddDivisionForm()" style="font-size:12px;">+ Add Division</button>
+        </div>
+        <div id="div-list">${renderDivisionList()}</div>
+        <div id="div-add-wrap" style="display:none;">
+          <div class="div-add-form">
+            <input type="color" id="new-div-color" value="#6366f1">
+            <input type="text" id="new-div-name" placeholder="Division name">
+            <button class="btn btn-primary btn-sm" onclick="addDivision()">Add</button>
+            <button class="btn btn-ghost btn-sm" onclick="hideAddDivisionForm()">Cancel</button>
+          </div>
+        </div>
+      </div>
     </div>`;
+
+  // Wire up drag-drop after render
+  setupDivDrag();
+}
+
+function renderDivisionList() {
+  if (!state.divisions.length) return `<div style="padding:12px 16px;font-size:13px;color:var(--muted);">No divisions yet.</div>`;
+  const divMap = {};
+  state.projects.forEach(p => { if (p.division_id) divMap[p.division_id] = (divMap[p.division_id] || 0) + 1; });
+  return state.divisions.map(d => {
+    const cnt = divMap[d.id] || 0;
+    return `<div class="div-settings-row" draggable="true" data-div-id="${d.id}" id="div-row-${d.id}">
+      <span class="div-drag-handle" title="Drag to reorder">⠿</span>
+      <span class="div-swatch" style="background:${d.color};"></span>
+      <span class="div-row-name">${esc(d.name)}</span>
+      <span class="div-row-count">${cnt} project${cnt !== 1 ? 's' : ''}</span>
+      <button class="btn btn-ghost btn-sm" onclick="showEditDivisionRow(${d.id})">Edit</button>
+      <button class="btn btn-ghost btn-sm" style="color:#ef4444" onclick="deleteDivision(${d.id})">Delete</button>
+    </div>`;
+  }).join('');
+}
+
+function showAddDivisionForm() {
+  document.getElementById('div-add-wrap').style.display = '';
+  document.getElementById('new-div-name').value = '';
+  document.getElementById('new-div-color').value = '#6366f1';
+  setTimeout(() => document.getElementById('new-div-name').focus(), 50);
+}
+function hideAddDivisionForm() { document.getElementById('div-add-wrap').style.display = 'none'; }
+
+document.addEventListener('keydown', e => {
+  if (e.key === 'Enter' && document.activeElement?.id === 'new-div-name') addDivision();
+});
+
+async function addDivision() {
+  const name  = document.getElementById('new-div-name').value.trim();
+  const color = document.getElementById('new-div-color').value;
+  if (!name) { toast('Enter a division name'); return; }
+  try {
+    const div = await api('POST', '/api/divisions', { name, color });
+    state.divisions.push(div);
+    hideAddDivisionForm();
+    populateDivisionSelects();
+    document.getElementById('div-list').innerHTML = renderDivisionList();
+    setupDivDrag();
+  } catch(e) { toast(e.message); }
+}
+
+function showEditDivisionRow(id) {
+  const d = state.divisions.find(x => x.id === id);
+  if (!d) return;
+  const row = document.getElementById(`div-row-${id}`);
+  if (!row) return;
+  row.outerHTML = `<div class="div-edit-form" id="div-edit-${id}">
+    <input type="color" id="edit-div-color-${id}" value="${d.color}">
+    <input type="text" id="edit-div-name-${id}" value="${esc(d.name)}" onkeydown="if(event.key==='Enter')saveEditDivision(${id});if(event.key==='Escape')cancelEditDivision(${id})">
+    <button class="btn btn-primary btn-sm" onclick="saveEditDivision(${id})">Save</button>
+    <button class="btn btn-ghost btn-sm" onclick="cancelEditDivision(${id})">Cancel</button>
+  </div>`;
+  setTimeout(() => document.getElementById(`edit-div-name-${id}`)?.focus(), 50);
+}
+
+function cancelEditDivision(id) {
+  document.getElementById('div-list').innerHTML = renderDivisionList();
+  setupDivDrag();
+}
+
+async function saveEditDivision(id) {
+  const name  = document.getElementById(`edit-div-name-${id}`)?.value.trim();
+  const color = document.getElementById(`edit-div-color-${id}`)?.value;
+  if (!name) { toast('Enter a name'); return; }
+  try {
+    const updated = await api('PUT', `/api/divisions/${id}`, { name, color });
+    state.divisions = state.divisions.map(d => d.id === id ? updated : d);
+    // Update division name/color on projects in memory
+    state.projects = state.projects.map(p => p.division_id === id ? { ...p, division: updated.name, division_color: updated.color } : p);
+    populateDivisionSelects();
+    document.getElementById('div-list').innerHTML = renderDivisionList();
+    setupDivDrag();
+    renderSidebar(); renderTaskList();
+    toast('Division updated');
+  } catch(e) { toast(e.message); }
+}
+
+async function deleteDivision(id) {
+  const div = state.divisions.find(d => d.id === id);
+  if (!div) return;
+  const count = state.projects.filter(p => p.division_id === id).length;
+  if (count > 0) {
+    // Need reassignment — open modal
+    _divDeleteId = id;
+    document.getElementById('div-delete-msg').textContent =
+      `"${div.name}" is assigned to ${count} project${count !== 1 ? 's' : ''}. Move them to:`;
+    const reassignSel = document.getElementById('div-delete-reassign');
+    reassignSel.innerHTML = '<option value="">Unassigned</option>' +
+      state.divisions.filter(d => d.id !== id).map(d => `<option value="${d.id}">${esc(d.name)}</option>`).join('');
+    document.getElementById('div-delete-modal').classList.add('open');
+  } else {
+    if (!confirm(`Delete division "${div.name}"?`)) return;
+    try {
+      await api('DELETE', `/api/divisions/${id}`, { reassign_to_id: null });
+      state.divisions = state.divisions.filter(d => d.id !== id);
+      populateDivisionSelects();
+      document.getElementById('div-list').innerHTML = renderDivisionList();
+      setupDivDrag();
+      toast('Division deleted');
+    } catch(e) { toast(e.message); }
+  }
+}
+
+let _divDeleteId = null;
+function closeDivDeleteModal() { document.getElementById('div-delete-modal').classList.remove('open'); }
+document.getElementById('div-delete-modal').addEventListener('click', e => { if (e.target === e.currentTarget) closeDivDeleteModal(); });
+
+async function confirmDeleteDivision() {
+  const reassignVal = document.getElementById('div-delete-reassign').value;
+  const reassignId  = reassignVal ? parseInt(reassignVal) : null;
+  try {
+    await api('DELETE', `/api/divisions/${_divDeleteId}`, { reassign_to_id: reassignId });
+    const reassignDiv = reassignId ? state.divisions.find(d => d.id === reassignId) : null;
+    state.projects = state.projects.map(p => p.division_id === _divDeleteId
+      ? { ...p, division_id: reassignDiv?.id||null, division: reassignDiv?.name||null, division_color: reassignDiv?.color||null }
+      : p);
+    state.divisions = state.divisions.filter(d => d.id !== _divDeleteId);
+    closeDivDeleteModal();
+    populateDivisionSelects();
+    document.getElementById('div-list').innerHTML = renderDivisionList();
+    setupDivDrag();
+    renderSidebar(); renderTaskList();
+    toast('Division deleted');
+  } catch(e) { toast(e.message); }
+}
+
+// Drag-to-reorder for division list
+let _divDragId = null;
+function setupDivDrag() {
+  const rows = document.querySelectorAll('#div-list [data-div-id]');
+  rows.forEach(row => {
+    row.addEventListener('dragstart', e => {
+      _divDragId = parseInt(row.dataset.divId);
+      row.classList.add('div-dragging');
+      e.dataTransfer.effectAllowed = 'move';
+    });
+    row.addEventListener('dragend', () => {
+      row.classList.remove('div-dragging');
+      _divDragId = null;
+    });
+    row.addEventListener('dragover', e => {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'move';
+    });
+    row.addEventListener('drop', async e => {
+      e.preventDefault();
+      const targetId = parseInt(row.dataset.divId);
+      if (_divDragId === null || _divDragId === targetId) return;
+      // Reorder in local state
+      const ids = state.divisions.map(d => d.id);
+      const fromIdx = ids.indexOf(_divDragId);
+      const toIdx   = ids.indexOf(targetId);
+      if (fromIdx === -1 || toIdx === -1) return;
+      state.divisions.splice(toIdx, 0, state.divisions.splice(fromIdx, 1)[0]);
+      document.getElementById('div-list').innerHTML = renderDivisionList();
+      setupDivDrag();
+      // Persist order
+      try {
+        const ordered = await api('PATCH', '/api/divisions/reorder', { order: state.divisions.map(d => d.id) });
+        state.divisions = ordered;
+        document.getElementById('div-list').innerHTML = renderDivisionList();
+        setupDivDrag();
+        renderTaskList(); // refreshes the project sections order
+      } catch(e) { toast(e.message); }
+    });
+  });
 }
 
 function connectGoogle() {
