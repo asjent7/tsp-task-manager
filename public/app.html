@@ -822,14 +822,6 @@
           <label>Category</label>
           <select id="d-category">
             <option value="">None</option>
-            <option value="admin">Admin</option>
-            <option value="ops">Ops</option>
-            <option value="accounting">Accounting</option>
-            <option value="marketing">Marketing</option>
-            <option value="sales">Sales</option>
-            <option value="pm">PM</option>
-            <option value="hr">HR</option>
-            <option value="personal">Personal</option>
           </select>
         </div>
         <div class="field">
@@ -1090,14 +1082,6 @@
     </div>
     <select id="pdl-category">
       <option value="">No category</option>
-      <option value="admin">Admin</option>
-      <option value="ops">Ops</option>
-      <option value="accounting">Accounting</option>
-      <option value="marketing">Marketing</option>
-      <option value="sales">Sales</option>
-      <option value="pm">PM</option>
-      <option value="hr">HR</option>
-      <option value="personal">Personal</option>
     </select>
     <div class="modal-btns">
       <button class="btn btn-ghost btn-sm" onclick="closePdLinkModal()">Cancel</button>
@@ -1152,14 +1136,6 @@
       </select>
       <select id="pdn-category" style="flex:1">
         <option value="">No category</option>
-        <option value="admin">Admin</option>
-        <option value="ops">Ops</option>
-        <option value="accounting">Accounting</option>
-        <option value="marketing">Marketing</option>
-        <option value="sales">Sales</option>
-        <option value="pm">PM</option>
-        <option value="hr">HR</option>
-        <option value="personal">Personal</option>
       </select>
     </div>
     <select id="pdn-task">
@@ -1183,6 +1159,20 @@
     <div class="modal-btns">
       <button class="btn btn-ghost btn-sm" onclick="closeDivDeleteModal()">Cancel</button>
       <button class="btn btn-primary btn-sm" style="background:#ef4444;border-color:#ef4444" onclick="confirmDeleteDivision()">Delete</button>
+    </div>
+  </div>
+</div>
+
+<div class="overlay" id="cat-delete-modal">
+  <div class="modal" style="max-width:360px">
+    <h3>Delete Category</h3>
+    <div class="modal-sub" id="cat-delete-msg"></div>
+    <select id="cat-delete-reassign">
+      <option value="">None (clear category)</option>
+    </select>
+    <div class="modal-btns">
+      <button class="btn btn-ghost btn-sm" onclick="closeCatDeleteModal()">Cancel</button>
+      <button class="btn btn-primary btn-sm" style="background:#ef4444;border-color:#ef4444" onclick="confirmDeleteCategory()">Delete</button>
     </div>
   </div>
 </div>
@@ -1241,10 +1231,6 @@
         <label style="display:block;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin-bottom:4px;">Category</label>
         <select id="cat-block-category" style="width:100%;font-size:12px;padding:5px;border:1px solid var(--border);border-radius:6px;background:var(--bg);color:var(--text);">
           <option value="">Pick…</option>
-          <option value="admin">Admin</option><option value="ops">Ops</option>
-          <option value="accounting">Accounting</option><option value="marketing">Marketing</option>
-          <option value="sales">Sales</option><option value="pm">PM</option>
-          <option value="hr">HR</option><option value="personal">Personal</option>
         </select>
       </div>
     </div>
@@ -1297,9 +1283,10 @@
 <div id="toast"></div>
 
 <script>
-const CATEGORIES  = ['admin','ops','accounting','marketing','sales','pm','hr','personal'];
-const CAT_ICONS   = { admin:'🗂', ops:'⚙️', accounting:'💰', marketing:'📣', sales:'💼', pm:'📐', hr:'👥', personal:'🏠' };
-const CAT_COLORS  = { admin:'#6366f1', ops:'#0ea5e9', accounting:'#10b981', marketing:'#ec4899', sales:'#14b8a6', pm:'#8b5cf6', hr:'#f59e0b', personal:'#ef4444' };
+function catName(slug)  { const c = state.categories.find(x => x.slug === slug); return c?.name  || (slug ? slug.charAt(0).toUpperCase() + slug.slice(1) : ''); }
+function catIcon(slug)  { const c = state.categories.find(x => x.slug === slug); return c?.icon  || '📁'; }
+function catColor(slug) { const c = state.categories.find(x => x.slug === slug); return c?.color || '#64748b'; }
+function catPill(slug, styles='') { if (!slug) return ''; const col=catColor(slug); return `<span class="pill pill-cat" style="background:${col}20;color:${col}${styles?';'+styles:''}">${catName(slug)}</span>`; }
 const STATUS_LABELS = { new:'New', assigned:'Assigned', 'in-progress':'In Progress', 'on-hold':'On Hold', 'needs-review':'Needs Review', complete:'Complete' };
 const BOARD_STAGES  = ['new','assigned','in-progress','on-hold','needs-review','complete'];
 const STAGE_COLORS  = { new:'#94a3b8', assigned:'#60a5fa', 'in-progress':'#0ea5e9', 'on-hold':'#f59e0b', 'needs-review':'#8b5cf6', complete:'#10b981' };
@@ -1316,7 +1303,7 @@ function getWeekStart(date) {
 }
 
 let state = {
-  tasks: [], projects: [], templates: [], focusLists: [], divisions: [],
+  tasks: [], projects: [], templates: [], focusLists: [], divisions: [], categories: [],
   view: 'inbox',
   filters: { priority: '', status: '', search: '', due: '', dueFrom: '', dueTo: '', project: '' },
   selectedId: null,
@@ -1462,7 +1449,7 @@ function viewTitle(view) {
   if (view === 'settings')     return 'Settings';
   const [type, val] = view.split(':');
   if (type === 'status')   return STATUS_LABELS[val] || val.replace(/-/g,' ').replace(/\b\w/g, c => c.toUpperCase());
-  if (type === 'category') return val.charAt(0).toUpperCase() + val.slice(1);
+  if (type === 'category') return catName(val);
   if (type === 'project')  return state.projects.find(p => p.id == val)?.name ?? 'Project';
   if (type === 'due') {
     return { 'past-due': 'Past Due', 'today': 'Due Today', 'this-week': 'Due This Week', 'next-week': 'Due Next Week' }[val] || val;
@@ -1500,17 +1487,20 @@ function dueDateMatches(dueDate, filter, fromStr, toStr) {
 // ── Load data ─────────────────────────────────────────────────────────────────
 
 async function loadAll() {
-  const [tasks, projects, templates, focusLists, settings, googleStatus, divisions] = await Promise.all([
+  const [tasks, projects, templates, focusLists, settings, googleStatus, divisions, categories] = await Promise.all([
     api('GET', '/api/tasks'), api('GET', '/api/projects'),
     api('GET', '/api/templates'), api('GET', '/api/focus-lists'),
     api('GET', '/api/settings'),
     api('GET', '/api/auth/google/status').catch(() => ({ connected: false, connected_at: null })),
-    api('GET', '/api/divisions')
+    api('GET', '/api/divisions'),
+    api('GET', '/api/categories')
   ]);
   state.tasks = tasks; state.projects = projects;
   state.templates = templates; state.focusLists = focusLists;
   state.divisions = divisions;
+  state.categories = categories;
   populateDivisionSelects();
+  populateCategorySelects();
   state.daySettings = {
     capacityMinutes: parseInt(settings.daily_capacity_minutes || 480),
     startHour:       parseInt(settings.day_start_hour || 5),
@@ -1542,7 +1532,7 @@ function renderSidebar() {
   const sunNext = new Date(monNext); sunNext.setDate(monNext.getDate()+6);
 
   const counts = { inbox:0, all:0, blocked:0 };
-  CATEGORIES.forEach(c => { counts['cat:'+c] = 0; });
+  state.categories.forEach(c => { counts['cat:'+c.slug] = 0; });
   BOARD_STAGES.forEach(s => { counts['status:'+s] = 0; });
   state.projects.forEach(p => { counts['proj:'+p.id] = 0; });
   counts['due:past-due'] = 0; counts['due:today'] = 0; counts['due:this-week'] = 0; counts['due:next-week'] = 0;
@@ -1582,10 +1572,10 @@ function renderSidebar() {
     document.getElementById('cnt-'+s).textContent = counts['status:'+s] || 0;
   });
 
-  document.getElementById('cat-nav').innerHTML = CATEGORIES.map(c => `
-    <div class="nav-item" data-view="category:${c}" onclick="setView('category:${c}')">
-      <span class="nav-label"><span class="nav-icon">${CAT_ICONS[c]}</span> ${c.charAt(0).toUpperCase()+c.slice(1)}</span>
-      <span class="nav-count">${counts['cat:'+c] || 0}</span>
+  document.getElementById('cat-nav').innerHTML = state.categories.map(c => `
+    <div class="nav-item" data-view="category:${c.slug}" onclick="setView('category:${c.slug}')">
+      <span class="nav-label"><span class="nav-icon">${c.icon}</span> ${esc(c.name)}</span>
+      <span class="nav-count">${counts['cat:'+c.slug] || 0}</span>
     </div>`).join('');
 
   document.getElementById('proj-nav').innerHTML = state.projects.map(p => `
@@ -1956,7 +1946,7 @@ function renderProjectDetail(proj) {
   const catGroup = `<div class="pd-filter-group">
     <span class="pd-filter-label">Category</span>
     <button class="pd-pill${!f.category?' active':''}" onclick="setPdFilter(${proj.id},'category','')">All</button>
-    ${CATEGORIES.map(c => `<button class="pd-pill${f.category===c?' active':''}" onclick="setPdFilter(${proj.id},'category','${c}')">${c.charAt(0).toUpperCase()+c.slice(1)}</button>`).join('')}
+    ${state.categories.map(c => `<button class="pd-pill${f.category===c.slug?' active':''}" onclick="setPdFilter(${proj.id},'category','${c.slug}')">${esc(c.name)}</button>`).join('')}
   </div>`;
   const searchBox = `<input class="pd-search" type="text" placeholder="Search…" value="${esc(f.search)}" oninput="setPdFilter(${proj.id},'search',this.value)">`;
 
@@ -2020,7 +2010,7 @@ function pdRenderBoardCols(tasks, projId) {
             <div class="board-card-title${t.status==='complete'?' done':''}">${esc(t.title)}</div>
             <div class="board-card-meta">
               <span class="pill pill-priority-${t.priority}">${t.priority}</span>
-              ${t.category ? `<span class="pill pill-cat">${t.category}</span>` : ''}
+              ${catPill(t.category)}
               ${t.due_date ? `<span class="${overdue?'overdue':''}">Due ${fmtDate(t.due_date)}</span>` : ''}
               ${badge}
             </div>
@@ -2084,7 +2074,7 @@ function pdRenderTable(tasks, projId) {
     return `<tr class="${t.id===state.selectedId?'selected':''}" onclick="openDetail(${t.id})">
       <td class="${t.status==='complete'?'done-cell':''}">${esc(t.title)}</td>
       <td><span class="pill pill-status-${t.status}">${STATUS_LABELS[t.status]||t.status}</span></td>
-      <td>${t.category ? `<span class="pill pill-cat">${t.category}</span>` : '<span style="color:var(--muted)">—</span>'}</td>
+      <td>${t.category ? catPill(t.category) : '<span style="color:var(--muted)">—</span>'}</td>
       <td class="${overdue?'overdue':''}">${t.due_date ? fmtDate(t.due_date) : '<span style="color:var(--muted)">—</span>'}</td>
       <td>${t.subtask_count ? `${t.subtask_done||0}/${t.subtask_count}` : '<span style="color:var(--muted)">—</span>'}</td>
       <td><button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();openDetail(${t.id})">Edit</button></td>
@@ -2128,7 +2118,7 @@ function pdRenderLinks(proj, f) {
         <div class="pd-link-url-box">${esc(l.url)}</div>
         <div class="pd-link-pills">
           ${l.phase ? `<span class="pill pill-status-${l.phase}" style="font-size:11px">${STATUS_LABELS[l.phase]||l.phase}</span>` : ''}
-          ${l.category ? `<span class="pill pill-cat" style="font-size:11px">${l.category}</span>` : ''}
+          ${catPill(l.category,'font-size:11px')}
         </div>
       </div>
       <div class="pd-link-actions">
@@ -2172,7 +2162,7 @@ function pdRenderNotes(proj, f) {
         <span class="pd-note-card-title" style="color:var(--accent)">${esc(n.title)}</span>
         <span class="pill pill-cat" style="font-size:11px">${typeLabel}</span>
         ${n.phase    ? `<span class="pill pill-status-${n.phase}" style="font-size:11px">${STATUS_LABELS[n.phase]||n.phase}</span>` : ''}
-        ${n.category ? `<span class="pill pill-cat" style="font-size:11px">${n.category}</span>` : ''}
+        ${catPill(n.category,'font-size:11px')}
         <span class="pd-note-card-date">${n.note_date}</span>
         <div class="pd-note-card-actions">
           <button class="btn btn-ghost btn-sm" onclick="navigator.clipboard.writeText(${JSON.stringify(n.body||'')}).then(()=>toast('Copied'))">Copy</button>
@@ -2214,7 +2204,7 @@ function pdRenderSprints(proj) {
   function taskRow(t, spId) {
     return `<div class="pd-sprint-task-row">
       <span class="pill pill-status-${t.status}" style="font-size:11px;flex-shrink:0">${STATUS_LABELS[t.status]||t.status}</span>
-      ${t.category ? `<span class="pill pill-cat" style="font-size:11px;flex-shrink:0">${t.category}</span>` : ''}
+      ${catPill(t.category,'font-size:11px;flex-shrink:0')}
       <span style="flex:1;font-size:13px;cursor:pointer" onclick="openDetail(${t.id})">${esc(t.title)}</span>
       <button class="pd-sprint-task-remove" onclick="pdRemoveSprintTask(${spId},${t.id},${proj.id})" title="Remove">✕</button>
     </div>`;
@@ -2469,7 +2459,7 @@ function renderBoard() {
             <div class="board-card-title${t.status==='complete'?' done':''}">${esc(t.title)}</div>
             <div class="board-card-meta">
               <span class="pill pill-priority-${t.priority}">${t.priority}</span>
-              ${t.category ? `<span class="pill pill-cat">${t.category}</span>` : ''}
+              ${catPill(t.category)}
               ${t.project  ? `<span class="pill pill-proj">${esc(t.project)}</span>` : ''}
               ${t.due_date ? `<span class="${overdue?'overdue':''}">Due ${fmtDate(t.due_date)}</span>` : ''}
               ${badge}
@@ -2596,7 +2586,7 @@ function renderTaskList() {
         <div class="task-card-meta">
           <span class="pill pill-priority-${t.priority}">${t.priority}</span>
           <span class="pill pill-status-${t.status}">${STATUS_LABELS[t.status] || t.status.replace(/-/g,' ')}</span>
-          ${t.category ? `<span class="pill pill-cat">${t.category}</span>` : ''}
+          ${catPill(t.category)}
           ${t.project  ? `<span class="pill pill-proj">${esc(t.project)}</span>` : ''}
           ${t.due_date ? `<span class="${overdue?'overdue':''}">Due ${fmtDate(t.due_date)}</span>` : ''}
           ${badge}
@@ -3163,6 +3153,18 @@ function populateDivisionSelects() {
     const cur = el.value;
     el.innerHTML = divOpts;
     el.value = cur; // restore selection if still valid
+  });
+}
+
+function populateCategorySelects() {
+  const catOpts = (first) => `<option value="">${first}</option>` +
+    state.categories.map(c => `<option value="${c.slug}">${esc(c.name)}</option>`).join('');
+  [['d-category','None'],['pdl-category','No category'],['pdn-category','No category'],['cat-block-category','Pick…']].forEach(([id, first]) => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    const cur = el.value;
+    el.innerHTML = catOpts(first);
+    el.value = cur;
   });
 }
 
@@ -3739,7 +3741,7 @@ function renderCalendarDay() {
   state.timeBlocks.forEach(b => {
     const y    = timeToY(b.start_time);
     const h    = Math.max(b.duration_minutes / 60 * PX_PER_HOUR, 24);
-    const col  = CAT_COLORS[b.task_category] || '#64748b';
+    const col  = catColor(b.task_category);
     const endDt = new Date(`${b.date}T${b.start_time}`);
     endDt.setMinutes(endDt.getMinutes() + b.duration_minutes);
     const isPast = endDt < now;
@@ -3797,7 +3799,7 @@ function renderCalendarDay() {
     if (cbStartMs >= gridEndMs || cbEndMs <= gridStartMs) return;
     const y  = Math.max((cbStartMs - gridStartMs) / 3600000 * PX_PER_HOUR, 0);
     const h  = Math.max((Math.min(cbEndMs, gridEndMs) - Math.max(cbStartMs, gridStartMs)) / 3600000 * PX_PER_HOUR, 24);
-    const col = CAT_COLORS[cb.category] || '#64748b';
+    const col = catColor(cb.category);
     catBlocksHtml += `<div class="cal-cat-block" style="top:${y}px;height:${h}px;background:${col}22;border-color:${col}88;"
       onclick="openCatBlockModal(${cb.id},'${cb.date}')">
       <div class="cal-cat-block-label" style="background:${col}33;color:${col};">${esc(cb.label)} <span style="opacity:.6;font-weight:400;text-transform:none;">(${cb.category})</span></div>
@@ -3922,7 +3924,7 @@ function renderDayPanel() {
     </div>
     <select onchange="setDayPanelFilter('category',this.value)" style="${SEL}width:100%;">
       <option value="" ${!calPanelCategory?'selected':''}>All categories</option>
-      ${CATEGORIES.map(c => `<option value="${c}" ${calPanelCategory===c?'selected':''}>${c.charAt(0).toUpperCase()+c.slice(1)}</option>`).join('')}
+      ${state.categories.map(c => `<option value="${c.slug}" ${calPanelCategory===c.slug?'selected':''}>${esc(c.name)}</option>`).join('')}
     </select>
     ${state.focusLists.length ? `<select onchange="setDayPanelFilter('focuslist',this.value)" style="${SEL}width:100%;">
       <option value="" ${!calPanelFocusList?'selected':''}>All focus lists</option>
@@ -4577,7 +4579,7 @@ function renderCalendarWeekGrid() {
       if (cbStartMs >= geMs || cbEndMs <= gsMs) return;
       const y = (Math.max(cbStartMs, gsMs) - gsMs) / 3600000 * PX_PER_HOUR_WEEK;
       const h = Math.max((Math.min(cbEndMs, geMs) - Math.max(cbStartMs, gsMs)) / 3600000 * PX_PER_HOUR_WEEK, 8);
-      const col = CAT_COLORS[cb.category] || '#64748b';
+      const col = catColor(cb.category);
       catHtml += `<div class="cal-wtg-cat-block" style="top:${y}px;height:${h}px;background:${col}22;border-color:${col}88;" onclick="openCatBlockModal(${cb.id},'${ds}')">
         <div class="cal-wtg-cat-label" style="color:${col};">${esc(cb.label)}</div>
       </div>`;
@@ -4588,7 +4590,7 @@ function renderCalendarWeekGrid() {
     (state.weekBlocks[ds] || []).forEach(b => {
       const y = wtgTimeToY(b.start_time, startHour);
       const h = Math.max(b.duration_minutes / 60 * PX_PER_HOUR_WEEK, 8);
-      const col = CAT_COLORS[b.task_category] || '#64748b';
+      const col = catColor(b.task_category);
       blocksHtml += `<div class="cal-wtg-block" draggable="true"
         data-block-id="${b.id}" style="top:${y}px;height:${h}px;background:${col};"
         ondragstart="wtgBlockDragStart(event,${b.id})"
@@ -4939,10 +4941,27 @@ function renderSettings() {
           </div>
         </div>
       </div>
+      <div class="settings-section" id="categories-settings">
+        <div class="settings-section-title" style="display:flex;align-items:center;justify-content:space-between;">
+          <span>Task Categories</span>
+          <button class="btn btn-ghost btn-sm" onclick="showAddCategoryForm()" style="font-size:12px;">+ Add Category</button>
+        </div>
+        <div id="cat-list">${renderCategoryList()}</div>
+        <div id="cat-add-wrap" style="display:none;">
+          <div class="div-add-form">
+            <input type="color" id="new-cat-color" value="#6366f1">
+            <input type="text" id="new-cat-icon" placeholder="Icon (emoji)" style="width:60px;text-align:center;">
+            <input type="text" id="new-cat-name" placeholder="Category name">
+            <button class="btn btn-primary btn-sm" onclick="addCategory()">Add</button>
+            <button class="btn btn-ghost btn-sm" onclick="hideAddCategoryForm()">Cancel</button>
+          </div>
+        </div>
+      </div>
     </div>`;
 
   // Wire up drag-drop after render
   setupDivDrag();
+  setupCatDrag();
 }
 
 function renderDivisionList() {
@@ -5110,6 +5129,180 @@ function setupDivDrag() {
         document.getElementById('div-list').innerHTML = renderDivisionList();
         setupDivDrag();
         renderTaskList(); // refreshes the project sections order
+      } catch(e) { toast(e.message); }
+    });
+  });
+}
+
+// ── Category Settings ─────────────────────────────────────────────────────────
+
+function renderCategoryList() {
+  if (!state.categories.length) return `<div style="padding:12px 16px;font-size:13px;color:var(--muted);">No categories yet.</div>`;
+  const catTaskMap = {};
+  state.tasks.filter(t => t.status !== 'complete').forEach(t => { if (t.category) catTaskMap[t.category] = (catTaskMap[t.category] || 0) + 1; });
+  return state.categories.map(c => {
+    const cnt = catTaskMap[c.slug] || 0;
+    return `<div class="div-settings-row" draggable="true" data-cat-slug="${c.slug}" id="cat-row-${c.slug}">
+      <span class="div-drag-handle" title="Drag to reorder">⠿</span>
+      <span class="div-swatch" style="background:${c.color};"></span>
+      <span style="font-size:16px;flex-shrink:0;">${c.icon}</span>
+      <span class="div-row-name">${esc(c.name)}</span>
+      <span class="div-row-count">${cnt} task${cnt !== 1 ? 's' : ''}</span>
+      <button class="btn btn-ghost btn-sm" onclick="showEditCategoryRow('${c.slug}')">Edit</button>
+      <button class="btn btn-ghost btn-sm" style="color:#ef4444" onclick="deleteCategory('${c.slug}')">Delete</button>
+    </div>`;
+  }).join('');
+}
+
+function showAddCategoryForm() {
+  document.getElementById('cat-add-wrap').style.display = '';
+  document.getElementById('new-cat-name').value  = '';
+  document.getElementById('new-cat-icon').value  = '';
+  document.getElementById('new-cat-color').value = '#6366f1';
+  setTimeout(() => document.getElementById('new-cat-name').focus(), 50);
+}
+function hideAddCategoryForm() { document.getElementById('cat-add-wrap').style.display = 'none'; }
+
+document.addEventListener('keydown', e => {
+  if (e.key === 'Enter' && document.activeElement?.id === 'new-cat-name') addCategory();
+});
+
+async function addCategory() {
+  const name  = document.getElementById('new-cat-name').value.trim();
+  const icon  = document.getElementById('new-cat-icon').value.trim() || '📁';
+  const color = document.getElementById('new-cat-color').value;
+  if (!name) { toast('Enter a category name'); return; }
+  try {
+    const cat = await api('POST', '/api/categories', { name, icon, color });
+    state.categories.push(cat);
+    hideAddCategoryForm();
+    populateCategorySelects();
+    document.getElementById('cat-list').innerHTML = renderCategoryList();
+    setupCatDrag();
+    renderSidebar();
+  } catch(e) { toast(e.message); }
+}
+
+function showEditCategoryRow(slug) {
+  const c = state.categories.find(x => x.slug === slug);
+  if (!c) return;
+  const row = document.getElementById(`cat-row-${slug}`);
+  if (!row) return;
+  row.outerHTML = `<div class="div-edit-form" id="cat-edit-${slug}">
+    <input type="color" id="edit-cat-color-${slug}" value="${c.color}">
+    <input type="text" id="edit-cat-icon-${slug}" value="${c.icon}" placeholder="Icon" style="width:52px;text-align:center;" onkeydown="if(event.key==='Escape')cancelEditCategory('${slug}')">
+    <input type="text" id="edit-cat-name-${slug}" value="${esc(c.name)}" onkeydown="if(event.key==='Enter')saveEditCategory('${slug}');if(event.key==='Escape')cancelEditCategory('${slug}')">
+    <button class="btn btn-primary btn-sm" onclick="saveEditCategory('${slug}')">Save</button>
+    <button class="btn btn-ghost btn-sm" onclick="cancelEditCategory('${slug}')">Cancel</button>
+  </div>`;
+  setTimeout(() => document.getElementById(`edit-cat-name-${slug}`)?.focus(), 50);
+}
+
+function cancelEditCategory(slug) {
+  document.getElementById('cat-list').innerHTML = renderCategoryList();
+  setupCatDrag();
+}
+
+async function saveEditCategory(slug) {
+  const name  = document.getElementById(`edit-cat-name-${slug}`)?.value.trim();
+  const icon  = document.getElementById(`edit-cat-icon-${slug}`)?.value.trim() || '📁';
+  const color = document.getElementById(`edit-cat-color-${slug}`)?.value;
+  if (!name) { toast('Enter a name'); return; }
+  try {
+    const updated = await api('PUT', `/api/categories/${slug}`, { name, icon, color });
+    state.categories = state.categories.map(c => c.slug === slug ? updated : c);
+    populateCategorySelects();
+    document.getElementById('cat-list').innerHTML = renderCategoryList();
+    setupCatDrag();
+    renderSidebar(); renderTaskList();
+    toast('Category updated');
+  } catch(e) { toast(e.message); }
+}
+
+async function deleteCategory(slug) {
+  const cat = state.categories.find(c => c.slug === slug);
+  if (!cat) return;
+  const count = state.tasks.filter(t => t.category === slug && t.status !== 'complete').length;
+  if (count > 0) {
+    _catDeleteId = slug;
+    document.getElementById('cat-delete-msg').textContent =
+      `"${cat.name}" is used on ${count} open task${count !== 1 ? 's' : ''}. Reassign to:`;
+    const sel = document.getElementById('cat-delete-reassign');
+    sel.innerHTML = '<option value="">None (clear category)</option>' +
+      state.categories.filter(c => c.slug !== slug).map(c => `<option value="${c.slug}">${esc(c.name)}</option>`).join('');
+    document.getElementById('cat-delete-modal').classList.add('open');
+  } else {
+    if (!confirm(`Delete category "${cat.name}"?`)) return;
+    try {
+      await api('DELETE', `/api/categories/${slug}`, { reassign_to_slug: null });
+      state.categories = state.categories.filter(c => c.slug !== slug);
+      populateCategorySelects();
+      document.getElementById('cat-list').innerHTML = renderCategoryList();
+      setupCatDrag();
+      renderSidebar(); renderTaskList();
+      toast('Category deleted');
+    } catch(e) { toast(e.message); }
+  }
+}
+
+let _catDeleteId = null;
+function closeCatDeleteModal() { document.getElementById('cat-delete-modal').classList.remove('open'); }
+document.getElementById('cat-delete-modal').addEventListener('click', e => { if (e.target === e.currentTarget) closeCatDeleteModal(); });
+
+async function confirmDeleteCategory() {
+  const reassignVal = document.getElementById('cat-delete-reassign').value;
+  const reassignSlug = reassignVal || null;
+  try {
+    await api('DELETE', `/api/categories/${_catDeleteId}`, { reassign_to_slug: reassignSlug });
+    if (reassignSlug) {
+      state.tasks = state.tasks.map(t => t.category === _catDeleteId ? { ...t, category: reassignSlug } : t);
+    } else {
+      state.tasks = state.tasks.map(t => t.category === _catDeleteId ? { ...t, category: null } : t);
+    }
+    state.categories = state.categories.filter(c => c.slug !== _catDeleteId);
+    closeCatDeleteModal();
+    populateCategorySelects();
+    document.getElementById('cat-list').innerHTML = renderCategoryList();
+    setupCatDrag();
+    renderSidebar(); renderTaskList();
+    toast('Category deleted');
+  } catch(e) { toast(e.message); }
+}
+
+let _catDragId = null;
+function setupCatDrag() {
+  const rows = document.querySelectorAll('#cat-list [data-cat-slug]');
+  rows.forEach(row => {
+    row.addEventListener('dragstart', e => {
+      _catDragId = row.dataset.catSlug;
+      row.classList.add('div-dragging');
+      e.dataTransfer.effectAllowed = 'move';
+    });
+    row.addEventListener('dragend', () => {
+      row.classList.remove('div-dragging');
+      _catDragId = null;
+    });
+    row.addEventListener('dragover', e => {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'move';
+    });
+    row.addEventListener('drop', async e => {
+      e.preventDefault();
+      const targetSlug = row.dataset.catSlug;
+      if (!_catDragId || _catDragId === targetSlug) return;
+      const slugs = state.categories.map(c => c.slug);
+      const fromIdx = slugs.indexOf(_catDragId);
+      const toIdx   = slugs.indexOf(targetSlug);
+      if (fromIdx === -1 || toIdx === -1) return;
+      state.categories.splice(toIdx, 0, state.categories.splice(fromIdx, 1)[0]);
+      document.getElementById('cat-list').innerHTML = renderCategoryList();
+      setupCatDrag();
+      try {
+        const ordered = await api('PATCH', '/api/categories/reorder', { order: state.categories.map(c => c.slug) });
+        state.categories = ordered;
+        document.getElementById('cat-list').innerHTML = renderCategoryList();
+        setupCatDrag();
+        renderSidebar();
       } catch(e) { toast(e.message); }
     });
   });

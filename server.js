@@ -253,6 +253,27 @@ db.prepare('UPDATE tasks SET legacy_status = status WHERE legacy_status IS NULL'
 [['daily_capacity_minutes','480'],['day_start_hour','5'],['day_end_hour','21']]
   .forEach(([k,v]) => db.prepare('INSERT OR IGNORE INTO settings (key,value) VALUES (?,?)').run(k,v));
 
+// Editable categories
+db.exec(`CREATE TABLE IF NOT EXISTS categories (
+  slug       TEXT PRIMARY KEY,
+  name       TEXT NOT NULL,
+  icon       TEXT NOT NULL DEFAULT '📁',
+  color      TEXT NOT NULL DEFAULT '#6366f1',
+  sort_order INTEGER NOT NULL DEFAULT 0
+)`);
+[
+  ['admin',      'Admin',              '🗂',  '#6366f1', 1],
+  ['ops',        'Ops',                '⚙️', '#0ea5e9', 2],
+  ['accounting', 'Accounting',         '💰', '#10b981', 3],
+  ['marketing',  'Marketing',          '📣', '#ec4899', 4],
+  ['sales',      'Sales',              '💼', '#14b8a6', 5],
+  ['pm',         'Project Management', '📐', '#8b5cf6', 6],
+  ['hr',         'HR',                 '👥', '#f59e0b', 7],
+  ['personal',   'Personal',           '🏠', '#ef4444', 8],
+].forEach(([slug,name,icon,color,sort_order]) => {
+  try { db.prepare('INSERT OR IGNORE INTO categories (slug,name,icon,color,sort_order) VALUES (?,?,?,?,?)').run(slug,name,icon,color,sort_order); } catch(e) {}
+});
+
 app.use(express.json());
 app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'public', 'app.html')));
 app.get('/index.html', (req, res) => res.redirect(301, '/'));
@@ -664,6 +685,57 @@ app.delete('/api/divisions/:id', (req, res) => {
   db.transaction(() => {
     db.prepare('UPDATE projects SET division_id=? WHERE division_id=?').run(reassign_to_id||null, div.id);
     db.prepare('DELETE FROM divisions WHERE id=?').run(div.id);
+  })();
+  res.json({ ok: true });
+});
+
+// ── Categories ────────────────────────────────────────────────────────────────
+
+app.get('/api/categories', (req, res) => {
+  res.json(db.prepare('SELECT * FROM categories ORDER BY sort_order, name').all());
+});
+
+app.post('/api/categories', (req, res) => {
+  const { name, icon = '📁', color = '#6366f1' } = req.body;
+  if (!name?.trim()) return res.status(400).json({ error: 'name required' });
+  let base = name.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+  if (!base) return res.status(400).json({ error: 'name must contain alphanumeric characters' });
+  let slug = base, n = 2;
+  while (db.prepare('SELECT slug FROM categories WHERE slug=?').get(slug)) slug = `${base}-${n++}`;
+  const maxOrd = db.prepare('SELECT MAX(sort_order) AS m FROM categories').get()?.m || 0;
+  db.prepare('INSERT INTO categories (slug,name,icon,color,sort_order) VALUES (?,?,?,?,?)').run(slug, name.trim(), icon, color, maxOrd + 1);
+  res.status(201).json(db.prepare('SELECT * FROM categories WHERE slug=?').get(slug));
+});
+
+app.patch('/api/categories/reorder', (req, res) => {
+  const { order } = req.body;
+  if (!Array.isArray(order)) return res.status(400).json({ error: 'order must be array' });
+  const upd = db.prepare('UPDATE categories SET sort_order=? WHERE slug=?');
+  db.transaction(() => order.forEach((slug, i) => upd.run(i + 1, slug)))();
+  res.json(db.prepare('SELECT * FROM categories ORDER BY sort_order').all());
+});
+
+app.put('/api/categories/:slug', (req, res) => {
+  const cat = db.prepare('SELECT * FROM categories WHERE slug=?').get(req.params.slug);
+  if (!cat) return res.status(404).json({ error: 'Category not found' });
+  const { name, icon, color } = req.body;
+  db.prepare('UPDATE categories SET name=?,icon=?,color=? WHERE slug=?')
+    .run(name?.trim() ?? cat.name, icon ?? cat.icon, color ?? cat.color, cat.slug);
+  res.json(db.prepare('SELECT * FROM categories WHERE slug=?').get(cat.slug));
+});
+
+app.delete('/api/categories/:slug', (req, res) => {
+  const cat = db.prepare('SELECT * FROM categories WHERE slug=?').get(req.params.slug);
+  if (!cat) return res.status(404).json({ error: 'Category not found' });
+  const { reassign_to_slug } = req.body;
+  const newSlug = reassign_to_slug || null;
+  db.transaction(() => {
+    db.prepare('UPDATE tasks SET category=? WHERE category=?').run(newSlug, cat.slug);
+    db.prepare('UPDATE category_blocks SET category=? WHERE category=?').run(newSlug, cat.slug);
+    db.prepare('UPDATE notes SET category=? WHERE category=?').run(newSlug, cat.slug);
+    db.prepare('UPDATE project_links SET category=? WHERE category=?').run(newSlug, cat.slug);
+    db.prepare('UPDATE template_tasks SET category=? WHERE category=?').run(newSlug, cat.slug);
+    db.prepare('DELETE FROM categories WHERE slug=?').run(cat.slug);
   })();
   res.json({ ok: true });
 });
