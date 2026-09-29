@@ -3646,7 +3646,7 @@ function renderCalendarDay() {
       data-block-id="${b.id}" data-task-id="${b.task_id}"
       style="top:${y}px;height:${h}px;background:${col};"
       onmousedown="calDayBlockMouseDown(event,${b.id},${y})">
-      <button class="cal-day-block-remove" onclick="event.stopPropagation();calDayDeleteBlock(${b.id})" title="Remove block">×</button>
+      <button class="cal-day-block-remove" onmousedown="event.stopPropagation()" onclick="event.stopPropagation();calDayDeleteBlock(${b.id})" title="Remove block">×</button>
       <div class="cal-day-block-title">${esc(b.task_title)}</div>
       ${h >= 36 ? `<div class="cal-day-block-sub">${fmt12(b.start_time)} · ${fmtMins(b.duration_minutes)}</div>` : ''}
       ${h >= 50 ? logBtn : ''}
@@ -3987,6 +3987,7 @@ async function calDayDrop(e) {
 function calDayBlockMouseDown(e, blockId, blockTop) {
   if (e.target.classList.contains('cal-day-resize')) return;
   e.preventDefault();
+  closeSlotPicker();
   calMoveBlockId = blockId; calMoveStartY = e.clientY;
   calMoveStartTop = blockTop; calMoveMoved = false;
   const el = document.querySelector(`[data-block-id="${blockId}"]`);
@@ -4049,14 +4050,14 @@ document.addEventListener('mouseup', e => {
         calDayMoveBlock(bid, state.calDayStr, newTime).then(() => refreshGoogleEventsDay(state.calDayStr));
       }
     } else {
-      const bl = state.timeBlocks.find(x => x.id === bid);
-      if (bl) openDetail(bl.task_id);
+      openBlockEdit(bid);
     }
   }
 });
 
 function calDayResizeStart(e, blockId, dur) {
   e.preventDefault(); e.stopPropagation();
+  closeSlotPicker();
   calResizeBlockId = blockId; calResizeStartY = e.clientY; calResizeStartDur = dur;
 }
 
