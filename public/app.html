@@ -191,7 +191,8 @@
     .cal-day-block-log:hover { background: rgba(255,255,255,.38); }
     .cal-day-resize { position: absolute; bottom: 0; left: 0; right: 0; height: 9px; cursor: ns-resize; display: flex; align-items: flex-end; justify-content: center; padding-bottom: 2px; }
     .cal-day-resize::after { content: ''; display: block; width: 22px; height: 2px; background: rgba(255,255,255,.45); border-radius: 1px; }
-    .cal-day-panel { width: 186px; flex-shrink: 0; border-left: 1px solid var(--border); padding: 0 10px; overflow-y: auto; background: var(--surface); border-radius: 0 8px 8px 0; }
+    .cal-day-panel { width: 300px; flex-shrink: 0; border-left: 1px solid var(--border); padding: 0 10px; overflow-y: auto; background: var(--surface); border-radius: 0 8px 8px 0; }
+    .cal-panel-collapsed { width: 0 !important; padding: 0 !important; border: none !important; overflow: hidden !important; min-width: 0 !important; }
     .cal-day-panel-hdr { font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); padding: 10px 0 7px; position: sticky; top: 0; background: var(--surface); }
     .cal-day-panel-task { padding: 7px 8px; background: var(--bg); border: 1px solid var(--border); border-left: 3px solid var(--low); border-radius: 5px; margin-bottom: 5px; cursor: grab; font-size: 12px; user-select: none; }
     .cal-day-panel-task:active { cursor: grabbing; opacity: .7; }
@@ -267,7 +268,7 @@
     .cal-wtg-cat-block { position:absolute; left:1px; right:1px; border-radius:3px; overflow:hidden; font-size:9px; z-index:7; border:1px solid; }
     .cal-wtg-cat-label { padding:1px 3px; font-weight:700; letter-spacing:.03em; text-transform:uppercase; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
     .cal-wtg-drop-ind { position:absolute; left:1px; right:1px; border-radius:3px; z-index:30; pointer-events:none; display:none; border:2px solid #3b82f6; background:rgba(59,130,246,.1); }
-    .cal-wtg-panel { width:176px; flex-shrink:0; border-left:1px solid var(--border); padding:0 8px; overflow-y:auto; background:var(--surface); }
+    .cal-wtg-panel { width:300px; flex-shrink:0; border-left:1px solid var(--border); padding:0 8px; overflow-y:auto; background:var(--surface); }
     .cal-wtg-now-line { position:absolute; left:0; right:0; border-top:2px solid #ef4444; z-index:15; pointer-events:none; }
     .cal-wtg-now-line::before { content:''; position:absolute; left:-3px; top:-4px; width:6px; height:6px; border-radius:50%; background:#ef4444; }
 
@@ -1580,6 +1581,7 @@ let wtgHoverDate = null;   // date string of column currently hovered
 // Category block edit
 let catBlockEditId = null;
 let calPanelHideScheduled = false;
+let calPanelCollapsed = localStorage.getItem('calPanelCollapsed') === '1';
 let slotPickerDate = null, slotPickerTime = null;
 let taskSchedBlocks = [];
 let toastUndoFn = null;
@@ -4848,6 +4850,7 @@ function renderCalendarDay() {
       </div>
       <button class="btn btn-ghost btn-sm" onclick="openCatBlockModal(null,state.calDayStr)">+ Theme Block</button>
       <button class="btn btn-ghost btn-sm" onclick="openDaySettings()" title="Day settings">⚙️</button>
+      <button class="btn btn-ghost btn-sm cal-panel-toggle-btn" onclick="toggleCalPanel()">${calPanelCollapsed ? 'Tasks ▶' : 'Tasks ◀'}</button>
     </div>
     ${gcalAllDayHtml}
     <div class="cal-day-cap-bar">
@@ -4871,7 +4874,7 @@ function renderCalendarDay() {
           </div>
         </div>
       </div>
-      <div class="cal-day-panel"></div>
+      <div class="cal-day-panel${calPanelCollapsed ? ' cal-panel-collapsed' : ''}"></div>
     </div>`;
   document.getElementById('task-list').innerHTML = html;
   renderDayPanel();
@@ -4994,6 +4997,16 @@ function setDayPanelFilter(type, val) {
   if (type === 'category')  calPanelCategory  = val;
   if (type === 'search')    calPanelSearch    = val.toLowerCase().trim();
   renderDayPanel();
+}
+
+function toggleCalPanel() {
+  calPanelCollapsed = !calPanelCollapsed;
+  localStorage.setItem('calPanelCollapsed', calPanelCollapsed ? '1' : '0');
+  const el = document.querySelector('.cal-day-panel');
+  if (el) el.classList.toggle('cal-panel-collapsed', calPanelCollapsed);
+  document.querySelectorAll('.cal-panel-toggle-btn').forEach(b => {
+    b.textContent = calPanelCollapsed ? 'Tasks ▶' : 'Tasks ◀';
+  });
 }
 
 function calDayNav(dir) {
@@ -5653,13 +5666,14 @@ function renderCalendarWeekGrid() {
       </div>
       <button class="btn btn-ghost btn-sm" onclick="state.calWeekGridMode=!state.calWeekGridMode;renderCalendar();">${state.calWeekGridMode ? 'Tasks view' : 'Grid view'}</button>
       <button class="btn btn-ghost btn-sm" onclick="openCatBlockModal(null,state.calDayStr)">+ Theme Block</button>
+      <button class="btn btn-ghost btn-sm cal-panel-toggle-btn" onclick="toggleCalPanel()">${calPanelCollapsed ? 'Tasks ▶' : 'Tasks ◀'}</button>
     </div>
     <div class="cal-wtg-wrap">
       <div class="cal-wtg-scroll">
         <div class="cal-wtg-times" style="padding-top:0;">${timesHtml}</div>
         <div class="cal-wtg-cols">${colsHtml}</div>
+        <div class="cal-wtg-panel cal-day-panel${calPanelCollapsed ? ' cal-panel-collapsed' : ''}"></div>
       </div>
-      <div class="cal-wtg-panel cal-day-panel"></div>
     </div>`;
   document.getElementById('task-list').innerHTML = html;
   renderDayPanel();
