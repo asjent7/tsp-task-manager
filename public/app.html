@@ -169,7 +169,7 @@
     .cal-day-cap-label { display: flex; justify-content: space-between; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin-bottom: 4px; }
     .cal-day-cap-track { height: 8px; background: #e2e8f0; border-radius: 100px; overflow: hidden; }
     .cal-day-cap-fill { height: 100%; border-radius: 100px; transition: width .3s, background .3s; }
-    .cal-day-body { display: flex; gap: 0; height: 560px; }
+    .cal-day-body { display: flex; gap: 0; flex: 1; min-height: 0; }
     .cal-day-grid-outer { flex: 1; overflow-y: auto; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); }
     .cal-day-grid { display: flex; position: relative; }
     .cal-day-times { width: 52px; flex-shrink: 0; padding-top: 0; }
@@ -199,6 +199,27 @@
     .cal-day-panel-task[data-priority="high"]   { border-left-color: var(--high); }
     .cal-day-panel-task[data-priority="medium"] { border-left-color: var(--medium); }
     .cal-day-panel-empty { font-size: 12px; color: var(--muted); padding: 6px 0; }
+    /* calendar filling layout */
+    #task-list-wrap.cal-filling { overflow: hidden; padding: 0; }
+    #task-list-wrap.cal-filling #task-list { height: 100%; display: flex; flex-direction: column; }
+    /* block remove × button */
+    .cal-day-block-remove { position:absolute; top:3px; right:4px; width:16px; height:16px; background:rgba(0,0,0,.3); color:white; border:none; border-radius:50%; font-size:11px; line-height:16px; text-align:center; cursor:pointer; display:none; padding:0; z-index:20; }
+    .cal-day-block:hover .cal-day-block-remove { display:block; }
+    .cal-day-block-remove:hover { background:rgba(0,0,0,.55); }
+    /* slot picker */
+    .cal-slot-picker { position:absolute; z-index:50; background:var(--surface); border:1px solid var(--border); border-radius:8px; box-shadow:0 4px 16px rgba(0,0,0,.14); padding:8px; width:210px; }
+    .cal-slot-picker input { width:100%; font-size:12px; padding:4px 7px; border:1px solid var(--border); border-radius:4px; box-sizing:border-box; margin-bottom:5px; background:var(--bg); color:var(--text); outline:none; }
+    .cal-slot-picker-item { padding:5px 7px; border-radius:4px; cursor:pointer; font-size:12px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .cal-slot-picker-item:hover { background:var(--bg); }
+    .cal-slot-picker-empty { font-size:11px; color:var(--muted); padding:5px 7px; }
+    /* scheduled blocks in detail panel */
+    .sched-block-row { display:flex; align-items:center; gap:6px; padding:3px 0; font-size:11px; border-bottom:1px solid var(--border); }
+    .sched-block-row:last-child { border-bottom:none; }
+    .sched-block-row-info { flex:1; min-width:0; }
+    /* toast undo */
+    #toast.has-undo { pointer-events:auto; }
+    .toast-undo { background:none; border:1px solid rgba(255,255,255,.55); color:white; border-radius:3px; padding:2px 7px; font-size:11px; cursor:pointer; margin-left:8px; vertical-align:middle; }
+    .toast-undo:hover { background:rgba(255,255,255,.18); }
 
     /* ── Google Calendar overlay ── */
     .cal-gcal-block { position:absolute; left:4px; right:4px; border-radius:6px; padding:4px 7px; overflow:hidden; z-index:9; pointer-events:none; background-color:#4285f4; background-image:repeating-linear-gradient(45deg,rgba(255,255,255,.2) 0,rgba(255,255,255,.2) 3px,transparent 3px,transparent 9px); border:1px solid rgba(66,133,244,.45); box-shadow:0 1px 4px rgba(66,133,244,.2); }
@@ -855,6 +876,7 @@
         <div class="time-item"><span class="time-val" id="d-scheduled">—</span><span class="time-lbl">Scheduled</span></div>
         <div class="time-item"><span class="time-val" id="d-actual">0h</span><span class="time-lbl">Logged</span></div>
       </div>
+      <div id="sched-blocks-list" style="margin-bottom:8px;"></div>
       <div class="field">
         <label>Estimated (minutes)</label>
         <input type="number" id="d-estimated-mins" min="1" placeholder="e.g. 90">
@@ -1236,7 +1258,7 @@ const CAT_COLORS  = { admin:'#6366f1', ops:'#0ea5e9', accounting:'#10b981', mark
 const STATUS_LABELS = { new:'New', assigned:'Assigned', 'in-progress':'In Progress', 'on-hold':'On Hold', 'needs-review':'Needs Review', complete:'Complete' };
 const BOARD_STAGES  = ['new','assigned','in-progress','on-hold','needs-review','complete'];
 const STAGE_COLORS  = { new:'#94a3b8', assigned:'#60a5fa', 'in-progress':'#0ea5e9', 'on-hold':'#f59e0b', 'needs-review':'#8b5cf6', complete:'#10b981' };
-const PX_PER_HOUR = 80;
+let PX_PER_HOUR = 80;
 
 // ── State ─────────────────────────────────────────────────────────────────────
 
@@ -1303,6 +1325,10 @@ let pendingDropTaskId = null;
 let wtgHoverDate = null;   // date string of column currently hovered
 // Category block edit
 let catBlockEditId = null;
+let calPanelHideScheduled = false;
+let slotPickerDate = null, slotPickerTime = null;
+let taskSchedBlocks = [];
+let toastUndoFn = null;
 
 // ── API ───────────────────────────────────────────────────────────────────────
 
@@ -1321,12 +1347,32 @@ async function api(method, path, body) {
 // ── Toast ─────────────────────────────────────────────────────────────────────
 
 let toastTimer;
-function toast(msg) {
+function toast(msg, undoFn) {
   const el = document.getElementById('toast');
-  el.textContent = msg;
+  toastUndoFn = undoFn || null;
+  if (undoFn) {
+    el.innerHTML = '';
+    el.appendChild(document.createTextNode(msg));
+    const btn = document.createElement('button');
+    btn.className = 'toast-undo';
+    btn.textContent = 'Undo';
+    btn.onclick = doToastUndo;
+    el.appendChild(btn);
+    el.classList.add('has-undo');
+  } else {
+    el.textContent = msg;
+    el.classList.remove('has-undo');
+  }
   el.classList.add('show');
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => el.classList.remove('show'), 2400);
+  toastTimer = setTimeout(() => { el.classList.remove('show', 'has-undo'); toastUndoFn = null; }, 5000);
+}
+function doToastUndo() {
+  if (!toastUndoFn) return;
+  const fn = toastUndoFn; toastUndoFn = null;
+  clearTimeout(toastTimer);
+  document.getElementById('toast').classList.remove('show', 'has-undo');
+  fn();
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -1581,6 +1627,7 @@ function setView(view) {
   document.getElementById('view-mode-list').classList.toggle('active', true);
   document.getElementById('view-mode-board').classList.toggle('active', false);
   document.getElementById('task-list-wrap').style.display  = isProjectDetail ? 'none' : '';
+  document.getElementById('task-list-wrap').classList.toggle('cal-filling', isCalendar);
   document.getElementById('board-wrap').style.display      = 'none';
   document.getElementById('proj-detail-wrap').style.display = isProjectDetail ? '' : 'none';
 
@@ -2882,7 +2929,7 @@ async function openDetail(id) {
   document.getElementById('detail-panel').classList.add('open');
   renderDetailFocusList(task);
   renderTaskList();
-  await Promise.all([loadTimeLogs(id), loadSubtasks(id), loadMeetingNotes(id), loadTaskUpdates(id)]);
+  await Promise.all([loadTimeLogs(id), loadSubtasks(id), loadMeetingNotes(id), loadTaskUpdates(id), loadSchedBlocks(id)]);
 }
 
 function closeDetail() {
@@ -2946,6 +2993,43 @@ function renderTimeLogs() {
     </div>`).join('');
 }
 
+async function loadSchedBlocks(taskId) {
+  try { taskSchedBlocks = await api('GET', `/api/time-blocks?task_id=${taskId}`); }
+  catch(e) { taskSchedBlocks = []; }
+  renderSchedBlocks();
+}
+function renderSchedBlocks() {
+  const el = document.getElementById('sched-blocks-list');
+  if (!el) return;
+  if (!taskSchedBlocks.length) { el.innerHTML = ''; return; }
+  el.innerHTML = `<div style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin-bottom:4px;">Scheduled Blocks</div>` +
+    taskSchedBlocks.map(b => `<div class="sched-block-row">
+      <div class="sched-block-row-info">${fmtDate(b.date)} · ${fmt12(b.start_time)} · ${fmtMins(b.duration_minutes)}</div>
+      <button class="log-del" onclick="removeSchedBlockFromDetail(${b.id})" title="Remove">✕</button>
+    </div>`).join('');
+}
+async function removeSchedBlockFromDetail(blockId) {
+  const b = taskSchedBlocks.find(x => x.id === blockId);
+  if (!b) return;
+  try {
+    await api('DELETE', `/api/time-blocks/${blockId}`);
+    taskSchedBlocks = taskSchedBlocks.filter(x => x.id !== blockId);
+    const task = state.tasks.find(t => t.id === state.selectedId);
+    if (task) {
+      task.scheduled_minutes = Math.max(0, (task.scheduled_minutes || 0) - b.duration_minutes);
+      document.getElementById('d-scheduled').textContent = task.scheduled_minutes ? fmtMins(task.scheduled_minutes) : '—';
+    }
+    renderSchedBlocks();
+    if (state.view === 'calendar') {
+      if (state.calMode === 'day' && b.date === state.calDayStr) {
+        state.timeBlocks = state.timeBlocks.filter(x => x.id !== blockId); renderCalendarDay();
+      } else if (state.calMode === 'week' && state.weekBlocks[b.date]) {
+        state.weekBlocks[b.date] = state.weekBlocks[b.date].filter(x => x.id !== blockId); renderCalendarWeekGrid();
+      }
+    }
+    renderDayPanel();
+  } catch(err) { toast(err.message); }
+}
 async function addTimeLog() {
   const mins = parseInt(document.getElementById('log-mins').value);
   const desc = document.getElementById('log-desc').value.trim();
@@ -3432,6 +3516,17 @@ function gridY(clientY) {
   // so subtracting it gives the correct content-relative Y without double-counting.
   return clientY - content.getBoundingClientRect().top;
 }
+function recalcPxPerHour() {
+  const { startHour, endHour } = state.daySettings;
+  const totalH = endHour - startHour;
+  if (totalH <= 0) return;
+  const wrap = document.getElementById('task-list-wrap');
+  const wrapH = wrap ? wrap.clientHeight : (window.innerHeight - 50);
+  // overhead: cal-toolbar ~42px + cap-bar ~44px + small buffer
+  const availH = Math.max(wrapH - 90, 180);
+  PX_PER_HOUR = Math.max(24, Math.floor(availH / totalH));
+  PX_PER_HOUR_WEEK = Math.max(18, Math.floor((wrapH - 90) / totalH));
+}
 
 function gcalLocalTime(isoStr) {
   if (!isoStr || isoStr.length === 10) return null;
@@ -3501,6 +3596,7 @@ async function loadTimeBlocks(date) {
 }
 
 function renderCalendarDay() {
+  recalcPxPerHour();
   const { startHour, endHour, capacityMinutes } = state.daySettings;
   const totalH  = endHour - startHour;
   const totalPx = totalH * PX_PER_HOUR;
@@ -3547,9 +3643,10 @@ function renderCalendarDay() {
       : b.logged ? `<span style="font-size:9px;color:rgba(255,255,255,.65);">✓ logged</span>` : '';
 
     blocksHtml += `<div class="cal-day-block${b.logged?' logged':''}"
-      data-block-id="${b.id}"
+      data-block-id="${b.id}" data-task-id="${b.task_id}"
       style="top:${y}px;height:${h}px;background:${col};"
       onmousedown="calDayBlockMouseDown(event,${b.id},${y})">
+      <button class="cal-day-block-remove" onclick="event.stopPropagation();calDayDeleteBlock(${b.id})" title="Remove block">×</button>
       <div class="cal-day-block-title">${esc(b.task_title)}</div>
       ${h >= 36 ? `<div class="cal-day-block-sub">${fmt12(b.start_time)} · ${fmtMins(b.duration_minutes)}</div>` : ''}
       ${h >= 50 ? logBtn : ''}
@@ -3641,7 +3738,7 @@ function renderCalendarDay() {
       <div class="cal-day-grid-outer" id="cal-day-grid-outer">
         <div class="cal-day-grid">
           <div class="cal-day-times">${timesHtml}</div>
-          <div class="cal-day-content" id="cal-day-content" style="height:${totalPx}px;" ${dropAttrs}>
+          <div class="cal-day-content" id="cal-day-content" style="height:${totalPx}px;" ${dropAttrs} onclick="calDayGridClick(event)">
             ${linesHtml}
             ${nowHtml}
             <div class="cal-drop-indicator" id="cal-drop-indicator"></div>
@@ -3675,6 +3772,11 @@ function renderDayPanel() {
   }
 
   let tasks = state.tasks.filter(t => t.status !== 'complete');
+  if (calPanelHideScheduled) tasks = tasks.filter(t => {
+    const sched = t.scheduled_minutes || 0;
+    const est = t.estimated_minutes || 0;
+    return !(est > 0 && sched >= est);
+  });
   if (calPanelFocusList) tasks = tasks.filter(t => (t.focus_list_ids||[]).includes(Number(calPanelFocusList)));
   if (calPanelPriority)  tasks = tasks.filter(t => t.priority === calPanelPriority);
   if (calPanelProject)   tasks = tasks.filter(t => t.project === calPanelProject);
@@ -3691,8 +3793,12 @@ function renderDayPanel() {
   const projects = [...new Set(state.tasks.filter(t => t.project).map(t => t.project))].sort();
   const SEL = 'flex:1;min-width:0;font-size:11px;padding:3px 4px;border:1px solid var(--border);border-radius:4px;background:var(--bg);color:var(--text);';
 
-  let html = `<div class="cal-day-panel-hdr" style="padding-bottom:4px;">
-    Tasks <span style="font-weight:400;color:var(--muted);">(${tasks.length})</span>
+  let html = `<div class="cal-day-panel-hdr" style="padding-bottom:4px;display:flex;align-items:center;justify-content:space-between;">
+    <span>Tasks <span style="font-weight:400;color:var(--muted);">(${tasks.length})</span></span>
+    <label style="display:flex;align-items:center;gap:3px;font-size:10px;font-weight:400;cursor:pointer;" title="Hide fully scheduled tasks">
+      <input type="checkbox" ${calPanelHideScheduled?'checked':''} onchange="calPanelHideScheduled=this.checked;renderDayPanel();" style="width:11px;height:11px;">
+      Hide done
+    </label>
   </div>
   <div style="display:flex;flex-direction:column;gap:4px;margin-bottom:8px;position:sticky;top:28px;background:var(--surface);padding-bottom:4px;">
     <input type="text" id="cal-panel-search-input" placeholder="Search tasks…" value="${esc(calPanelSearch)}" oninput="setDayPanelFilter('search',this.value)" style="width:100%;font-size:11px;padding:3px 5px;border:1px solid var(--border);border-radius:4px;background:var(--bg);color:var(--text);box-sizing:border-box;">
@@ -3735,11 +3841,14 @@ function renderDayPanel() {
         : '';
       const sched = t.scheduled_minutes || 0;
       const est   = t.estimated_minutes || 0;
-      const rem   = Math.max(0, est - sched);
-      const schedLine = est > 0
-        ? `<div style="font-size:10px;color:var(--muted);margin-top:2px;">${sched > 0 ? fmtMins(sched)+' / '+fmtMins(est)+' scheduled' : fmtMins(est)+' est.'}</div>`
-        : (sched > 0 ? `<div style="font-size:10px;color:var(--muted);margin-top:2px;">${fmtMins(sched)} scheduled</div>` : '');
-      html += `<div class="cal-day-panel-task" data-priority="${t.priority}" draggable="true" ondragstart="calDayTaskDragStart(event,${t.id})">
+      const fullySched = est > 0 && sched >= est;
+      const left  = est > 0 ? Math.max(0, est - sched) : null;
+      const schedLine = fullySched
+        ? `<div style="font-size:10px;color:#10b981;margin-top:2px;font-weight:600;">✓ Fully scheduled</div>`
+        : left !== null
+          ? `<div style="font-size:10px;color:var(--muted);margin-top:2px;">${fmtMins(left)} left to schedule</div>`
+          : (sched > 0 ? `<div style="font-size:10px;color:var(--muted);margin-top:2px;">${fmtMins(sched)} scheduled</div>` : '');
+      html += `<div class="cal-day-panel-task" data-priority="${t.priority}" draggable="true" ondragstart="calDayTaskDragStart(event,${t.id})" style="${fullySched?'opacity:.5;':''}">
         <div style="font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${esc(t.title)}</div>
         ${dueLine}${schedLine}
       </div>`;
@@ -3780,7 +3889,11 @@ function calDayDragOver(e) {
   const dur = calDragType === 'block'
     ? (state.timeBlocks.find(b => b.id === calDragBlockId)?.duration_minutes || 60)
     : defaultBlockDur(state.tasks.find(t => t.id === calDragTaskId));
-  const busy = gcalBusyConflict(state.calDayStr, yToTimeStr(y), dur);
+  const startTime = yToTimeStr(y);
+  const startMins = state.daySettings.startHour * 60 + y / PX_PER_HOUR * 60;
+  const endMins   = startMins + dur;
+  const endTime   = `${String(Math.floor(endMins/60)).padStart(2,'0')}:${String(endMins%60).padStart(2,'0')}`;
+  const busy = gcalBusyConflict(state.calDayStr, startTime, dur);
   const ind  = document.getElementById('cal-drop-indicator');
   if (ind) {
     ind.style.top        = y + 'px';
@@ -3788,22 +3901,74 @@ function calDayDragOver(e) {
     ind.style.display    = 'block';
     ind.style.background = busy ? 'rgba(239,68,68,.15)' : '';
     ind.style.borderColor = busy ? '#ef4444' : '';
+    ind.innerHTML = `<div style="position:absolute;bottom:2px;right:5px;font-size:9px;color:${busy?'rgba(239,68,68,.8)':'rgba(59,130,246,.9)'};font-weight:600;">${fmt12(startTime)}–${fmt12(endTime)}</div>`;
   }
   e.dataTransfer.dropEffect = busy ? 'none' : 'copy';
 }
 function calDayDragLeave(e) {
   if (!e.currentTarget.contains(e.relatedTarget)) {
     const ind = document.getElementById('cal-drop-indicator');
-    if (ind) { ind.style.display = 'none'; ind.style.background = ''; ind.style.borderColor = ''; }
+    if (ind) { ind.style.display = 'none'; ind.style.background = ''; ind.style.borderColor = ''; ind.innerHTML = ''; }
   }
 }
+function calDayGridClick(e) {
+  if (e.target.closest('.cal-day-block') || e.target.closest('.cal-gcal-block') ||
+      e.target.closest('.cal-cat-block') || e.target.closest('#cal-slot-picker')) return;
+  closeSlotPicker();
+  const y = snapY(gridY(e.clientY));
+  openSlotPicker(state.calDayStr, yToTimeStr(y), e.clientX, e.clientY);
+}
+function openSlotPicker(date, time, clientX, clientY) {
+  slotPickerDate = date; slotPickerTime = time;
+  const content = document.getElementById('cal-day-content');
+  if (!content) return;
+  const existing = document.getElementById('cal-slot-picker');
+  if (existing) existing.remove();
+  const picker = document.createElement('div');
+  picker.id = 'cal-slot-picker';
+  picker.className = 'cal-slot-picker';
+  const rect = content.getBoundingClientRect();
+  const rawY = gridY(clientY);
+  picker.style.top  = (rawY + 6) + 'px';
+  picker.style.left = Math.min(Math.max(clientX - rect.left + 4, 0), rect.width - 220) + 'px';
+  picker.innerHTML = `<div style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin-bottom:5px;">Add task at ${fmt12(time)}</div>
+    <input id="slot-picker-input" type="text" placeholder="Search tasks…" oninput="renderSlotPickerList(this.value)" autocomplete="off">
+    <div id="slot-picker-list"></div>`;
+  content.appendChild(picker);
+  renderSlotPickerList('');
+  setTimeout(() => { const i = document.getElementById('slot-picker-input'); if (i) i.focus(); }, 10);
+}
+function renderSlotPickerList(q) {
+  const el = document.getElementById('slot-picker-list');
+  if (!el) return;
+  const query = q.toLowerCase().trim();
+  const tasks = state.tasks.filter(t => t.status !== 'complete')
+    .filter(t => !query || t.title.toLowerCase().includes(query)).slice(0, 8);
+  if (!tasks.length) { el.innerHTML = '<div class="cal-slot-picker-empty">No tasks found</div>'; return; }
+  el.innerHTML = tasks.map(t => {
+    const rem = t.estimated_minutes ? Math.max(0, t.estimated_minutes - (t.scheduled_minutes||0)) : null;
+    const remStr = rem !== null && rem > 0 ? `<span style="color:var(--muted);font-size:10px;"> · ${fmtMins(rem)} left</span>` : '';
+    return `<div class="cal-slot-picker-item" onclick="slotPickerSelect(${t.id})">${esc(t.title)}${remStr}</div>`;
+  }).join('');
+}
+function slotPickerSelect(taskId) {
+  const d = slotPickerDate, t = slotPickerTime;
+  closeSlotPicker();
+  if (d && t) calDropInstant(taskId, d, t);
+}
+function closeSlotPicker() {
+  const p = document.getElementById('cal-slot-picker');
+  if (p) p.remove();
+  slotPickerDate = null; slotPickerTime = null;
+}
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closeSlotPicker(); });
 async function calDayDrop(e) {
   e.preventDefault();
   const ind = document.getElementById('cal-drop-indicator');
-  if (ind) { ind.style.display = 'none'; ind.style.background = ''; ind.style.borderColor = ''; }
+  if (ind) { ind.style.display = 'none'; ind.style.background = ''; ind.style.borderColor = ''; ind.innerHTML = ''; }
   const time = yToTimeStr(snapY(gridY(e.clientY)));
   if (calDragType === 'task') {
-    openQuickBlock(calDragTaskId, state.calDayStr, time);
+    await calDropInstant(calDragTaskId, state.calDayStr, time);
   } else if (calDragType === 'block') {
     const block = state.timeBlocks.find(b => b.id === calDragBlockId);
     const dur = block?.duration_minutes || 60;
@@ -3828,11 +3993,17 @@ function calDayBlockMouseDown(e, blockId, blockTop) {
   if (el) el.style.cursor = 'grabbing';
 }
 
+window.addEventListener('resize', () => {
+  if (state.view !== 'calendar') return;
+  if (state.calMode === 'day') renderCalendarDay();
+  else if (state.calMode === 'week' && state.calWeekGridMode) renderCalendarWeekGrid();
+});
+
 // Clear stale drop-indicator and drag state when a drag ends without a drop
 // (e.g. Escape pressed, released outside the grid, or browser cancelled the drag).
 document.addEventListener('dragend', () => {
   const ind = document.getElementById('cal-drop-indicator');
-  if (ind) { ind.style.display = 'none'; ind.style.background = ''; ind.style.borderColor = ''; }
+  if (ind) { ind.style.display = 'none'; ind.style.background = ''; ind.style.borderColor = ''; ind.innerHTML = ''; }
   calDragType = null; calDragTaskId = null; calDragBlockId = null;
 });
 
@@ -3878,7 +4049,8 @@ document.addEventListener('mouseup', e => {
         calDayMoveBlock(bid, state.calDayStr, newTime).then(() => refreshGoogleEventsDay(state.calDayStr));
       }
     } else {
-      openBlockEdit(bid);
+      const bl = state.timeBlocks.find(x => x.id === bid);
+      if (bl) openDetail(bl.task_id);
     }
   }
 });
@@ -3895,7 +4067,10 @@ async function calDayCreateBlock(taskId, date, startTime, durMins = 60, parentCa
     if (parentCategoryBlockId) payload.parent_category_block_id = parentCategoryBlockId;
     const b = await api('POST', '/api/time-blocks', payload);
     const task = state.tasks.find(t => t.id === taskId);
-    if (task) task.scheduled_minutes = (task.scheduled_minutes || 0) + durMins;
+    if (task) {
+      task.scheduled_minutes = (task.scheduled_minutes || 0) + durMins;
+      await autoUpdateEstimate(taskId, task.scheduled_minutes);
+    }
     // Update whichever block store contains this date
     if (date === state.calDayStr) {
       state.timeBlocks.push(b);
@@ -3929,7 +4104,10 @@ async function calDayResizeBlock(blockId, durMins) {
     const updated  = await api('PATCH', `/api/time-blocks/${blockId}`, { duration_minutes: durMins });
     state.timeBlocks = state.timeBlocks.map(b => b.id === blockId ? updated : b);
     const task = state.tasks.find(t => t.id === updated.task_id);
-    if (task) task.scheduled_minutes = Math.max(0, (task.scheduled_minutes || 0) - oldDur + durMins);
+    if (task) {
+      task.scheduled_minutes = Math.max(0, (task.scheduled_minutes || 0) - oldDur + durMins);
+      await autoUpdateEstimate(updated.task_id, task.scheduled_minutes);
+    }
     renderCalendarDay();
   } catch(err) { toast(err.message); renderCalendarDay(); }
 }
@@ -3942,6 +4120,37 @@ async function calDayDeleteBlock(blockId) {
     if (task) task.scheduled_minutes = Math.max(0, (task.scheduled_minutes || 0) - b.duration_minutes);
   }
   closeBlockEdit(); renderCalendarDay(); toast('Block deleted');
+}
+async function autoUpdateEstimate(taskId, newScheduledMins) {
+  const task = state.tasks.find(t => t.id === taskId);
+  if (!task) return;
+  const refreshDetailEst = () => {
+    if (state.selectedId === taskId) {
+      document.getElementById('d-estimated-mins').value = task.estimated_minutes || '';
+      document.getElementById('d-est').textContent = task.estimated_minutes ? fmtMins(task.estimated_minutes) : '—';
+    }
+  };
+  if (!task.estimated_minutes) {
+    try {
+      const up = await api('PUT', `/api/tasks/${taskId}`, { estimated_minutes: newScheduledMins });
+      task.estimated_minutes = up.estimated_minutes;
+      refreshDetailEst(); renderDayPanel();
+    } catch(e) {}
+  } else if (newScheduledMins > task.estimated_minutes) {
+    const oldEst = task.estimated_minutes;
+    try {
+      const up = await api('PUT', `/api/tasks/${taskId}`, { estimated_minutes: newScheduledMins });
+      task.estimated_minutes = up.estimated_minutes;
+      refreshDetailEst(); renderDayPanel();
+      toast(`Estimate raised to ${fmtMins(newScheduledMins)}`, async () => {
+        const rev = await api('PUT', `/api/tasks/${taskId}`, { estimated_minutes: oldEst });
+        task.estimated_minutes = rev.estimated_minutes;
+        refreshDetailEst(); renderDayPanel();
+      });
+    } catch(e) {}
+  } else {
+    renderDayPanel();
+  }
 }
 async function calDayLogBlock(blockId) {
   const b = state.timeBlocks.find(x => x.id === blockId);
@@ -3976,7 +4185,7 @@ document.getElementById('block-edit-modal').addEventListener('click', e => { if 
 // Quick-block modal: shown after dropping a task onto the day grid
 function defaultBlockDur(task) {
   const remaining = Math.max(0, (task?.estimated_minutes || 0) - (task?.scheduled_minutes || 0));
-  return remaining > 0 ? Math.max(15, Math.min(remaining, 60)) : 30;
+  return remaining > 0 ? Math.min(remaining, 120) : 30;
 }
 function openQuickBlock(taskId, date, time) {
   pendingDropDate = date; pendingDropTime = time; pendingDropTaskId = taskId;
@@ -4000,6 +4209,23 @@ function openQuickBlock(taskId, date, time) {
 function cancelQuickBlock() {
   document.getElementById('quick-block-modal').classList.remove('open');
   pendingDropDate = pendingDropTime = pendingDropTaskId = null;
+}
+async function calDropInstant(taskId, date, time) {
+  const task = state.tasks.find(t => t.id === taskId);
+  const dur = defaultBlockDur(task);
+  const dayEvts = date === state.calDayStr ? undefined : (state.googleWeekEvents[date] || []);
+  if (gcalBusyConflict(date, time, dur, dayEvts)) { toast('That time is busy on your Google Calendar'); return; }
+  const catConflict = catBlockConflict(date, time, dur, taskId);
+  if (catConflict) { toast(`That slot is reserved for ${catConflict.category} tasks`); return; }
+  const parentCb = catBlockContaining(date, time, dur, taskId);
+  await calDayCreateBlock(taskId, date, time, dur, parentCb?.id || null);
+  if (date !== state.calDayStr) {
+    api('GET', `/api/category-blocks?date=${date}`).then(cbs => {
+      state.weekCategoryBlocks[date] = cbs; renderCalendarWeekGrid();
+    }).catch(() => {});
+  } else {
+    refreshGoogleEventsDay(date);
+  }
 }
 async function confirmQuickBlock() {
   const dur = parseInt(document.getElementById('quick-block-duration').value, 10);
@@ -4146,7 +4372,7 @@ document.getElementById('cat-block-modal').addEventListener('click', e => { if (
 
 // ── Week time-grid (Feature 2) ────────────────────────────────────────────────
 
-const PX_PER_HOUR_WEEK = 40; // compressed — full day visible without scrolling
+let PX_PER_HOUR_WEEK = 40; // compressed — full day visible without scrolling
 
 function wtgTimeToY(timeStr, startHour) {
   const [h, m] = timeStr.split(':').map(Number);
@@ -4193,6 +4419,7 @@ async function loadWeekBlocks() {
 }
 
 function renderCalendarWeekGrid() {
+  recalcPxPerHour();
   const { startHour, endHour } = state.daySettings;
   const totalH  = endHour - startHour;
   const totalPx = totalH * PX_PER_HOUR_WEEK;
@@ -4256,7 +4483,11 @@ function renderCalendarWeekGrid() {
       const y = wtgTimeToY(b.start_time, startHour);
       const h = Math.max(b.duration_minutes / 60 * PX_PER_HOUR_WEEK, 8);
       const col = CAT_COLORS[b.task_category] || '#64748b';
-      blocksHtml += `<div class="cal-wtg-block" style="top:${y}px;height:${h}px;background:${col};" onclick="setCalMode('day');state.calDayStr='${ds}';loadTimeBlocks('${ds}').then(()=>renderCalendarDay());" title="${esc(b.task_title)} · ${fmt12(b.start_time)} · ${fmtMins(b.duration_minutes)}">
+      blocksHtml += `<div class="cal-wtg-block" draggable="true"
+        data-block-id="${b.id}" style="top:${y}px;height:${h}px;background:${col};"
+        ondragstart="wtgBlockDragStart(event,${b.id})"
+        onclick="setCalMode('day');state.calDayStr='${ds}';loadTimeBlocks('${ds}').then(()=>renderCalendarDay());"
+        title="${esc(b.task_title)} · ${fmt12(b.start_time)} · ${fmtMins(b.duration_minutes)}">
         <div class="cal-wtg-block-title">${esc(b.task_title)}</div>
       </div>`;
     });
@@ -4327,6 +4558,9 @@ function wtgDragOver(e, date) {
   const catConflict = catBlockConflict(date, time, dur, calDragTaskId);
   const busy = gcalBusy || !!catConflict;
 
+  const startMins = startHour * 60 + y / PX_PER_HOUR_WEEK * 60;
+  const endMins   = startMins + dur;
+  const endTime   = `${String(Math.floor(endMins/60)).padStart(2,'0')}:${String(endMins%60).padStart(2,'0')}`;
   const ind = document.getElementById(`wtg-ind-${date}`);
   if (ind) {
     ind.style.top     = y + 22 + 'px'; // +22 for header height
@@ -4334,6 +4568,7 @@ function wtgDragOver(e, date) {
     ind.style.display = 'block';
     ind.style.borderColor = busy ? '#ef4444' : '#3b82f6';
     ind.style.background  = busy ? 'rgba(239,68,68,.12)' : 'rgba(59,130,246,.1)';
+    ind.innerHTML = `<div style="position:absolute;bottom:1px;right:3px;font-size:8px;color:${busy?'rgba(239,68,68,.8)':'rgba(59,130,246,.9)'};font-weight:600;white-space:nowrap;">${fmt12(time)}–${fmt12(endTime)}</div>`;
     wtgHoverDate = date;
   }
   e.dataTransfer.dropEffect = busy ? 'none' : 'copy';
@@ -4341,21 +4576,42 @@ function wtgDragOver(e, date) {
 function wtgDragLeave(e, date) {
   if (!e.currentTarget.contains(e.relatedTarget)) {
     const ind = document.getElementById(`wtg-ind-${date}`);
-    if (ind) ind.style.display = 'none';
+    if (ind) { ind.style.display = 'none'; ind.innerHTML = ''; }
     if (wtgHoverDate === date) wtgHoverDate = null;
   }
 }
-function wtgDrop(e, date) {
+async function wtgDrop(e, date) {
   e.preventDefault();
   const ind = document.getElementById(`wtg-ind-${date}`);
-  if (ind) ind.style.display = 'none';
-  if (!calDragTaskId) return;
+  if (ind) { ind.style.display = 'none'; ind.innerHTML = ''; }
   const { startHour, endHour } = state.daySettings;
   const rawY = wtgColY(e);
   const y    = wtgSnapY(rawY, startHour, endHour);
   const time = wtgYToTime(y, startHour);
-  openQuickBlock(calDragTaskId, date, time);
+  if (calDragType === 'task' && calDragTaskId) {
+    await calDropInstant(calDragTaskId, date, time);
+  } else if (calDragType === 'block' && calDragBlockId) {
+    const block = Object.values(state.weekBlocks).flat().find(b => b.id === calDragBlockId);
+    const dur = block?.duration_minutes || 60;
+    if (gcalBusyConflict(date, time, dur, state.googleWeekEvents[date] || [])) {
+      toast('That time is busy on your Google Calendar');
+    } else {
+      try {
+        const updated = await api('PATCH', `/api/time-blocks/${calDragBlockId}`, { date, start_time: time });
+        for (const d of Object.keys(state.weekBlocks)) state.weekBlocks[d] = state.weekBlocks[d].filter(b => b.id !== calDragBlockId);
+        (state.weekBlocks[date] = state.weekBlocks[date] || []).push(updated);
+        state.weekBlocks[date].sort((a,x) => a.start_time.localeCompare(x.start_time));
+        renderCalendarWeekGrid();
+      } catch(err) { toast(err.message); }
+    }
+  }
   calDragType = null; calDragTaskId = null; calDragBlockId = null;
+}
+
+function wtgBlockDragStart(e, blockId) {
+  calDragType = 'block'; calDragBlockId = blockId;
+  e.dataTransfer.effectAllowed = 'move';
+  e.stopPropagation();
 }
 
 // Day settings modal

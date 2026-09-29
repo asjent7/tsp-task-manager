@@ -757,10 +757,13 @@ const blockWithTask = (id) => db.prepare(`
 `).get(id);
 
 app.get('/api/time-blocks', (req, res) => {
-  const { date, from, to } = req.query;
+  const { date, from, to, task_id } = req.query;
   const sel = `SELECT tb.*, t.title AS task_title, t.category AS task_category,
                t.priority AS task_priority, t.status AS task_status
                FROM time_blocks tb JOIN tasks t ON tb.task_id = t.id`;
+  if (task_id) {
+    return res.json(db.prepare(sel + ' WHERE tb.task_id = ? ORDER BY tb.date ASC, tb.start_time ASC').all(Number(task_id)));
+  }
   if (from && to) {
     return res.json(db.prepare(sel + ' WHERE tb.date >= ? AND tb.date <= ? ORDER BY tb.date ASC, tb.start_time ASC').all(from, to));
   }
