@@ -1481,7 +1481,7 @@
 
 <!-- Day Settings Modal -->
 <div class="overlay" id="day-settings-modal">
-  <div class="modal">
+  <div class="modal" style="max-width:460px;">
     <h3>Day View Settings</h3>
     <div class="modal-sub">Customize capacity and visible hours</div>
     <label style="display:block;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin-bottom:4px;">Daily Capacity (hours)</label>
@@ -1495,6 +1495,23 @@
         <label style="display:block;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin-bottom:4px;">Day End (1–24)</label>
         <input type="number" id="day-end-input" min="1" max="24">
       </div>
+    </div>
+    <!-- Google Calendar task-block sync section -->
+    <div id="gcal-sync-section" style="display:none;margin-top:16px;border-top:1px solid var(--border);padding-top:12px;">
+      <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin-bottom:8px;">Google Calendar — Task Blocks</div>
+      <div id="gcal-scope-warn" style="display:none;margin-bottom:8px;padding:6px 10px;background:#fef2f2;border:1px solid #fecaca;border-radius:5px;font-size:12px;color:#b91c1c;">
+        ⚠️ Your Google Calendar connection needs write access.
+        <a href="/api/auth/google" style="color:#b91c1c;font-weight:600;margin-left:4px;">Reconnect →</a>
+      </div>
+      <label style="display:block;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin-bottom:4px;">Target Calendar</label>
+      <select id="gcal-cal-select" style="width:100%;font-size:12px;padding:4px 6px;border:1px solid var(--border);border-radius:4px;background:var(--bg);color:var(--text);margin-bottom:10px;" onchange="gcalSaveCalendar(this.value)">
+        <option value="">TSP Time Blocks (auto-create)</option>
+      </select>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;">
+        <button class="btn btn-ghost btn-sm" onclick="gcalSyncNow()" id="gcal-sync-btn">↻ Sync now</button>
+        <button class="btn btn-ghost btn-sm" onclick="gcalBackfillBlocks()" id="gcal-backfill-btn">⬆ Push existing future blocks</button>
+      </div>
+      <div id="gcal-sync-status" style="font-size:11px;color:var(--muted);margin-top:6px;"></div>
     </div>
     <div class="modal-btns">
       <button class="btn btn-ghost btn-sm" onclick="closeDaySettings()">Cancel</button>
@@ -4769,11 +4786,14 @@ function renderCalendarDay() {
       ? `<button class="cal-day-block-log" onclick="event.stopPropagation();calDayLogBlock(${b.id})">⏱ Log ${fmtMins(b.duration_minutes)}</button>`
       : b.logged ? `<span style="font-size:9px;color:rgba(255,255,255,.65);">✓ logged</span>` : '';
 
+    const syncIcon = (state.googleCalConnected && !b.gcal_event_id)
+      ? `<span title="Not synced to Google Calendar" style="position:absolute;top:2px;right:18px;font-size:9px;opacity:.85;">⚠</span>` : '';
     blocksHtml += `<div class="cal-day-block${b.logged?' logged':''}"
       data-block-id="${b.id}" data-task-id="${b.task_id}"
       style="top:${y}px;height:${h}px;background:${col};"
       onmousedown="calDayBlockMouseDown(event,${b.id},${y})">
       <button class="cal-day-block-remove" onmousedown="event.stopPropagation()" onclick="event.stopPropagation();calDayDeleteBlock(${b.id})" title="Remove block">×</button>
+      ${syncIcon}
       <div class="cal-day-block-title">${esc(b.task_title)}</div>
       ${h >= 36 ? `<div class="cal-day-block-sub">${fmt12(b.start_time)} · ${fmtMins(b.duration_minutes)}</div>` : ''}
       ${h >= 50 ? logBtn : ''}
@@ -4788,7 +4808,8 @@ function renderCalendarDay() {
   const gcalAllDay = [];
   const gridStartMs = new Date(`${state.calDayStr}T${String(startHour).padStart(2,'0')}:00:00`).getTime();
   const gridEndMs   = new Date(`${state.calDayStr}T${String(endHour).padStart(2,'0')}:00:00`).getTime();
-  (state.googleEvents || []).forEach(evt => {
+  const ownedEventIds = new Set(state.timeBlocks.map(b => b.gcal_event_id).filter(Boolean));
+  (state.googleEvents || []).filter(e => !ownedEventIds.has(e.id)).forEach(evt => {
     if (evt.all_day) { gcalAllDay.push(evt); return; }
     if (!evt.start || evt.start.length === 10) return;
     const evtStartMs = new Date(evt.start).getTime();
@@ -5631,11 +5652,12 @@ function renderCalendarWeekGrid() {
       </div>`;
     });
 
-    // Google Calendar events
+    // Google Calendar events (exclude blocks we own)
     let gcalHtml = '';
     const gsMs = new Date(`${ds}T${String(startHour).padStart(2,'0')}:00:00`).getTime();
     const geMs = new Date(`${ds}T${String(endHour).padStart(2,'0')}:00:00`).getTime();
-    (state.googleWeekEvents[ds] || []).forEach(evt => {
+    const ownedWkIds = new Set(Object.values(state.weekBlocks).flat().map(b => b.gcal_event_id).filter(Boolean));
+    (state.googleWeekEvents[ds] || []).filter(e => !ownedWkIds.has(e.id)).forEach(evt => {
       if (evt.all_day || !evt.start || evt.start.length === 10) return;
       const evtS = new Date(evt.start).getTime(), evtE = evt.end ? new Date(evt.end).getTime() : evtS + 3600000;
       if (evtS >= geMs || evtE <= gsMs) return;
@@ -5755,12 +5777,28 @@ function wtgBlockDragStart(e, blockId) {
 }
 
 // Day settings modal
-function openDaySettings() {
+async function openDaySettings() {
   document.getElementById('day-cap-input').value   = state.daySettings.capacityMinutes / 60;
   document.getElementById('day-start-input').value = state.daySettings.startHour;
   document.getElementById('day-end-input').value   = state.daySettings.endHour;
   document.getElementById('day-settings-modal').classList.add('open');
   setTimeout(() => document.getElementById('day-cap-input').focus(), 50);
+  // GCal section
+  const gcalSection = document.getElementById('gcal-sync-section');
+  if (state.googleCalConnected) {
+    gcalSection.style.display = '';
+    document.getElementById('gcal-sync-status').textContent = '';
+    try {
+      const cals = await api('GET', '/api/gcal/calendars');
+      const sel  = document.getElementById('gcal-cal-select');
+      const savedId = (await api('GET', '/api/settings').catch(() => ({}))).gcal_task_calendar_id || '';
+      sel.innerHTML = '<option value="">TSP Time Blocks (auto-create)</option>' +
+        cals.map(c => `<option value="${esc(c.id)}" ${savedId === c.id ? 'selected' : ''}>${esc(c.name)}${c.primary ? ' (primary)' : ''}</option>`).join('');
+      if (savedId) sel.value = savedId;
+    } catch(_) {}
+  } else {
+    gcalSection.style.display = 'none';
+  }
 }
 function closeDaySettings() { document.getElementById('day-settings-modal').classList.remove('open'); }
 document.getElementById('day-settings-modal').addEventListener('click', e => { if (e.target===e.currentTarget) closeDaySettings(); });
@@ -5778,6 +5816,44 @@ async function saveDaySettings() {
     state.daySettings = { capacityMinutes: parseInt(s.daily_capacity_minutes), startHour: parseInt(s.day_start_hour), endHour: parseInt(s.day_end_hour) };
     closeDaySettings(); renderCalendarDay(); toast('Settings saved');
   } catch(err) { toast(err.message); }
+}
+
+function gcalSaveCalendar(calId) {
+  api('PATCH', '/api/settings', { gcal_task_calendar_id: calId || '' }).catch(() => {});
+}
+
+async function gcalBackfillBlocks() {
+  const btn = document.getElementById('gcal-backfill-btn');
+  const status = document.getElementById('gcal-sync-status');
+  btn.disabled = true; btn.textContent = 'Pushing…';
+  try {
+    const r = await api('POST', '/api/time-blocks/backfill');
+    if (r.scopeError) {
+      document.getElementById('gcal-scope-warn').style.display = '';
+      status.textContent = 'Write access required — reconnect Google Calendar.';
+    } else {
+      status.textContent = `Done: ${r.synced} synced, ${r.failed} failed (of ${r.total} future blocks).`;
+    }
+  } catch(e) { status.textContent = 'Error: ' + e.message; }
+  btn.disabled = false; btn.textContent = '⬆ Push existing future blocks';
+}
+
+async function gcalSyncNow() {
+  const btn = document.getElementById('gcal-sync-btn');
+  const status = document.getElementById('gcal-sync-status');
+  btn.disabled = true; btn.textContent = 'Syncing…';
+  try {
+    const r = await api('POST', '/api/time-blocks/backfill');
+    if (r.scopeError) {
+      document.getElementById('gcal-scope-warn').style.display = '';
+      status.textContent = 'Write access required — reconnect Google Calendar.';
+    } else if (r.total === 0) {
+      status.textContent = 'All blocks are already synced.';
+    } else {
+      status.textContent = `Synced ${r.synced} of ${r.total} unsynced blocks.`;
+    }
+  } catch(e) { status.textContent = 'Error: ' + e.message; }
+  btn.disabled = false; btn.textContent = '↻ Sync now';
 }
 
 // ── Focus Lists ───────────────────────────────────────────────────────────────
