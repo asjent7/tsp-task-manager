@@ -1568,6 +1568,7 @@ let state = {
   daySettings: { capacityMinutes: 480, startHour: 5, endHour: 21 },
   googleCalConnected: false,
   googleCalConnectedAt: null,
+  googleCalEmail: null,
   googleCalWriteScope: false,
   googleGmailScope: false,
   googleEvents: [],
@@ -1764,6 +1765,7 @@ async function loadAll() {
   };
   state.googleCalConnected   = googleStatus.connected;
   state.googleCalConnectedAt = googleStatus.connected_at;
+  state.googleCalEmail       = googleStatus.email || null;
   state.googleCalWriteScope  = !!googleStatus.write_scope;
   state.googleGmailScope     = !!googleStatus.gmail_scope;
 
@@ -6113,13 +6115,19 @@ async function deleteFocusList(id, name) {
 // ── Settings ─────────────────────────────────────────────────────────────────
 
 function renderSettings() {
-  const connectedAt = state.googleCalConnectedAt
-    ? new Date(state.googleCalConnectedAt + (state.googleCalConnectedAt.includes('T') ? '' : 'T00:00:00'))
-        .toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
-    : null;
+  let connectedLabel = '';
+  if (state.googleCalConnected) {
+    if (state.googleCalEmail) {
+      connectedLabel = state.googleCalEmail;
+    } else if (state.googleCalConnectedAt) {
+      const iso = state.googleCalConnectedAt.replace(' ', 'T');
+      const d = new Date(iso);
+      connectedLabel = isNaN(d) ? '' : d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+    }
+  }
 
   const statusHtml = state.googleCalConnected
-    ? `<span class="settings-gcal-status">✓ Connected${connectedAt ? ' · ' + connectedAt : ''}</span>
+    ? `<span class="settings-gcal-status">✓ Connected${connectedLabel ? ' · ' + esc(connectedLabel) : ''}</span>
        <button class="btn btn-ghost btn-sm" style="margin-top:6px;" onclick="disconnectGoogle()">Disconnect</button>`
     : `<button class="btn btn-primary btn-sm" onclick="connectGoogle()">Connect Google Calendar</button>`;
 
@@ -6130,7 +6138,7 @@ function renderSettings() {
         <div class="settings-row">
           <div class="settings-row-info">
             <div class="settings-row-label">Google Calendar</div>
-            <div class="settings-row-desc">Overlay your Google Calendar events in Day and Week views — read-only, so you can see existing commitments when placing task time blocks.</div>
+            <div class="settings-row-desc">Shows your Google Calendar events in Day and Week views, and pushes task time blocks to a dedicated <strong>TSP Time Blocks</strong> calendar so your schedule stays in sync.</div>
           </div>
           <div style="display:flex;flex-direction:column;align-items:flex-end;gap:6px;flex-shrink:0;">${statusHtml}</div>
         </div>
