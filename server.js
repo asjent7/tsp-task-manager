@@ -179,6 +179,27 @@ try { db.prepare('ALTER TABLE category_blocks ADD COLUMN google_event_id TEXT').
 try { db.prepare('ALTER TABLE time_blocks ADD COLUMN gcal_event_id TEXT').run(); } catch(e) {}
 try { db.prepare('ALTER TABLE time_blocks ADD COLUMN gcal_linked INTEGER NOT NULL DEFAULT 0').run(); } catch(e) {}
 try { db.prepare('ALTER TABLE tasks ADD COLUMN gmail_message_id TEXT').run(); } catch(e) {}
+try { db.prepare('ALTER TABLE tasks ADD COLUMN gmail_thread_id TEXT').run(); } catch(e) {}
+try { db.prepare('ALTER TABLE tasks ADD COLUMN source_url TEXT').run(); } catch(e) {}
+try { db.prepare('ALTER TABLE tasks ADD COLUMN source_sender TEXT').run(); } catch(e) {}
+try { db.prepare('ALTER TABLE tasks ADD COLUMN source_date TEXT').run(); } catch(e) {}
+// One-time: backfill source fields from existing Gmail task notes
+if (!db.prepare("SELECT value FROM settings WHERE key='gmail_source_backfill_v1'").get()) {
+  try {
+    const rows = db.prepare("SELECT id, notes FROM tasks WHERE gmail_message_id IS NOT NULL AND source_url IS NULL AND notes IS NOT NULL").all();
+    const stmt = db.prepare('UPDATE tasks SET source_url=?, source_sender=?, source_date=? WHERE id=?');
+    for (const r of rows) {
+      const urlM    = r.notes.match(/\[Open in Gmail\]\((https[^\)]+)\)/);
+      const fromM   = r.notes.match(/^From:\s(.+)/m);
+      const dateM   = r.notes.match(/^Date:\s(.+)/m);
+      const url     = urlM  ? urlM[1].trim()  : null;
+      const sender  = fromM ? fromM[1].trim() : null;
+      const date    = dateM ? dateM[1].trim() : null;
+      if (url || sender) stmt.run(url, sender, date, r.id);
+    }
+    db.prepare("INSERT OR REPLACE INTO settings (key,value) VALUES ('gmail_source_backfill_v1','1')").run();
+  } catch(e) { console.error('[migration] gmail_source_backfill_v1 failed:', e.message); }
+}
 try { db.prepare("ALTER TABLE projects ADD COLUMN type TEXT NOT NULL DEFAULT 'professional'").run(); } catch(e) {}
 try { db.prepare('ALTER TABLE projects ADD COLUMN division TEXT').run(); } catch(e) {}
 
@@ -1702,6 +1723,34 @@ async function gmailModifyLabels(token, msgId, remove, add) {
   if (r?.error) throw new Error(r.error.message);
 }
 
+async function gmailModifyThread(token, threadId, remove, add) {
+  const body = JSON.stringify({ removeLabelIds: remove, addLabelIds: add });
+  const r = await httpsReq({ hostname:'www.googleapis.com',
+    path:`/gmail/v1/users/me/threads/${threadId}/modify`, method:'POST',
+    headers:{ Authorization:'Bearer '+token, 'Content-Type':'application/json', 'Content-Length':Buffer.byteLength(body) } }, body);
+  if (r?.error) throw new Error(r.error.message);
+}
+
+function stripEmailQuotes(text) {
+  if (!text) return '';
+  const lines = text.split('\n');
+  const out = [];
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    // Stop at quoted-reply markers
+    if (/^On .+wrote:\s*$/.test(line.trim())) break;
+    if (/^From:\s.+Sent:\s/.test(line)) break;
+    if (/^-{3,}\s*Original Message\s*-{3,}/i.test(line)) break;
+    if (/^_{3,}/.test(line)) break;
+    // Skip lines that are quoted (start with >)
+    if (/^>/.test(line)) continue;
+    out.push(line);
+  }
+  // Trim trailing blank lines
+  while (out.length && !out[out.length - 1].trim()) out.pop();
+  return out.join('\n');
+}
+
 async function gmailCheckInbox() {
   const auth = db.prepare('SELECT refresh_token FROM google_auth WHERE id=1').get();
   if (!auth) return { count: 0, error: 'Not connected' };
@@ -1710,58 +1759,80 @@ async function gmailCheckInbox() {
     const { toTaskId, taskedId } = await gmailEnsureLabels(token);
 
     const listData = await httpsReq({ hostname:'www.googleapis.com',
-      path:`/gmail/v1/users/me/messages?labelIds=${encodeURIComponent(toTaskId)}&maxResults=50`,
+      path:`/gmail/v1/users/me/threads?labelIds=${encodeURIComponent(toTaskId)}&maxResults=50`,
       method:'GET', headers:{ Authorization:'Bearer '+token } });
     if (listData?.error) throw new Error(listData.error.message);
 
-    const messages = listData?.messages || [];
+    const threads = listData?.threads || [];
     let count = 0;
 
-    for (const msg of messages) {
-      const exists = db.prepare('SELECT id FROM tasks WHERE gmail_message_id=?').get(msg.id);
-      if (exists) {
-        // Already processed — remove label silently if it's still there
-        await gmailModifyLabels(token, msg.id, [toTaskId], []).catch(() => {});
-        continue;
-      }
+    for (const t of threads) {
+      const threadId = t.id;
 
-      const full = await httpsReq({ hostname:'www.googleapis.com',
-        path:`/gmail/v1/users/me/messages/${msg.id}?format=full`,
+      // Fetch full thread to get all messages
+      const threadData = await httpsReq({ hostname:'www.googleapis.com',
+        path:`/gmail/v1/users/me/threads/${threadId}?format=full`,
         method:'GET', headers:{ Authorization:'Bearer '+token } });
-      if (full?.error) { console.error('Gmail get message error:', full.error.message); continue; }
+      if (threadData?.error) { console.error('Gmail get thread error:', threadData.error.message); continue; }
 
-      const hdrs    = full.payload?.headers || [];
+      const msgs = threadData?.messages || [];
+      if (!msgs.length) continue;
+
+      // Always use the most recent message
+      const msg = msgs[msgs.length - 1];
+      const hdrs    = msg.payload?.headers || [];
       const subject = gmailHdr(hdrs, 'Subject');
       const from    = gmailHdr(hdrs, 'From');
       const date    = gmailHdr(hdrs, 'Date');
+      const gmailUrl = `https://mail.google.com/mail/u/0/#all/${threadId}`;
 
-      // Title: strip reply/forward prefixes
+      // Check thread-level dedup first
+      const existsByThread = db.prepare('SELECT id FROM tasks WHERE gmail_thread_id=?').get(threadId);
+      if (existsByThread) {
+        // Thread already has a task — add an Updates Log entry
+        const updateContent = `New email from ${from} · ${date}\n[Open in Gmail](${gmailUrl})`;
+        db.prepare('INSERT INTO task_updates (task_id, content) VALUES (?, ?)').run(existsByThread.id, updateContent);
+        await gmailModifyThread(token, threadId, [toTaskId], [taskedId]).catch(e =>
+          console.error('Gmail label swap error:', e.message));
+        console.log(`[Gmail] Thread ${threadId} already has task #${existsByThread.id} — added update`);
+        continue;
+      }
+
+      // Legacy message-level dedup (for tasks created before thread tracking)
+      const existsByMsg = db.prepare('SELECT id FROM tasks WHERE gmail_message_id=?').get(msg.id);
+      if (existsByMsg) {
+        // Backfill thread ID and remove label
+        db.prepare('UPDATE tasks SET gmail_thread_id=? WHERE id=?').run(threadId, existsByMsg.id);
+        await gmailModifyThread(token, threadId, [toTaskId], [taskedId]).catch(() => {});
+        continue;
+      }
+
+      // New thread — create task
       let title = subject.replace(/^(re:|fwd:|fw:)\s*/gi, '').trim();
       if (!title) title = `Email from ${from}`;
 
-      // Priority tags
       let priority = 'medium';
       if (/!urgent/i.test(title)) { priority = 'urgent'; title = title.replace(/!urgent\s*/gi, '').trim(); }
       else if (/!high/i.test(title)) { priority = 'high'; title = title.replace(/!high\s*/gi, '').trim(); }
       if (!title) title = `Email from ${from}`;
 
-      const rawBody  = extractGmailText(full.payload).trim();
-      const bodySnip = rawBody.slice(0, 2000) + (rawBody.length > 2000 ? '…' : '');
-      const gmailUrl = `https://mail.google.com/mail/u/0/#all/${full.threadId}`;
-      const notes    = `From: ${from}\nDate: ${date}\n[Open in Gmail](${gmailUrl})\n\n${bodySnip}`;
+      const rawBody   = extractGmailText(msg.payload).trim();
+      const cleaned   = stripEmailQuotes(rawBody);
+      const bodySnip  = cleaned.slice(0, 2000) + (cleaned.length > 2000 ? '…' : '');
+      const notes     = bodySnip;
 
-      db.prepare(`INSERT INTO tasks (title, priority, status, notes, is_inbox, gmail_message_id)
-        VALUES (?, ?, 'new', ?, 1, ?)`)
-        .run(title, priority, notes, msg.id);
+      db.prepare(`INSERT INTO tasks (title, priority, status, notes, is_inbox, gmail_message_id, gmail_thread_id, source_url, source_sender, source_date)
+        VALUES (?, ?, 'new', ?, 1, ?, ?, ?, ?, ?)`)
+        .run(title, priority, notes, msg.id, threadId, gmailUrl, from, date);
       count++;
 
-      await gmailModifyLabels(token, msg.id, [toTaskId], [taskedId]).catch(e =>
+      await gmailModifyThread(token, threadId, [toTaskId], [taskedId]).catch(e =>
         console.error('Gmail label swap error:', e.message));
     }
 
     db.prepare('INSERT OR REPLACE INTO settings (key,value) VALUES (?,?)').run('gmail_last_checked', new Date().toISOString());
     db.prepare('INSERT OR REPLACE INTO settings (key,value) VALUES (?,?)').run('gmail_last_error', '');
-    console.log(`[Gmail] Processed ${messages.length} message(s), created ${count} task(s)`);
+    console.log(`[Gmail] Processed ${threads.length} thread(s), created ${count} task(s)`);
     return { count };
   } catch(e) {
     console.error('[Gmail] capture error:', e.message);
@@ -1798,6 +1869,52 @@ app.patch('/api/gmail/settings', (req, res) => {
     db.prepare('INSERT OR REPLACE INTO settings (key,value) VALUES (?,?)').run('gmail_capture_enabled', enabled ? '1' : '0');
   const s = k => db.prepare('SELECT value FROM settings WHERE key=?').get(k)?.value;
   res.json({ enabled: s('gmail_capture_enabled') === '1' });
+});
+
+// Show duplicate Gmail tasks grouped by subject (message_id dedup, thread_id null)
+app.get('/api/gmail/duplicates', (req, res) => {
+  const tasks = db.prepare(`
+    SELECT id, title, created_at, gmail_message_id, gmail_thread_id, status, notes
+    FROM tasks WHERE gmail_message_id IS NOT NULL
+    ORDER BY title, created_at
+  `).all();
+  const groups = {};
+  for (const t of tasks) {
+    const key = t.title.toLowerCase().trim();
+    if (!groups[key]) groups[key] = [];
+    groups[key].push(t);
+  }
+  const dupes = Object.values(groups).filter(g => g.length > 1);
+  res.json(dupes);
+});
+
+// Delete untouched duplicate Gmail tasks (keep newest by created_at, delete others if status=new, no time blocks, no updates beyond auto)
+app.post('/api/gmail/dedupe', (req, res) => {
+  const tasks = db.prepare(`
+    SELECT id, title, created_at FROM tasks WHERE gmail_message_id IS NOT NULL ORDER BY title, created_at
+  `).all();
+  const groups = {};
+  for (const t of tasks) {
+    const key = t.title.toLowerCase().trim();
+    if (!groups[key]) groups[key] = [];
+    groups[key].push(t);
+  }
+  let deleted = 0;
+  for (const group of Object.values(groups)) {
+    if (group.length < 2) continue;
+    // Keep the last (newest), delete earlier ones if untouched
+    const toDelete = group.slice(0, -1);
+    for (const t of toDelete) {
+      const status = db.prepare('SELECT status FROM tasks WHERE id=?').get(t.id)?.status;
+      const hasBlocks = db.prepare('SELECT COUNT(*) AS n FROM time_blocks WHERE task_id=?').get(t.id).n;
+      const hasUpdates = db.prepare('SELECT COUNT(*) AS n FROM task_updates WHERE task_id=?').get(t.id).n;
+      if (status === 'new' && hasBlocks === 0 && hasUpdates === 0) {
+        db.prepare('DELETE FROM tasks WHERE id=?').run(t.id);
+        deleted++;
+      }
+    }
+  }
+  res.json({ deleted });
 });
 
 // Background poll every 2 minutes
