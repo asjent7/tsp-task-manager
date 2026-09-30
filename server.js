@@ -178,6 +178,7 @@ try { db.prepare('ALTER TABLE time_blocks ADD COLUMN parent_category_block_id IN
 try { db.prepare('ALTER TABLE category_blocks ADD COLUMN google_event_id TEXT').run(); } catch(e) {}
 try { db.prepare('ALTER TABLE time_blocks ADD COLUMN gcal_event_id TEXT').run(); } catch(e) {}
 try { db.prepare('ALTER TABLE time_blocks ADD COLUMN gcal_linked INTEGER NOT NULL DEFAULT 0').run(); } catch(e) {}
+try { db.prepare('ALTER TABLE tasks ADD COLUMN gmail_message_id TEXT').run(); } catch(e) {}
 try { db.prepare("ALTER TABLE projects ADD COLUMN type TEXT NOT NULL DEFAULT 'professional'").run(); } catch(e) {}
 try { db.prepare('ALTER TABLE projects ADD COLUMN division TEXT').run(); } catch(e) {}
 
@@ -268,7 +269,8 @@ db.prepare('UPDATE tasks SET legacy_status = status WHERE legacy_status IS NULL'
 });
 
 // Default settings
-[['daily_capacity_minutes','480'],['day_start_hour','5'],['day_end_hour','21']]
+[['daily_capacity_minutes','480'],['day_start_hour','5'],['day_end_hour','21'],
+ ['gmail_capture_enabled','0']]
   .forEach(([k,v]) => db.prepare('INSERT OR IGNORE INTO settings (key,value) VALUES (?,?)').run(k,v));
 
 // Editable categories
@@ -1451,7 +1453,7 @@ app.get('/api/auth/google', (req, res) => {
     client_id:     process.env.GOOGLE_CLIENT_ID,
     redirect_uri:  GOOGLE_REDIRECT_URI,
     response_type: 'code',
-    scope:         'https://www.googleapis.com/auth/calendar https://www.googleapis.com/auth/userinfo.email',
+    scope:         'https://www.googleapis.com/auth/calendar https://www.googleapis.com/auth/gmail.modify https://www.googleapis.com/auth/userinfo.email',
     access_type:   'offline',
     prompt:        'consent'
   });
@@ -1485,22 +1487,25 @@ app.get('/api/auth/google/callback', async (req, res) => {
 
 app.get('/api/auth/google/status', async (req, res) => {
   const row = db.prepare('SELECT refresh_token, connected_at FROM google_auth WHERE id = 1').get();
-  if (!row) return res.json({ connected: false, connected_at: null, email: null, write_scope: false });
+  if (!row) return res.json({ connected: false, connected_at: null, email: null, write_scope: false, gmail_scope: false });
   try {
     const token = await googleAccessToken(row.refresh_token);
-    // tokeninfo tells us which scopes were actually granted
     const info = await httpsReq({ hostname:'www.googleapis.com', path:`/oauth2/v1/tokeninfo?access_token=${token}`, method:'GET', headers:{} });
     const grantedScopes = info?.scope || '';
     const writeScope = grantedScopes.includes('auth/calendar') || grantedScopes.includes('auth/calendar.events');
+    const gmailScope  = grantedScopes.includes('auth/gmail.modify');
     const email = info?.email || null;
-    res.json({ connected: true, connected_at: row.connected_at, email, write_scope: writeScope });
+    res.json({ connected: true, connected_at: row.connected_at, email, write_scope: writeScope, gmail_scope: gmailScope });
   } catch(e) {
-    res.json({ connected: true, connected_at: row.connected_at, email: null, write_scope: false });
+    res.json({ connected: true, connected_at: row.connected_at, email: null, write_scope: false, gmail_scope: false });
   }
 });
 
 app.delete('/api/auth/google', (req, res) => {
   db.prepare('DELETE FROM google_auth').run();
+  // Clear cached Gmail label IDs so they're re-fetched after reconnect
+  ['gmail_label_to_task_id','gmail_label_tasked_id'].forEach(k =>
+    db.prepare('DELETE FROM settings WHERE key=?').run(k));
   res.status(204).end();
 });
 
@@ -1639,6 +1644,168 @@ app.get('/api/share/:token', (req, res) => {
 app.get('/share/n/:token', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'share.html'));
 });
+
+// ── Gmail capture ─────────────────────────────────────────────────────────────
+
+function extractGmailText(payload) {
+  if (!payload) return '';
+  if (payload.mimeType === 'text/plain' && payload.body?.data) {
+    return Buffer.from(payload.body.data, 'base64url').toString('utf8');
+  }
+  if (payload.parts) {
+    for (const p of payload.parts) {
+      if (p.mimeType === 'text/plain' && p.body?.data)
+        return Buffer.from(p.body.data, 'base64url').toString('utf8');
+    }
+    for (const p of payload.parts) { const t = extractGmailText(p); if (t) return t; }
+  }
+  return '';
+}
+
+function gmailHdr(headers, name) {
+  return (headers || []).find(h => h.name.toLowerCase() === name.toLowerCase())?.value || '';
+}
+
+async function gmailEnsureLabels(token) {
+  const getSetting = k => db.prepare('SELECT value FROM settings WHERE key=?').get(k)?.value;
+  const toTaskId = getSetting('gmail_label_to_task_id');
+  const taskedId = getSetting('gmail_label_tasked_id');
+  if (toTaskId && taskedId) return { toTaskId, taskedId };
+
+  const data = await httpsReq({ hostname:'www.googleapis.com', path:'/gmail/v1/users/me/labels',
+    method:'GET', headers:{ Authorization:'Bearer '+token } });
+  if (data?.error) throw new Error(data.error.message);
+  const labels = data?.labels || [];
+
+  async function ensureLabel(name) {
+    let lbl = labels.find(l => l.name === name);
+    if (!lbl) {
+      const body = JSON.stringify({ name, labelListVisibility:'labelShow', messageListVisibility:'show' });
+      lbl = await httpsReq({ hostname:'www.googleapis.com', path:'/gmail/v1/users/me/labels', method:'POST',
+        headers:{ Authorization:'Bearer '+token, 'Content-Type':'application/json', 'Content-Length':Buffer.byteLength(body) } }, body);
+      if (lbl?.error) throw new Error(lbl.error.message);
+    }
+    return lbl;
+  }
+
+  const [toTask, tasked] = await Promise.all([ensureLabel('→ Task'), ensureLabel('✓ Tasked')]);
+  db.prepare('INSERT OR REPLACE INTO settings (key,value) VALUES (?,?)').run('gmail_label_to_task_id', toTask.id);
+  db.prepare('INSERT OR REPLACE INTO settings (key,value) VALUES (?,?)').run('gmail_label_tasked_id',  tasked.id);
+  return { toTaskId: toTask.id, taskedId: tasked.id };
+}
+
+async function gmailModifyLabels(token, msgId, remove, add) {
+  const body = JSON.stringify({ removeLabelIds: remove, addLabelIds: add });
+  const r = await httpsReq({ hostname:'www.googleapis.com',
+    path:`/gmail/v1/users/me/messages/${msgId}/modify`, method:'POST',
+    headers:{ Authorization:'Bearer '+token, 'Content-Type':'application/json', 'Content-Length':Buffer.byteLength(body) } }, body);
+  if (r?.error) throw new Error(r.error.message);
+}
+
+async function gmailCheckInbox() {
+  const auth = db.prepare('SELECT refresh_token FROM google_auth WHERE id=1').get();
+  if (!auth) return { count: 0, error: 'Not connected' };
+  try {
+    const token = await googleAccessToken(auth.refresh_token);
+    const { toTaskId, taskedId } = await gmailEnsureLabels(token);
+
+    const listData = await httpsReq({ hostname:'www.googleapis.com',
+      path:`/gmail/v1/users/me/messages?labelIds=${encodeURIComponent(toTaskId)}&maxResults=50`,
+      method:'GET', headers:{ Authorization:'Bearer '+token } });
+    if (listData?.error) throw new Error(listData.error.message);
+
+    const messages = listData?.messages || [];
+    let count = 0;
+
+    for (const msg of messages) {
+      const exists = db.prepare('SELECT id FROM tasks WHERE gmail_message_id=?').get(msg.id);
+      if (exists) {
+        // Already processed — remove label silently if it's still there
+        await gmailModifyLabels(token, msg.id, [toTaskId], []).catch(() => {});
+        continue;
+      }
+
+      const full = await httpsReq({ hostname:'www.googleapis.com',
+        path:`/gmail/v1/users/me/messages/${msg.id}?format=full`,
+        method:'GET', headers:{ Authorization:'Bearer '+token } });
+      if (full?.error) { console.error('Gmail get message error:', full.error.message); continue; }
+
+      const hdrs    = full.payload?.headers || [];
+      const subject = gmailHdr(hdrs, 'Subject');
+      const from    = gmailHdr(hdrs, 'From');
+      const date    = gmailHdr(hdrs, 'Date');
+
+      // Title: strip reply/forward prefixes
+      let title = subject.replace(/^(re:|fwd:|fw:)\s*/gi, '').trim();
+      if (!title) title = `Email from ${from}`;
+
+      // Priority tags
+      let priority = 'medium';
+      if (/!urgent/i.test(title)) { priority = 'urgent'; title = title.replace(/!urgent\s*/gi, '').trim(); }
+      else if (/!high/i.test(title)) { priority = 'high'; title = title.replace(/!high\s*/gi, '').trim(); }
+      if (!title) title = `Email from ${from}`;
+
+      const rawBody  = extractGmailText(full.payload).trim();
+      const bodySnip = rawBody.slice(0, 2000) + (rawBody.length > 2000 ? '…' : '');
+      const gmailUrl = `https://mail.google.com/mail/u/0/#all/${full.threadId}`;
+      const notes    = `From: ${from}\nDate: ${date}\n[Open in Gmail](${gmailUrl})\n\n${bodySnip}`;
+
+      db.prepare(`INSERT INTO tasks (title, priority, status, notes, is_inbox, gmail_message_id)
+        VALUES (?, ?, 'new', ?, 1, ?)`)
+        .run(title, priority, notes, msg.id);
+      count++;
+
+      await gmailModifyLabels(token, msg.id, [toTaskId], [taskedId]).catch(e =>
+        console.error('Gmail label swap error:', e.message));
+    }
+
+    db.prepare('INSERT OR REPLACE INTO settings (key,value) VALUES (?,?)').run('gmail_last_checked', new Date().toISOString());
+    db.prepare('INSERT OR REPLACE INTO settings (key,value) VALUES (?,?)').run('gmail_last_error', '');
+    console.log(`[Gmail] Processed ${messages.length} message(s), created ${count} task(s)`);
+    return { count };
+  } catch(e) {
+    console.error('[Gmail] capture error:', e.message);
+    db.prepare('INSERT OR REPLACE INTO settings (key,value) VALUES (?,?)').run('gmail_last_error', e.message);
+    db.prepare('INSERT OR REPLACE INTO settings (key,value) VALUES (?,?)').run('gmail_last_checked', new Date().toISOString());
+    return { count: 0, error: e.message };
+  }
+}
+
+app.get('/api/gmail/status', (req, res) => {
+  const s = k => db.prepare('SELECT value FROM settings WHERE key=?').get(k)?.value;
+  const today      = new Date().toISOString().slice(0, 10);
+  const taskCount  = db.prepare("SELECT COUNT(*) AS n FROM tasks WHERE gmail_message_id IS NOT NULL AND date(created_at)=?").get(today).n;
+  const lastError  = s('gmail_last_error');
+  res.json({
+    enabled:       s('gmail_capture_enabled') === '1',
+    last_checked:  s('gmail_last_checked') || null,
+    tasks_today:   taskCount,
+    last_error:    lastError || null,
+    connected:     !!db.prepare('SELECT id FROM google_auth WHERE id=1').get(),
+  });
+});
+
+app.post('/api/gmail/check', async (req, res) => {
+  if (!db.prepare('SELECT id FROM google_auth WHERE id=1').get())
+    return res.status(400).json({ error: 'Google not connected' });
+  const result = await gmailCheckInbox();
+  res.json(result);
+});
+
+app.patch('/api/gmail/settings', (req, res) => {
+  const { enabled } = req.body;
+  if (enabled !== undefined)
+    db.prepare('INSERT OR REPLACE INTO settings (key,value) VALUES (?,?)').run('gmail_capture_enabled', enabled ? '1' : '0');
+  const s = k => db.prepare('SELECT value FROM settings WHERE key=?').get(k)?.value;
+  res.json({ enabled: s('gmail_capture_enabled') === '1' });
+});
+
+// Background poll every 2 minutes
+setInterval(async () => {
+  const enabled = db.prepare("SELECT value FROM settings WHERE key='gmail_capture_enabled'").get()?.value;
+  if (enabled !== '1') return;
+  await gmailCheckInbox();
+}, 2 * 60 * 1000);
 
 // ── Start ─────────────────────────────────────────────────────────────────────
 
