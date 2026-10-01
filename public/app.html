@@ -4317,17 +4317,30 @@ async function submitSubtaskPasteArea() {
 
 document.getElementById('subtask-input').addEventListener('keydown', e => { if (e.key === 'Enter') addSubtask(); });
 
-document.getElementById('subtask-input').addEventListener('paste', async e => {
-  const text = (e.clipboardData || window.clipboardData).getData('text');
-  if (!text.includes('\n')) return; // single-line paste: browser handles it normally
+document.getElementById('subtask-input').addEventListener('paste', e => {
+  let text;
+  try {
+    text = (e.clipboardData || window.clipboardData).getData('text/plain')
+        || (e.clipboardData || window.clipboardData).getData('text');
+  } catch (_) {
+    return; // clipboard unreadable — let browser handle normally
+  }
+  if (!text || !text.includes('\n')) return; // single-line: let browser paste normally
   e.preventDefault();
-  const items = parsePastedSubtasks(text);
-  if (!items.length) return;
   document.getElementById('subtask-input').value = '';
+  let items;
+  try {
+    items = parsePastedSubtasks(text);
+  } catch (_) {
+    // parsing failed — fall back to first line as plain text
+    document.getElementById('subtask-input').value = text.split('\n')[0].trim();
+    return;
+  }
+  if (!items.length) return;
   if (items.length > 3) {
     showSubtaskPastePreview(items);
   } else {
-    await addSubtaskBatch(items);
+    addSubtaskBatch(items).catch(() => {});
   }
 });
 
