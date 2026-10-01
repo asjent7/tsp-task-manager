@@ -444,6 +444,11 @@
     .subtask-paste-preview ul { margin: 6px 0 10px; padding-left: 16px; }
     .subtask-paste-preview li { margin-bottom: 3px; color: var(--text); }
     .subtask-paste-preview .preview-actions { display: flex; gap: 6px; }
+    .subtask-paste-link { font-size: 11px; color: var(--accent); background: none; border: none; cursor: pointer; padding: 0; text-decoration: underline; flex-shrink: 0; }
+    .subtask-paste-area { margin-top: 8px; display: none; }
+    .subtask-paste-area textarea { width: 100%; padding: 7px 10px; border: 1px solid var(--border); border-radius: 6px; font-size: 12px; font-family: inherit; resize: vertical; outline: none; box-sizing: border-box; }
+    .subtask-paste-area textarea:focus { border-color: var(--accent); }
+    .subtask-paste-area .preview-actions { display: flex; gap: 6px; margin-top: 6px; }
 
     /* ── Modals ── */
     .overlay { position: fixed; inset: 0; background: rgba(0,0,0,.4); z-index: 200; display: none; align-items: center; justify-content: center; }
@@ -1017,6 +1022,14 @@
       <div class="subtask-add-form">
         <input type="text" id="subtask-input" placeholder="Add subtask…" autocomplete="off">
         <button class="btn btn-ghost btn-sm" onclick="addSubtask()">Add</button>
+        <button class="subtask-paste-link" onclick="openSubtaskPasteArea()" title="Paste a list of subtasks">Paste list</button>
+      </div>
+      <div class="subtask-paste-area" id="subtask-paste-area">
+        <textarea id="subtask-paste-textarea" rows="5" placeholder="One subtask per line. Supports bullets, numbers, checkboxes…"></textarea>
+        <div class="preview-actions">
+          <button class="btn btn-primary btn-sm" onclick="submitSubtaskPasteArea()">Add subtasks</button>
+          <button class="btn btn-ghost btn-sm" onclick="closeSubtaskPasteArea()">Cancel</button>
+        </div>
       </div>
       <div class="subtask-paste-preview" id="subtask-paste-preview"></div>
 
@@ -4280,6 +4293,26 @@ function cancelSubtaskPaste() {
   const el = document.getElementById('subtask-paste-preview');
   el.style.display = 'none';
   el._pendingItems = null;
+}
+
+function openSubtaskPasteArea() {
+  const area = document.getElementById('subtask-paste-area');
+  area.style.display = '';
+  document.getElementById('subtask-paste-textarea').focus();
+}
+
+function closeSubtaskPasteArea() {
+  const area = document.getElementById('subtask-paste-area');
+  area.style.display = 'none';
+  document.getElementById('subtask-paste-textarea').value = '';
+}
+
+async function submitSubtaskPasteArea() {
+  const ta = document.getElementById('subtask-paste-textarea');
+  const items = parsePastedSubtasks(ta.value);
+  if (!items.length) { closeSubtaskPasteArea(); return; }
+  closeSubtaskPasteArea();
+  await addSubtaskBatch(items);
 }
 
 document.getElementById('subtask-input').addEventListener('keydown', e => { if (e.key === 'Enter') addSubtask(); });
