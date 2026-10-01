@@ -440,6 +440,10 @@
     .subtask-add-form { display: flex; gap: 6px; margin-top: 8px; }
     .subtask-add-form input { flex: 1; padding: 6px 10px; border: 1px solid var(--border); border-radius: 6px; font-size: 12px; outline: none; font-family: inherit; }
     .subtask-add-form input:focus { border-color: var(--accent); }
+    .subtask-paste-preview { margin-top: 8px; padding: 10px 12px; background: var(--hover); border: 1px solid var(--border); border-radius: 7px; font-size: 12px; display: none; }
+    .subtask-paste-preview ul { margin: 6px 0 10px; padding-left: 16px; }
+    .subtask-paste-preview li { margin-bottom: 3px; color: var(--text); }
+    .subtask-paste-preview .preview-actions { display: flex; gap: 6px; }
 
     /* ── Modals ── */
     .overlay { position: fixed; inset: 0; background: rgba(0,0,0,.4); z-index: 200; display: none; align-items: center; justify-content: center; }
@@ -1014,6 +1018,7 @@
         <input type="text" id="subtask-input" placeholder="Add subtask…" autocomplete="off">
         <button class="btn btn-ghost btn-sm" onclick="addSubtask()">Add</button>
       </div>
+      <div class="subtask-paste-preview" id="subtask-paste-preview"></div>
 
       <hr style="border:none;border-top:1px solid var(--border);margin:16px 0;">
 
@@ -4201,7 +4206,97 @@ async function addSubtask() {
   renderSubtasks(); renderTaskList();
 }
 
+// Parse pasted text into subtask lines: strip bullets/numbering, detect checked state
+function parsePastedSubtasks(text) {
+  const seen = new Set();
+  return text.split('\n').flatMap(raw => {
+    let line = raw.trim();
+    if (!line) return [];
+    // Detect checked checkbox markers
+    const checked = /^[-*•]?\s*\[x\]\s*/i.test(line);
+    // Strip leading markers: "- [x]", "- [ ]", "[x]", "[ ]", "1.", "1)", "a.", "-", "*", "•"
+    line = line
+      .replace(/^[-*•]?\s*\[[x ]\]\s*/i, '')
+      .replace(/^\s*\d+[.)]\s+/, '')
+      .replace(/^[a-z][.)]\s+/i, '')
+      .replace(/^[-*•]\s+/, '')
+      .trim();
+    if (!line) return [];
+    const key = line.toLowerCase();
+    if (seen.has(key)) return [];
+    seen.add(key);
+    return [{ title: line, checked }];
+  });
+}
+
+async function addSubtaskBatch(items) {
+  if (!items.length) return;
+  const taskId = state.selectedId;
+  const added = [];
+  for (const item of items) {
+    const sub = await api('POST', `/api/tasks/${taskId}/subtasks`, { title: item.title });
+    if (item.checked) {
+      await api('PATCH', `/api/subtasks/${sub.id}`, { completed: true });
+      sub.completed = 1;
+    }
+    added.push(sub);
+    state.subtasks.push(sub);
+  }
+  const task = state.tasks.find(t => t.id === taskId);
+  if (task) { task.subtask_count = (task.subtask_count||0) + added.length; task.subtask_done = state.subtasks.filter(s => s.completed).length; }
+  renderSubtasks(); renderTaskList();
+  toast(`Added ${added.length} subtask${added.length > 1 ? 's' : ''}`, async () => {
+    for (const s of added) {
+      await api('DELETE', `/api/subtasks/${s.id}`);
+      state.subtasks = state.subtasks.filter(x => x.id !== s.id);
+    }
+    const t2 = state.tasks.find(t => t.id === taskId);
+    if (t2) { t2.subtask_count = Math.max(0, (t2.subtask_count||0) - added.length); t2.subtask_done = state.subtasks.filter(s => s.completed).length; }
+    renderSubtasks(); renderTaskList();
+  });
+}
+
+function showSubtaskPastePreview(items) {
+  const el = document.getElementById('subtask-paste-preview');
+  el.style.display = '';
+  el.innerHTML = `<strong style="font-size:12px;">Paste ${items.length} subtasks?</strong>
+    <ul>${items.map(i => `<li>${esc(i.title)}${i.checked ? ' <span style="color:var(--muted);font-size:11px;">(checked)</span>' : ''}</li>`).join('')}</ul>
+    <div class="preview-actions">
+      <button class="btn btn-primary btn-sm" onclick="confirmSubtaskPaste()">Add ${items.length} subtasks</button>
+      <button class="btn btn-ghost btn-sm" onclick="cancelSubtaskPaste()">Cancel</button>
+    </div>`;
+  el._pendingItems = items;
+}
+
+async function confirmSubtaskPaste() {
+  const el = document.getElementById('subtask-paste-preview');
+  const items = el._pendingItems || [];
+  el.style.display = 'none';
+  el._pendingItems = null;
+  await addSubtaskBatch(items);
+}
+
+function cancelSubtaskPaste() {
+  const el = document.getElementById('subtask-paste-preview');
+  el.style.display = 'none';
+  el._pendingItems = null;
+}
+
 document.getElementById('subtask-input').addEventListener('keydown', e => { if (e.key === 'Enter') addSubtask(); });
+
+document.getElementById('subtask-input').addEventListener('paste', async e => {
+  const text = (e.clipboardData || window.clipboardData).getData('text');
+  if (!text.includes('\n')) return; // single-line paste: browser handles it normally
+  e.preventDefault();
+  const items = parsePastedSubtasks(text);
+  if (!items.length) return;
+  document.getElementById('subtask-input').value = '';
+  if (items.length > 3) {
+    showSubtaskPastePreview(items);
+  } else {
+    await addSubtaskBatch(items);
+  }
+});
 
 async function toggleSubtask(id, completed) {
   await api('PATCH', `/api/subtasks/${id}`, { completed });
