@@ -440,15 +440,16 @@
     .subtask-add-form { display: flex; gap: 6px; margin-top: 8px; }
     .subtask-add-form input { flex: 1; padding: 6px 10px; border: 1px solid var(--border); border-radius: 6px; font-size: 12px; outline: none; font-family: inherit; }
     .subtask-add-form input:focus { border-color: var(--accent); }
-    .subtask-paste-preview { margin-top: 8px; padding: 10px 12px; background: var(--hover); border: 1px solid var(--border); border-radius: 7px; font-size: 12px; display: none; }
-    .subtask-paste-preview ul { margin: 6px 0 10px; padding-left: 16px; }
-    .subtask-paste-preview li { margin-bottom: 3px; color: var(--text); }
-    .subtask-paste-preview .preview-actions { display: flex; gap: 6px; }
-    .subtask-paste-link { font-size: 11px; color: var(--accent); background: none; border: none; cursor: pointer; padding: 0; text-decoration: underline; flex-shrink: 0; }
-    .subtask-paste-area { margin-top: 8px; display: none; }
-    .subtask-paste-area textarea { width: 100%; padding: 7px 10px; border: 1px solid var(--border); border-radius: 6px; font-size: 12px; font-family: inherit; resize: vertical; outline: none; box-sizing: border-box; }
-    .subtask-paste-area textarea:focus { border-color: var(--accent); }
-    .subtask-paste-area .preview-actions { display: flex; gap: 6px; margin-top: 6px; }
+    .bulk-import-link { font-size: 11px; color: var(--accent); background: none; border: none; cursor: pointer; padding: 0; text-decoration: underline; flex-shrink: 0; }
+    #bulk-import-modal { display:none; position:fixed; inset:0; z-index:10000; background:rgba(0,0,0,.45); align-items:center; justify-content:center; }
+    #bulk-import-modal.open { display:flex; }
+    .bulk-import-box { background:var(--surface); border:1px solid var(--border); border-radius:10px; padding:20px; width:480px; max-width:95vw; box-shadow:0 8px 40px rgba(0,0,0,.18); }
+    .bulk-import-box h3 { margin:0 0 4px; font-size:15px; }
+    .bulk-import-box p { margin:0 0 12px; font-size:12px; color:var(--muted); }
+    .bulk-import-box textarea { width:100%; min-height:140px; padding:8px 10px; border:1px solid var(--border); border-radius:6px; font-size:13px; font-family:inherit; resize:vertical; outline:none; box-sizing:border-box; line-height:1.5; }
+    .bulk-import-box textarea:focus { border-color:var(--accent); }
+    .bulk-import-preview { margin-top:10px; font-size:12px; color:var(--muted); min-height:18px; }
+    .bulk-import-actions { display:flex; gap:8px; margin-top:12px; }
 
     /* ── Modals ── */
     .overlay { position: fixed; inset: 0; background: rgba(0,0,0,.4); z-index: 200; display: none; align-items: center; justify-content: center; }
@@ -891,6 +892,7 @@
       </select>
       <input type="date" id="quick-due" title="Due date">
       <button type="button" class="btn btn-primary" onclick="quickAdd()">Add</button>
+      <button type="button" class="btn btn-ghost" onclick="openBulkImport('tasks')" style="font-size:13px;">Import / Paste tasks</button>
     </div>
 
     <div id="task-list-wrap">
@@ -1022,16 +1024,8 @@
       <div class="subtask-add-form">
         <input type="text" id="subtask-input" placeholder="Add subtask…" autocomplete="off">
         <button class="btn btn-ghost btn-sm" onclick="addSubtask()">Add</button>
-        <button class="subtask-paste-link" onclick="openSubtaskPasteArea()" title="Paste a list of subtasks">Paste list</button>
+        <button class="bulk-import-link" onclick="openBulkImport('subtasks')">Import list</button>
       </div>
-      <div class="subtask-paste-area" id="subtask-paste-area">
-        <textarea id="subtask-paste-textarea" rows="5" placeholder="One subtask per line. Supports bullets, numbers, checkboxes…"></textarea>
-        <div class="preview-actions">
-          <button class="btn btn-primary btn-sm" onclick="submitSubtaskPasteArea()">Add subtasks</button>
-          <button class="btn btn-ghost btn-sm" onclick="closeSubtaskPasteArea()">Cancel</button>
-        </div>
-      </div>
-      <div class="subtask-paste-preview" id="subtask-paste-preview"></div>
 
       <hr style="border:none;border-top:1px solid var(--border);margin:16px 0;">
 
@@ -2214,6 +2208,7 @@ function renderProjectDetail(proj) {
     ${proj.division ? `<span class="pd-div-tag" style="background:${proj.division_color||'#f1f5f9'}20;color:${proj.division_color||'#64748b'};border:1px solid ${proj.division_color||'#e2e8f0'}40;">${esc(proj.division)}</span>` : ''}
     <div class="pd-header-actions">
       <button class="btn btn-primary btn-sm" onclick="pdContextAction('${tab}',${proj.id})">${ctxLabels[tab]}</button>
+      ${(tab === 'board' || tab === 'list') ? `<button class="btn btn-ghost btn-sm" onclick="openBulkImport('tasks','${esc(proj.name)}')">Import tasks</button>` : ''}
       <button class="btn btn-ghost btn-sm" onclick="openRenameProject(${proj.id},'${esc(proj.name)}')">Edit Project</button>
       <button class="btn btn-ghost btn-sm" onclick="setView('all-projects')">← All Projects</button>
     </div>
@@ -4219,139 +4214,147 @@ async function addSubtask() {
   renderSubtasks(); renderTaskList();
 }
 
-// Parse pasted text into subtask lines: strip bullets/numbering, detect checked state
-function parsePastedSubtasks(text) {
-  const seen = new Set();
-  return text.split('\n').flatMap(raw => {
-    let line = raw.trim();
-    if (!line) return [];
-    // Detect checked checkbox markers
-    const checked = /^[-*•]?\s*\[x\]\s*/i.test(line);
-    // Strip leading markers: "- [x]", "- [ ]", "[x]", "[ ]", "1.", "1)", "a.", "-", "*", "•"
-    line = line
-      .replace(/^[-*•]?\s*\[[x ]\]\s*/i, '')
-      .replace(/^\s*\d+[.)]\s+/, '')
-      .replace(/^[a-z][.)]\s+/i, '')
-      .replace(/^[-*•]\s+/, '')
-      .trim();
-    if (!line) return [];
-    const key = line.toLowerCase();
-    if (seen.has(key)) return [];
-    seen.add(key);
-    return [{ title: line, checked }];
-  });
-}
-
-async function addSubtaskBatch(items) {
-  if (!items.length) return;
-  const taskId = state.selectedId;
-  const added = [];
-  for (const item of items) {
-    const sub = await api('POST', `/api/tasks/${taskId}/subtasks`, { title: item.title });
-    if (item.checked) {
-      await api('PATCH', `/api/subtasks/${sub.id}`, { completed: true });
-      sub.completed = 1;
-    }
-    added.push(sub);
-    state.subtasks.push(sub);
-  }
-  const task = state.tasks.find(t => t.id === taskId);
-  if (task) { task.subtask_count = (task.subtask_count||0) + added.length; task.subtask_done = state.subtasks.filter(s => s.completed).length; }
-  renderSubtasks(); renderTaskList();
-  toast(`Added ${added.length} subtask${added.length > 1 ? 's' : ''}`, async () => {
-    for (const s of added) {
-      await api('DELETE', `/api/subtasks/${s.id}`);
-      state.subtasks = state.subtasks.filter(x => x.id !== s.id);
-    }
-    const t2 = state.tasks.find(t => t.id === taskId);
-    if (t2) { t2.subtask_count = Math.max(0, (t2.subtask_count||0) - added.length); t2.subtask_done = state.subtasks.filter(s => s.completed).length; }
-    renderSubtasks(); renderTaskList();
-  });
-}
-
-function showSubtaskPastePreview(items) {
-  const el = document.getElementById('subtask-paste-preview');
-  el.style.display = '';
-  el.innerHTML = `<strong style="font-size:12px;">Paste ${items.length} subtasks?</strong>
-    <ul>${items.map(i => `<li>${esc(i.title)}${i.checked ? ' <span style="color:var(--muted);font-size:11px;">(checked)</span>' : ''}</li>`).join('')}</ul>
-    <div class="preview-actions">
-      <button class="btn btn-primary btn-sm" onclick="confirmSubtaskPaste()">Add ${items.length} subtasks</button>
-      <button class="btn btn-ghost btn-sm" onclick="cancelSubtaskPaste()">Cancel</button>
-    </div>`;
-  el._pendingItems = items;
-}
-
-async function confirmSubtaskPaste() {
-  const el = document.getElementById('subtask-paste-preview');
-  const items = el._pendingItems || [];
-  el.style.display = 'none';
-  el._pendingItems = null;
-  await addSubtaskBatch(items);
-}
-
-function cancelSubtaskPaste() {
-  const el = document.getElementById('subtask-paste-preview');
-  el.style.display = 'none';
-  el._pendingItems = null;
-}
-
-function openSubtaskPasteArea() {
-  const area = document.getElementById('subtask-paste-area');
-  area.style.display = '';
-  document.getElementById('subtask-paste-textarea').focus();
-}
-
-function closeSubtaskPasteArea() {
-  const area = document.getElementById('subtask-paste-area');
-  area.style.display = 'none';
-  document.getElementById('subtask-paste-textarea').value = '';
-}
-
-async function submitSubtaskPasteArea() {
-  const ta = document.getElementById('subtask-paste-textarea');
-  const items = parsePastedSubtasks(ta.value);
-  if (!items.length) { closeSubtaskPasteArea(); return; }
-  closeSubtaskPasteArea();
-  await addSubtaskBatch(items);
-}
-
 document.getElementById('subtask-input').addEventListener('keydown', e => { if (e.key === 'Enter') addSubtask(); });
 
-// Capture raw clipboard text during paste (never preventDefault — browser always inserts).
-// The input event fires after the browser inserts/normalises the text; we use the raw
-// clipboard value stored here to detect and process multi-line pastes.
-let _subtaskPasteRaw = null;
-document.getElementById('subtask-input').addEventListener('paste', e => {
-  try {
-    _subtaskPasteRaw = (e.clipboardData || window.clipboardData).getData('text/plain')
-                   || (e.clipboardData || window.clipboardData).getData('text') || null;
-  } catch (_) {
-    _subtaskPasteRaw = null;
-  }
-  // Never preventDefault — let the browser paste normally for single-line.
-  // Multi-line is handled in the 'input' listener below.
-});
+// ── Bulk import (ported from ADTN Project Tracker) ────────────────────────────
 
-document.getElementById('subtask-input').addEventListener('input', () => {
-  const raw = _subtaskPasteRaw;
-  _subtaskPasteRaw = null;
-  if (!raw || !raw.includes('\n')) return; // single-line or not a paste — nothing to do
-  // Multi-line paste: clear the browser-normalised value and run the subtask flow
-  document.getElementById('subtask-input').value = '';
-  let items;
-  try {
-    items = parsePastedSubtasks(raw);
-  } catch (_) {
-    document.getElementById('subtask-input').value = raw.split('\n')[0].trim();
+// Parse text into flat [{title, isSubtask}] — same logic as ADTN parseImportText()
+function parseImportLines(text) {
+  const result = [];
+  (text || '').split('\n').forEach(line => {
+    if (!line.trim()) return;
+    const indent = line.match(/^(\s*)/)[1].length;
+    const clean = line
+      .replace(/^\s+/, '')
+      .replace(/^[-•◦*]\s*\[[x ]\]\s*/i, '')  // "- [x]" / "- [ ]"
+      .replace(/^[-•◦*]\s+/, '')               // bullet markers
+      .replace(/^\d+\.\d*\s+/, '')             // "1." / "1.1"
+      .replace(/^\d+\)\s+/, '')                // "1)"
+      .replace(/^[a-zA-Z]\)\s+/, '')           // "a)"
+      .trim();
+    if (!clean) return;
+    const isSubtask = indent >= 2 || /^\s+[-•*◦◉○]/.test(line) || /^\s+\d+[\.)]\s/.test(line);
+    result.push({ title: clean, isSubtask });
+  });
+  return result;
+}
+
+// Group flat lines into [{title, subtasks:[]}] — same logic as ADTN groupParsed()
+function groupImportLines(flat) {
+  const tasks = [];
+  let current = null;
+  flat.forEach(item => {
+    if (!item.isSubtask) {
+      current = { title: item.title, subtasks: [] };
+      tasks.push(current);
+    } else if (current) {
+      current.subtasks.push(item.title);
+    } else {
+      current = { title: item.title, subtasks: [] };
+      tasks.push(current);
+    }
+  });
+  return tasks;
+}
+
+let _bulkImportMode = 'tasks';     // 'tasks' | 'subtasks'
+let _bulkImportProjectId = null;   // null = inbox, or project name string
+
+function openBulkImport(mode, projectName) {
+  _bulkImportMode = mode;
+  _bulkImportProjectId = projectName || null;
+  const modal = document.getElementById('bulk-import-modal');
+  const title = document.getElementById('bulk-import-title');
+  const desc  = document.getElementById('bulk-import-desc');
+  const ta    = document.getElementById('bulk-import-ta');
+  if (mode === 'subtasks') {
+    title.textContent = 'Import Subtasks';
+    desc.textContent  = 'One subtask per line. Bullets, numbers, and checkboxes are stripped. Indented lines still become subtasks.';
+  } else {
+    title.textContent = 'Import Tasks' + (_bulkImportProjectId ? ` → ${_bulkImportProjectId}` : ' → Inbox');
+    desc.textContent  = 'One task per line. Indent 2+ spaces to make a line a subtask of the task above. Bullets and numbers are stripped.';
+  }
+  ta.value = '';
+  document.getElementById('bulk-import-preview').textContent = '';
+  document.getElementById('bulk-import-btn').textContent = 'Add';
+  modal.classList.add('open');
+  ta.focus();
+}
+
+function closeBulkImport() {
+  document.getElementById('bulk-import-modal').classList.remove('open');
+  document.getElementById('bulk-import-ta').value = '';
+  document.getElementById('bulk-import-preview').textContent = '';
+}
+
+function previewBulkImport() {
+  const text = document.getElementById('bulk-import-ta').value;
+  const prev = document.getElementById('bulk-import-preview');
+  const btn  = document.getElementById('bulk-import-btn');
+  if (!text.trim()) { prev.textContent = ''; btn.textContent = 'Add'; return; }
+  if (_bulkImportMode === 'subtasks') {
+    const flat = parseImportLines(text);
+    const n = flat.length;
+    prev.textContent = n ? `${n} subtask${n !== 1 ? 's' : ''} to add` : '';
+    btn.textContent = n ? `Add ${n} subtask${n !== 1 ? 's' : ''}` : 'Add';
+  } else {
+    const grouped = groupImportLines(parseImportLines(text));
+    const nTasks = grouped.length;
+    const nSubs  = grouped.reduce((a, t) => a + t.subtasks.length, 0);
+    const label  = nTasks
+      ? nSubs ? `${nTasks} task${nTasks !== 1 ? 's' : ''} + ${nSubs} subtask${nSubs !== 1 ? 's' : ''}` : `${nTasks} task${nTasks !== 1 ? 's' : ''}`
+      : '';
+    prev.textContent = label;
+    btn.textContent  = nTasks ? `Add ${label}` : 'Add';
+  }
+}
+
+async function submitBulkImport() {
+  const text = document.getElementById('bulk-import-ta').value.trim();
+  if (!text) { closeBulkImport(); return; }
+
+  if (_bulkImportMode === 'subtasks') {
+    const taskId = state.selectedId;
+    if (!taskId) { toast('No task open'); return; }
+    const flat = parseImportLines(text);
+    if (!flat.length) { closeBulkImport(); return; }
+    closeBulkImport();
+    const added = [];
+    for (const item of flat) {
+      const sub = await api('POST', `/api/tasks/${taskId}/subtasks`, { title: item.title });
+      added.push(sub);
+      state.subtasks.push(sub);
+    }
+    const task = state.tasks.find(t => t.id === taskId);
+    if (task) { task.subtask_count = (task.subtask_count||0) + added.length; task.subtask_done = state.subtasks.filter(s => s.completed).length; }
+    renderSubtasks(); renderTaskList();
+    toast(`Added ${added.length} subtask${added.length !== 1 ? 's' : ''}`);
     return;
   }
-  if (!items.length) return;
-  if (items.length > 3) {
-    showSubtaskPastePreview(items);
-  } else {
-    addSubtaskBatch(items).catch(() => {});
+
+  // Task mode
+  const grouped = groupImportLines(parseImportLines(text));
+  if (!grouped.length) { closeBulkImport(); return; }
+  closeBulkImport();
+  const newTasks = [];
+  for (const t of grouped) {
+    const payload = { title: t.title, priority: 'medium', status: 'new' };
+    if (_bulkImportProjectId) payload.project = _bulkImportProjectId;
+    const created = await api('POST', '/api/tasks', payload);
+    state.tasks.push(created);
+    newTasks.push(created);
+    for (const subTitle of t.subtasks) {
+      await api('POST', `/api/tasks/${created.id}/subtasks`, { title: subTitle });
+      created.subtask_count = (created.subtask_count || 0) + 1;
+    }
   }
-});
+  const nSubs = grouped.reduce((a, t) => a + t.subtasks.length, 0);
+  const msg = nSubs
+    ? `Added ${newTasks.length} task${newTasks.length !== 1 ? 's' : ''} + ${nSubs} subtask${nSubs !== 1 ? 's' : ''}`
+    : `Added ${newTasks.length} task${newTasks.length !== 1 ? 's' : ''}`;
+  renderSidebar(); renderTaskList();
+  toast(msg);
+}
 
 async function toggleSubtask(id, completed) {
   await api('PATCH', `/api/subtasks/${id}`, { completed });
@@ -6896,8 +6899,24 @@ document.addEventListener('click', e => {
   if (gcalPopoverEvtId && !e.target.closest('#gcal-popover')) closeGcalPopover();
 });
 
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape' && document.getElementById('bulk-import-modal').classList.contains('open')) closeBulkImport();
+});
+
 loadAll();
 </script>
 <div id="gcal-popover" style="display:none;position:fixed;z-index:9999;background:white;border:1px solid #e2e8f0;border-radius:8px;padding:12px 14px;box-shadow:0 4px 20px rgba(0,0,0,.14);width:240px;"></div>
+<div id="bulk-import-modal" onclick="if(event.target===this)closeBulkImport()">
+  <div class="bulk-import-box">
+    <h3 id="bulk-import-title">Import Tasks</h3>
+    <p id="bulk-import-desc">One item per line. Indent lines 2+ spaces to make them subtasks of the line above. Bullets, numbers, and checkboxes are stripped automatically.</p>
+    <textarea id="bulk-import-ta" placeholder="Task one&#10;  Subtask of task one&#10;Task two&#10;- Bulleted task&#10;1. Numbered task" oninput="previewBulkImport()"></textarea>
+    <div class="bulk-import-preview" id="bulk-import-preview"></div>
+    <div class="bulk-import-actions">
+      <button class="btn btn-primary" id="bulk-import-btn" onclick="submitBulkImport()">Add</button>
+      <button class="btn btn-ghost" onclick="closeBulkImport()">Cancel</button>
+    </div>
+  </div>
+</div>
 </body>
 </html>
