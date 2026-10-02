@@ -11,7 +11,7 @@
       --urgent: #ef4444; --high: #f97316; --medium: #3b82f6; --low: #94a3b8;
       --status-new: #94a3b8; --status-assigned: #60a5fa;
       --status-pending: #94a3b8; --status-in-progress: #0ea5e9;
-      --status-needs-review: #8b5cf6; --status-on-hold: #f59e0b; --status-complete: #10b981;
+      --status-review: #8b5cf6; --status-needs-review: #8b5cf6; --status-on-hold: #f59e0b; --status-complete: #10b981;
       --sidebar-bg: #1e293b; --sidebar-text: #94a3b8;
       --sidebar-active-bg: rgba(59,130,246,.15); --sidebar-active-text: #60a5fa;
       --sidebar-border: rgba(255,255,255,.06);
@@ -100,6 +100,7 @@
     .pill-status-assigned      { background: #eff6ff; color: var(--status-assigned); }
     .pill-status-pending       { background: #f1f5f9; color: var(--status-pending); }
     .pill-status-in-progress   { background: #e0f2fe; color: var(--status-in-progress); }
+    .pill-status-review        { background: #f5f3ff; color: var(--status-review); }
     .pill-status-needs-review  { background: #f5f3ff; color: var(--status-needs-review); }
     .pill-status-on-hold       { background: #fffbeb; color: var(--status-on-hold); }
     .pill-status-complete      { background: #f0fdf4; color: var(--status-complete); }
@@ -714,6 +715,46 @@
     .pd-sprint-status-parked    { background: #fffbeb; color: #92400e; }
     .pd-sprint-status-complete  { background: #dcfce7; color: #15803d; }
     .pd-sprint-no-active { font-size: 13px; color: var(--muted); padding: 14px; background: #f8fafc; border-radius: 8px; margin-bottom: 12px; text-align: center; border: 1px dashed var(--border); }
+
+    /* ── Phases ── */
+    .pd-phases-list { display: flex; flex-direction: column; gap: 8px; }
+    .pd-phase-row { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 12px 14px; display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+    .pd-phase-row-info { display: flex; align-items: center; gap: 10px; flex: 1; min-width: 0; }
+    .pd-phase-name { font-size: 14px; font-weight: 600; }
+    .pd-phase-status-pill { font-size: 11px; padding: 2px 8px; border-radius: 100px; font-weight: 500; }
+    .pd-phase-task-count { font-size: 12px; color: var(--muted); }
+    .pd-phase-row-actions { display: flex; gap: 4px; flex-shrink: 0; }
+
+    /* ── Sprint Week view ── */
+    .sprint-week-wrap { padding: 20px; }
+    .sprint-week-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; flex-wrap: wrap; gap: 8px; }
+    .sprint-cap-bar-wrap { height: 6px; background: #e2e8f0; border-radius: 100px; overflow: hidden; margin: 0 20px 4px; }
+    .sprint-cap-bar { height: 100%; border-radius: 100px; transition: width .3s; }
+    .sprint-task-row { display: flex; align-items: center; gap: 8px; padding: 9px 0; border-bottom: 1px solid var(--border); cursor: pointer; }
+    .sprint-task-row:hover { background: var(--bg); }
+    .sprint-task-row:last-child { border-bottom: none; }
+
+    /* ── Plan My Week ── */
+    .plan-week-wrap { display: flex; flex-direction: column; height: 100%; overflow: hidden; }
+    .plan-week-header { padding: 16px 20px 12px; border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 12px; flex-shrink: 0; }
+    .plan-week-body { display: flex; flex: 1; overflow: hidden; }
+    .plan-week-left { flex: 1; overflow-y: auto; padding: 16px 20px; border-right: 1px solid var(--border); }
+    .plan-week-right { width: 320px; flex-shrink: 0; overflow-y: auto; padding: 16px 20px; background: #f8fafc; }
+    .plan-week-project { margin-bottom: 16px; }
+    .plan-week-proj-header { font-size: 12px; font-weight: 600; color: var(--muted); padding: 4px 0 6px; border-bottom: 1px solid var(--border); margin-bottom: 4px; display: flex; align-items: center; gap: 6px; }
+    .plan-week-task-row { display: flex; align-items: center; gap: 8px; padding: 7px 8px; border-radius: 6px; cursor: pointer; transition: background .1s; }
+    .plan-week-task-row:hover, .plan-week-task-row.suggested { background: #f0fdf4; }
+    .plan-week-task-row.suggested { background: #faf5ff; }
+    .plan-week-sprint-row { display: flex; align-items: center; gap: 8px; padding: 7px 0; border-bottom: 1px solid var(--border); cursor: pointer; }
+    .plan-week-sprint-row:last-child { border-bottom: none; }
+
+    /* ── Close Week Modal ── */
+    .close-week-task-row { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--border); }
+    .close-week-task-row:last-child { border-bottom: none; }
+
+    /* ── Division phase templates ── */
+    .div-phase-tpl-row { display: flex; align-items: center; gap: 6px; padding: 4px 0; }
+    .div-phase-tpl-row input[type=text] { flex: 1; padding: 4px 8px; border: 1px solid var(--border); border-radius: 6px; font-size: 13px; }
   </style>
 </head>
 <body>
@@ -791,9 +832,9 @@
         <span class="nav-label"><span class="nav-icon" style="color:#f59e0b;">●</span> On Hold</span>
         <span class="nav-count" id="cnt-on-hold">0</span>
       </div>
-      <div class="nav-item" data-view="status:needs-review" onclick="setView('status:needs-review')">
-        <span class="nav-label"><span class="nav-icon" style="color:#8b5cf6;">●</span> Needs Review</span>
-        <span class="nav-count" id="cnt-needs-review">0</span>
+      <div class="nav-item" data-view="status:review" onclick="setView('status:review')">
+        <span class="nav-label"><span class="nav-icon" style="color:#8b5cf6;">●</span> Review</span>
+        <span class="nav-count" id="cnt-review">0</span>
       </div>
       <div class="nav-item" data-view="status:complete" onclick="setView('status:complete')">
         <span class="nav-label"><span class="nav-icon" style="color:#10b981;">●</span> Complete</span>
@@ -815,6 +856,20 @@
       <div id="proj-nav"></div>
       <div class="sidebar-action-btn" onclick="openAddProject()"><span>＋</span> New Project</div>
       <div class="sidebar-action-btn" onclick="openProjectFromTemplate()"><span>⊞</span> From Template</div>
+    </div>
+
+    <hr class="sidebar-divider">
+
+    <div class="sidebar-section">
+      <div class="nav-item" data-view="plan-week" onclick="setView('plan-week')">
+        <span class="nav-label"><span class="nav-icon">🗓</span> Plan My Week</span>
+      </div>
+      <div class="nav-item" data-view="sprint-week" onclick="setView('sprint-week')">
+        <span class="nav-label"><span class="nav-icon" style="color:#8b5cf6;">⚡</span> This Week's Sprint</span>
+        <div class="nav-right">
+          <span class="nav-count" id="cnt-sprint-week">0</span>
+        </div>
+      </div>
     </div>
 
     <hr class="sidebar-divider">
@@ -860,7 +915,7 @@
           <option value="assigned">Assigned</option>
           <option value="in-progress">In Progress</option>
           <option value="on-hold">On Hold</option>
-          <option value="needs-review">Needs Review</option>
+          <option value="review">Review</option>
           <option value="complete">Complete</option>
         </select>
         <select id="filter-due" onchange="applyFilters()">
@@ -931,7 +986,7 @@
             <option value="assigned">Assigned</option>
             <option value="in-progress">In Progress</option>
             <option value="on-hold">On Hold</option>
-            <option value="needs-review">Needs Review</option>
+            <option value="review">Review</option>
             <option value="complete">Complete</option>
           </select>
         </div>
@@ -948,9 +1003,15 @@
           <select id="d-project"><option value="">None</option></select>
         </div>
       </div>
-      <div class="field">
-        <label>Due Date</label>
-        <input type="date" id="d-due">
+      <div class="field-row">
+        <div class="field">
+          <label>Phase</label>
+          <select id="d-phase"><option value="">None</option></select>
+        </div>
+        <div class="field">
+          <label>Due Date</label>
+          <input type="date" id="d-due">
+        </div>
       </div>
       <div class="field">
         <label>Notes</label>
@@ -965,11 +1026,14 @@
 
       <hr style="border:none;border-top:1px solid var(--border);margin:16px 0;">
 
-      <div class="sidebar-label" style="margin-bottom:8px;">Focus Lists</div>
+      <div class="sidebar-label" style="margin-bottom:8px;">Focus Lists &amp; Sprint</div>
       <div id="d-focus-list"></div>
       <div class="focus-select-row">
         <select id="d-focus-select"><option value="">Add to a focus list…</option></select>
         <button class="btn btn-ghost btn-sm" onclick="addToFocusListFromDetail()">Add</button>
+      </div>
+      <div style="margin-top:6px;">
+        <button class="btn btn-ghost btn-sm" style="font-size:12px;width:100%;" onclick="addDetailTaskToWeekSprint()">⚡ Add to This Week's Sprint</button>
       </div>
 
       <hr style="border:none;border-top:1px solid var(--border);margin:16px 0;">
@@ -1205,7 +1269,7 @@
         <option value="assigned">Assigned</option>
         <option value="in-progress">In Progress</option>
         <option value="on-hold">On Hold</option>
-        <option value="needs-review">Needs Review</option>
+        <option value="review">Review</option>
         <option value="complete">Complete</option>
       </select>
     </div>
@@ -1278,7 +1342,7 @@
           <option value="assigned">Assigned</option>
           <option value="in-progress">In Progress</option>
           <option value="on-hold">On Hold</option>
-          <option value="needs-review">Needs Review</option>
+          <option value="review">Review</option>
           <option value="complete">Complete</option>
         </select>
       </div>
@@ -1543,6 +1607,31 @@
   </div>
 </div>
 
+<div class="overlay" id="phase-template-modal">
+  <div class="modal" style="min-width:320px;max-width:460px;">
+    <h3 id="phase-tpl-modal-title">Phase Template</h3>
+    <p style="font-size:12px;color:var(--muted);margin:0 0 10px;">These stage names are auto-applied when creating a new project in this division. Defaults: Plan, Prepare, Execute, Wrap-up.</p>
+    <div id="phase-tpl-list"></div>
+    <button class="btn btn-ghost btn-sm" style="margin-top:6px;" onclick="addPhaseTemplateRow()">+ Add Stage</button>
+    <div class="modal-btns" style="margin-top:12px;">
+      <button class="btn btn-ghost btn-sm" onclick="closePhaseTemplateModal()">Cancel</button>
+      <button class="btn btn-primary btn-sm" onclick="savePhaseTemplate()">Save</button>
+    </div>
+  </div>
+</div>
+
+<div class="overlay" id="close-week-modal">
+  <div class="modal" style="min-width:360px;max-width:520px;">
+    <h3>Close This Week</h3>
+    <p style="font-size:13px;color:var(--muted);margin:0 0 12px;">For each incomplete task, choose to roll it to next week's sprint or return it to the backlog.</p>
+    <div id="close-week-list"></div>
+    <div class="modal-btns" style="margin-top:16px;">
+      <button class="btn btn-ghost btn-sm" onclick="closeCloseWeekModal()">Cancel</button>
+      <button class="btn btn-primary btn-sm" onclick="confirmCloseWeek()">Close Week</button>
+    </div>
+  </div>
+</div>
+
 <div id="toast"></div>
 
 <script>
@@ -1550,9 +1639,10 @@ function catName(slug)  { const c = state.categories.find(x => x.slug === slug);
 function catIcon(slug)  { const c = state.categories.find(x => x.slug === slug); return c?.icon  || '📁'; }
 function catColor(slug) { const c = state.categories.find(x => x.slug === slug); return c?.color || '#64748b'; }
 function catPill(slug, styles='') { if (!slug) return ''; const col=catColor(slug); return `<span class="pill pill-cat" style="background:${col}20;color:${col}${styles?';'+styles:''}">${catName(slug)}</span>`; }
-const STATUS_LABELS = { new:'New', assigned:'Assigned', 'in-progress':'In Progress', 'on-hold':'On Hold', 'needs-review':'Needs Review', complete:'Complete' };
-const BOARD_STAGES  = ['new','assigned','in-progress','on-hold','needs-review','complete'];
-const STAGE_COLORS  = { new:'#94a3b8', assigned:'#60a5fa', 'in-progress':'#0ea5e9', 'on-hold':'#f59e0b', 'needs-review':'#8b5cf6', complete:'#10b981' };
+const STATUS_LABELS = { new:'New', assigned:'Assigned', 'in-progress':'In Progress', 'on-hold':'On Hold', review:'Review', 'needs-review':'Review', complete:'Complete' };
+const BOARD_STAGES  = ['new','assigned','in-progress','on-hold','review','complete'];
+const STAGE_COLORS  = { new:'#94a3b8', assigned:'#60a5fa', 'in-progress':'#0ea5e9', 'on-hold':'#f59e0b', review:'#8b5cf6', 'needs-review':'#8b5cf6', complete:'#10b981' };
+const PHASE_STATUS_LABELS = { 'not-started':'Not Started', active:'Active', done:'Done' };
 let PX_PER_HOUR = 80;
 
 // ── State ─────────────────────────────────────────────────────────────────────
@@ -1567,6 +1657,8 @@ function getWeekStart(date) {
 
 let state = {
   tasks: [], projects: [], templates: [], focusLists: [], divisions: [], categories: [],
+  phases: {},       // projectId → phases[]
+  weekSprint: null, // current week's sprint (focus list + tasks)
   view: 'dashboard',
   filters: { priority: '', status: '', search: '', due: '', dueFrom: '', dueTo: '', project: '' },
   selectedId: null,
@@ -1716,6 +1808,8 @@ function viewTitle(view) {
   if (view === 'blocked')      return 'Blocked Tasks';
   if (view === 'settings')     return 'Settings';
   if (view === 'notes-search') return `Notes: "${state._notesSearchQ || ''}"`;
+  if (view === 'plan-week')    return 'Plan My Week';
+  if (view === 'sprint-week')  return 'This Week\'s Sprint';
   const [type, val] = view.split(':');
   if (type === 'status')   return STATUS_LABELS[val] || val.replace(/-/g,' ').replace(/\b\w/g, c => c.toUpperCase());
   if (type === 'category') return catName(val);
@@ -1756,18 +1850,20 @@ function dueDateMatches(dueDate, filter, fromStr, toStr) {
 // ── Load data ─────────────────────────────────────────────────────────────────
 
 async function loadAll() {
-  const [tasks, projects, templates, focusLists, settings, googleStatus, divisions, categories] = await Promise.all([
+  const [tasks, projects, templates, focusLists, settings, googleStatus, divisions, categories, weekSprint] = await Promise.all([
     api('GET', '/api/tasks'), api('GET', '/api/projects'),
     api('GET', '/api/templates'), api('GET', '/api/focus-lists'),
     api('GET', '/api/settings'),
     api('GET', '/api/auth/google/status').catch(() => ({ connected: false, connected_at: null })),
     api('GET', '/api/divisions'),
-    api('GET', '/api/categories')
+    api('GET', '/api/categories'),
+    api('GET', '/api/sprint/week').catch(() => null)
   ]);
   state.tasks = tasks; state.projects = projects;
   state.templates = templates; state.focusLists = focusLists;
   state.divisions = divisions;
   state.categories = categories;
+  state.weekSprint = weekSprint;
   populateDivisionSelects();
   populateCategorySelects();
   state.daySettings = {
@@ -1841,8 +1937,11 @@ function renderSidebar() {
   document.getElementById('cnt-this-week').textContent = counts['due:this-week'];
   document.getElementById('cnt-next-week').textContent = counts['due:next-week'];
   BOARD_STAGES.forEach(s => {
-    document.getElementById('cnt-'+s).textContent = counts['status:'+s] || 0;
+    const el = document.getElementById('cnt-'+s);
+    if (el) el.textContent = counts['status:'+s] || 0;
   });
+  const sprintCntEl = document.getElementById('cnt-sprint-week');
+  if (sprintCntEl) sprintCntEl.textContent = state.weekSprint ? (state.weekSprint.task_count || 0) : 0;
 
   document.getElementById('cat-nav').innerHTML = state.categories.map(c => `
     <div class="nav-item" data-view="category:${c.slug}" onclick="setView('category:${c.slug}')">
@@ -1927,9 +2026,15 @@ function setView(view) {
   const isSettings    = view === 'settings';
   const isAllProjects = view === 'all-projects';
   const isProjectDetail = view.startsWith('project:');
-  if (isProjectDetail) { pdState.sprintsLoaded = false; pdState.sprints = []; pdState.notesLoaded = false; pdState.notes = []; }
-  const isListable    = !isDashboard && !isCalendar && !isSettings && !isAllProjects && !isProjectDetail;
-  document.getElementById('view-title').style.display    = (isProjectDetail || isDashboard) ? 'none' : '';
+  if (isProjectDetail) {
+    pdState.notesLoaded = false; pdState.notes = [];
+    const _pid = view.slice(8);
+    api('GET', `/api/projects/${_pid}/phases`).then(p => { state.phases[_pid] = p; renderSidebar(); }).catch(() => {});
+  }
+  const isPlanWeek    = view === 'plan-week';
+  const isSprintWeek  = view === 'sprint-week';
+  const isListable    = !isDashboard && !isCalendar && !isSettings && !isAllProjects && !isProjectDetail && !isPlanWeek && !isSprintWeek;
+  document.getElementById('view-title').style.display    = (isProjectDetail || isDashboard || isPlanWeek) ? 'none' : '';
   document.getElementById('search-wrap').style.display   = isListable ? '' : 'none';
   document.getElementById('filter-bar').style.display    = isListable ? '' : 'none';
   document.getElementById('quick-add-bar').style.display = isListable ? '' : 'none';
@@ -2122,15 +2227,13 @@ function renderAllProjects() {
 
 // ── Project Detail Page ──────────────────────────────────────────────────────
 
-const PD_TABS = ['board','list','links','notes','sprints'];
-const PD_TAB_LABELS = { board:'Board', list:'List', links:'Links & Drive', notes:'Meeting Notes', sprints:'⚡ Sprints' };
+const PD_TABS = ['board','list','phases','links','notes'];
+const PD_TAB_LABELS = { board:'Board', list:'List', phases:'Phases', links:'Links & Drive', notes:'Meeting Notes' };
 
 let pdState = {
   tabHistory: {},      // projId → tab
   filters: {},         // projId → { phase, category, search, type }
   listSort: { col:'title', dir:'asc' },
-  sprints: [],         // sprints for current project
-  sprintsLoaded: false,
   notes: [],           // project notes for current project
   notesLoaded: false,
 };
@@ -2150,14 +2253,12 @@ function pdGetTasks(proj) {
 }
 
 async function setProjectTab(tab, projId) {
-  // reset type filter when switching tabs
   if (pdState.filters[projId]) pdState.filters[projId].type = '';
   pdState.tabHistory[projId] = tab;
-  if (tab === 'sprints' && !pdState.sprintsLoaded) {
+  if (tab === 'phases') {
     try {
-      pdState.sprints = await api('GET', `/api/projects/${projId}/sprints`);
-      pdState.sprintsLoaded = true;
-    } catch(_) { pdState.sprints = []; }
+      state.phases[projId] = await api('GET', `/api/projects/${projId}/phases`);
+    } catch(_) { state.phases[projId] = []; }
   }
   if (tab === 'notes' && !pdState.notesLoaded) {
     try {
@@ -2177,9 +2278,9 @@ function setPdFilter(projId, key, val) {
 }
 
 function pdContextAction(tab, projId) {
-  if (tab === 'links')   openPdLinkModal(projId, null);
-  else if (tab === 'notes')   openPdNoteModal(projId, null);
-  else if (tab === 'sprints') openNewSprint(projId);
+  if (tab === 'links')  openPdLinkModal(projId, null);
+  else if (tab === 'notes')  openPdNoteModal(projId, null);
+  else if (tab === 'phases') openAddPhase(projId);
   else {
     const proj = state.projects.find(p => p.id == projId);
     if (proj) pdQuickAddTask(proj);
@@ -2200,7 +2301,7 @@ function renderProjectDetail(proj) {
   const f   = pdFilters(proj.id);
   const dot = PROJ_DOT_COLORS[proj.id % PROJ_DOT_COLORS.length];
 
-  const ctxLabels = { board:'＋ Add Task', list:'＋ Add Task', links:'＋ Add Link', notes:'＋ Add Note', sprints:'＋ New Sprint' };
+  const ctxLabels = { board:'＋ Add Task', list:'＋ Add Task', phases:'＋ Add Stage', links:'＋ Add Link', notes:'＋ Add Note' };
 
   const headerHtml = `<div class="pd-header">
     <div class="pd-dot" style="background:${dot}"></div>
@@ -2248,8 +2349,6 @@ function renderProjectDetail(proj) {
       ${noteTypes.map(([v,l]) => `<button class="pd-pill${f.type===v?' active':''}" onclick="setPdFilter(${proj.id},'type','${v}')">${l}</button>`).join('')}
     </div>`;
     filterHtml = `<div class="pd-filter-bar">${typeGroup}${phaseGroup}${catGroup}${searchBox}</div>`;
-  } else if (tab === 'sprints') {
-    filterHtml = `<div class="pd-filter-bar">${phaseGroup}${catGroup}</div>`;
   }
 
   let contentHtml = '';
@@ -2263,8 +2362,8 @@ function renderProjectDetail(proj) {
     contentHtml = `<div class="pd-links-wrap" style="flex:1;overflow-y:auto;padding:16px 20px">${pdRenderLinks(proj, f)}</div>`;
   } else if (tab === 'notes') {
     contentHtml = `<div class="pd-notes-wrap" style="flex:1;overflow-y:auto;padding:16px 20px">${pdRenderNotes(proj, f)}</div>`;
-  } else if (tab === 'sprints') {
-    contentHtml = `<div class="pd-sprints-wrap" style="flex:1;overflow-y:auto;padding:16px 20px">${pdRenderSprints(proj)}</div>`;
+  } else if (tab === 'phases') {
+    contentHtml = `<div class="pd-phases-wrap" style="flex:1;overflow-y:auto;padding:16px 20px">${pdRenderPhases(proj)}</div>`;
   }
 
   document.getElementById('proj-detail-wrap').innerHTML =
@@ -2800,6 +2899,348 @@ function pdEditNote(projId, noteId) {
   if (note) openPdNoteModal(projId, note);
 }
 
+// ── Phases (project stages) ───────────────────────────────────────────────────
+
+function pdRenderPhases(proj) {
+  const phases = state.phases[proj.id] || [];
+  const tasksByPhase = {};
+  state.tasks.filter(t => t.project === proj.name).forEach(t => {
+    const key = t.phase_id || '__none__';
+    tasksByPhase[key] = (tasksByPhase[key] || 0) + 1;
+  });
+
+  const statusColors = { 'not-started':'#94a3b8', active:'#3b82f6', done:'#10b981' };
+  const phaseHtml = phases.length ? phases.map(ph => {
+    const cnt = tasksByPhase[ph.id] || 0;
+    const col = statusColors[ph.status] || '#94a3b8';
+    return `<div class="pd-phase-row" style="border-left:3px solid ${col};">
+      <div class="pd-phase-row-info">
+        <span class="pd-phase-name">${esc(ph.name)}</span>
+        <span class="pd-phase-status-pill" style="background:${col}20;color:${col};">${PHASE_STATUS_LABELS[ph.status]||ph.status}</span>
+        <span class="pd-phase-task-count">${cnt} task${cnt!==1?'s':''}</span>
+      </div>
+      <div class="pd-phase-row-actions">
+        ${ph.status !== 'active' ? `<button class="btn btn-ghost btn-sm" onclick="setPhaseStatus(${ph.id},${proj.id},'active')">Set Active</button>` : ''}
+        ${ph.status !== 'done'   ? `<button class="btn btn-ghost btn-sm" onclick="setPhaseStatus(${ph.id},${proj.id},'done')">Done</button>` : ''}
+        <button class="btn btn-ghost btn-sm" onclick="renamePhase(${ph.id},${proj.id},'${esc(ph.name)}')">Rename</button>
+        <button class="btn btn-ghost btn-sm" style="color:#ef4444" onclick="deletePhase(${ph.id},${proj.id})">Delete</button>
+      </div>
+    </div>`;
+  }).join('') : `<div style="padding:20px;text-align:center;color:var(--muted);font-size:13px;">No stages yet. Click "＋ Add Stage" to create one.</div>`;
+
+  const divId = proj.division_id;
+  const applyBtn = divId ? `<button class="btn btn-ghost btn-sm" onclick="applyDivisionPhaseTemplate(${proj.id})" style="margin-top:8px;">Apply division template</button>` : '';
+
+  return `<div class="pd-phases-list">${phaseHtml}</div>${applyBtn}`;
+}
+
+async function openAddPhase(projId) {
+  const name = prompt('Stage name:');
+  if (!name?.trim()) return;
+  const proj = state.projects.find(p => p.id == projId);
+  if (!proj) return;
+  const ph = await api('POST', `/api/projects/${projId}/phases`, { name: name.trim() });
+  if (!state.phases[projId]) state.phases[projId] = [];
+  state.phases[projId].push(ph);
+  renderProjectDetail(proj);
+}
+
+async function setPhaseStatus(phaseId, projId, status) {
+  const ph = await api('PATCH', `/api/phases/${phaseId}`, { status });
+  if (!state.phases[projId]) return;
+  if (status === 'active') state.phases[projId].forEach(p => { if (p.id !== phaseId && p.status === 'active') p.status = 'not-started'; });
+  const idx = state.phases[projId].findIndex(p => p.id === phaseId);
+  if (idx >= 0) state.phases[projId][idx] = ph;
+  const proj = state.projects.find(p => p.id == projId);
+  if (proj) renderProjectDetail(proj);
+}
+
+async function renamePhase(phaseId, projId, currentName) {
+  const name = prompt('Rename stage:', currentName);
+  if (!name?.trim() || name.trim() === currentName) return;
+  const ph = await api('PUT', `/api/phases/${phaseId}`, { name: name.trim() });
+  if (state.phases[projId]) {
+    const idx = state.phases[projId].findIndex(p => p.id === phaseId);
+    if (idx >= 0) state.phases[projId][idx] = ph;
+  }
+  const proj = state.projects.find(p => p.id == projId);
+  if (proj) renderProjectDetail(proj);
+}
+
+async function deletePhase(phaseId, projId) {
+  if (!confirm('Delete this stage?')) return;
+  await api('DELETE', `/api/phases/${phaseId}`);
+  if (state.phases[projId]) state.phases[projId] = state.phases[projId].filter(p => p.id !== phaseId);
+  const proj = state.projects.find(p => p.id == projId);
+  if (proj) renderProjectDetail(proj);
+}
+
+async function applyDivisionPhaseTemplate(projId) {
+  const phases = await api('POST', `/api/projects/${projId}/apply-phase-template`);
+  state.phases[projId] = phases;
+  const proj = state.projects.find(p => p.id == projId);
+  if (proj) renderProjectDetail(proj);
+  toast('Division phase template applied');
+}
+
+// ── Weekly Sprint view ────────────────────────────────────────────────────────
+
+async function renderSprintWeek() {
+  const list = document.getElementById('task-list');
+  const weekMon = monDateStr(new Date());
+  let sprint = state.weekSprint;
+  if (!sprint) {
+    list.innerHTML = `<div class="sprint-week-wrap">
+      <div class="sprint-week-header">
+        <h2 style="font-size:18px;font-weight:700;margin:0">This Week's Sprint</h2>
+        <span style="color:var(--muted);font-size:13px;">Week of ${weekMon}</span>
+      </div>
+      <div style="padding:40px;text-align:center;color:var(--muted)">
+        <div style="font-size:32px;margin-bottom:12px">⚡</div>
+        <p style="font-size:14px;margin-bottom:16px">No sprint started for this week.</p>
+        <button class="btn btn-primary" onclick="startWeekSprint()">Start This Week's Sprint</button>
+      </div>
+    </div>`;
+    return;
+  }
+  const sprintTasks = (sprint.tasks || []).map(t => state.tasks.find(x => x.id === t.id) || t);
+  const incompleteTasks = sprintTasks.filter(t => t.status !== 'complete');
+  const completedTasks  = sprintTasks.filter(t => t.status === 'complete');
+  const estHrs = (sprint.estimated_minutes || 0) / 60;
+  const pct = sprint.max_hours ? Math.min(100, (estHrs / sprint.max_hours) * 100) : 0;
+
+  list.innerHTML = `<div class="sprint-week-wrap">
+    <div class="sprint-week-header">
+      <div>
+        <h2 style="font-size:18px;font-weight:700;margin:0">This Week's Sprint</h2>
+        <span style="color:var(--muted);font-size:13px;">Week of ${weekMon} · ${sprint.task_count || 0}/${sprint.max_tasks || 40} tasks · ${estHrs.toFixed(1)}h / ${sprint.max_hours || 40}h</span>
+      </div>
+      <div style="display:flex;gap:8px;align-items:center;">
+        <button class="btn btn-ghost btn-sm" onclick="openCloseWeekModal()">Close Week →</button>
+        <button class="btn btn-primary btn-sm" onclick="setView('plan-week')">Plan Week</button>
+      </div>
+    </div>
+    <div class="sprint-cap-bar-wrap">
+      <div class="sprint-cap-bar" style="width:${pct}%;background:${pct>90?'#ef4444':pct>70?'#f59e0b':'#10b981'}"></div>
+    </div>
+    <div style="padding:0 20px 20px">
+      ${incompleteTasks.length ? incompleteTasks.map(t => renderSprintTaskRow(t, sprint.id)).join('') : '<div class="empty-state" style="padding:20px 0"><p>All tasks complete this week! 🎉</p></div>'}
+      ${completedTasks.length ? `<div style="margin-top:16px;padding-top:12px;border-top:1px solid var(--border)">
+        <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin-bottom:8px;">Completed (${completedTasks.length})</div>
+        ${completedTasks.map(t => renderSprintTaskRow(t, sprint.id)).join('')}
+      </div>` : ''}
+    </div>
+  </div>`;
+}
+
+function renderSprintTaskRow(t, flId) {
+  return `<div class="sprint-task-row" onclick="openDetail(${t.id})">
+    <span class="pill pill-priority-${t.priority}" style="font-size:10px;padding:1px 5px;">${t.priority}</span>
+    <span class="${t.status==='complete'?'task-card-title done':'task-card-title'}" style="flex:1;font-size:13px;">${esc(t.title)}</span>
+    ${t.project ? `<span style="font-size:11px;color:var(--muted);">${esc(t.project)}</span>` : ''}
+    <span class="pill pill-status-${t.status}" style="font-size:11px;">${STATUS_LABELS[t.status]||t.status}</span>
+    <button class="btn btn-ghost btn-sm" style="font-size:11px;padding:2px 6px;" onclick="event.stopPropagation();removeFromWeekSprint(${t.id})">✕</button>
+  </div>`;
+}
+
+async function startWeekSprint() {
+  try {
+    state.weekSprint = await api('POST', '/api/sprint/week');
+    renderSidebar();
+    renderSprintWeek();
+  } catch(e) { toast(e.message); }
+}
+
+async function removeFromWeekSprint(taskId) {
+  if (!state.weekSprint) return;
+  await api('DELETE', `/api/tasks/${taskId}/focus-lists/${state.weekSprint.id}`);
+  state.weekSprint = await api('GET', '/api/sprint/week');
+  renderSidebar();
+  renderSprintWeek();
+}
+
+// ── Close Week Modal ──────────────────────────────────────────────────────────
+
+let _closeWeekTasks = [];
+
+function openCloseWeekModal() {
+  if (!state.weekSprint) return;
+  const tasks = (state.weekSprint.tasks || []).map(t => state.tasks.find(x => x.id === t.id) || t).filter(t => t.status !== 'complete');
+  _closeWeekTasks = tasks;
+  document.getElementById('close-week-list').innerHTML = tasks.length
+    ? tasks.map(t => `<div class="close-week-task-row">
+        <span style="flex:1;font-size:13px;">${esc(t.title)}</span>
+        <label style="display:flex;align-items:center;gap:4px;cursor:pointer;font-size:12px;">
+          <input type="radio" name="cw-${t.id}" value="roll" checked> Roll →
+        </label>
+        <label style="display:flex;align-items:center;gap:4px;cursor:pointer;font-size:12px;">
+          <input type="radio" name="cw-${t.id}" value="return"> Return
+        </label>
+      </div>`).join('')
+    : '<div style="padding:12px;color:var(--muted);font-size:13px;text-align:center;">All tasks completed this week!</div>';
+  document.getElementById('close-week-modal').classList.add('open');
+}
+
+function closeCloseWeekModal() { document.getElementById('close-week-modal').classList.remove('open'); }
+
+async function confirmCloseWeek() {
+  const week = state.weekSprint?.sprint_week;
+  if (!week) return;
+  const rolls = [], returns = [];
+  _closeWeekTasks.forEach(t => {
+    const v = document.querySelector(`input[name="cw-${t.id}"]:checked`)?.value;
+    if (v === 'roll') rolls.push(t.id);
+    else returns.push(t.id);
+  });
+  await api('POST', '/api/sprint/week/close', { week, rolls, returns });
+  state.weekSprint = await api('GET', '/api/sprint/week');
+  closeCloseWeekModal();
+  toast(`Week closed — ${rolls.length} rolled, ${returns.length} returned`);
+  renderSidebar();
+  renderSprintWeek();
+}
+
+// ── Plan My Week ──────────────────────────────────────────────────────────────
+
+async function renderPlanWeek() {
+  const list = document.getElementById('task-list');
+  const weekMon = monDateStr(new Date());
+
+  // Ensure sprint exists
+  if (!state.weekSprint) {
+    try { state.weekSprint = await api('GET', '/api/sprint/week'); } catch(_) {}
+  }
+
+  const sprintTaskIds = new Set((state.weekSprint?.tasks || []).map(t => t.id));
+  const estHrs = (state.weekSprint?.estimated_minutes || 0) / 60;
+  const maxHrs = state.weekSprint?.max_hours || 40;
+  const pct = Math.min(100, (estHrs / maxHrs) * 100);
+
+  // Candidate tasks: not complete, not already in sprint
+  // Prefer: overdue, due this week, from active phases
+  const today = new Date(new Date().toDateString());
+  const day = today.getDay();
+  const monThis = new Date(today); monThis.setDate(today.getDate() - (day===0?6:day-1));
+  const sunThis = new Date(monThis); sunThis.setDate(monThis.getDate()+6);
+
+  const candidates = state.tasks.filter(t => {
+    if (t.status === 'complete') return false;
+    if (sprintTaskIds.has(t.id)) return false;
+    return true;
+  });
+
+  // Group by division → project
+  const divMap = {};
+  state.divisions.forEach(d => { divMap[d.id] = d; });
+  const projMap = {};
+  state.projects.forEach(p => { projMap[p.name] = p; });
+
+  const byProject = {};
+  candidates.forEach(t => {
+    const key = t.project || '__inbox__';
+    if (!byProject[key]) byProject[key] = [];
+    byProject[key].push(t);
+  });
+
+  function taskSuggested(t) {
+    if (!t.due_date) return false;
+    const d = new Date(t.due_date + 'T00:00:00');
+    return d < today || (d >= monThis && d <= sunThis);
+  }
+
+  const candidateHtml = Object.entries(byProject).sort(([a], [b]) => a.localeCompare(b)).map(([projName, tasks]) => {
+    const proj = projMap[projName];
+    const div  = proj?.division_id ? divMap[proj.division_id] : null;
+    const projLabel = projName === '__inbox__' ? '📥 Inbox' : `📁 ${projName}`;
+    const divLabel  = div ? `<span style="font-size:10px;background:${div.color}20;color:${div.color};padding:1px 6px;border-radius:4px;">${esc(div.name)}</span>` : '';
+    const rows = tasks.slice(0, 20).map(t => {
+      const suggested = taskSuggested(t);
+      return `<div class="plan-week-task-row${suggested?' suggested':''}" onclick="addToWeekSprintFromPlan(${t.id})">
+        <span class="pill pill-priority-${t.priority}" style="font-size:10px;padding:1px 5px;">${t.priority}</span>
+        <span style="flex:1;font-size:13px;">${esc(t.title)}</span>
+        ${t.due_date ? `<span style="font-size:11px;${new Date(t.due_date+'T00:00:00')<today?'color:#ef4444;font-weight:500':'color:var(--muted)'}">Due ${fmtDate(t.due_date)}</span>` : ''}
+        ${suggested ? '<span style="font-size:10px;color:#8b5cf6;font-weight:600;">⭐ Suggested</span>' : ''}
+        <button class="btn btn-primary btn-sm" style="font-size:11px;padding:2px 8px;" onclick="event.stopPropagation();addToWeekSprintFromPlan(${t.id})">+ Add</button>
+      </div>`;
+    }).join('');
+    return `<div class="plan-week-project">
+      <div class="plan-week-proj-header">${projLabel} ${divLabel}</div>
+      ${rows}
+    </div>`;
+  }).join('') || '<div style="padding:40px;text-align:center;color:var(--muted);font-size:14px;">No tasks available to plan.</div>';
+
+  const sprintTasks = (state.weekSprint?.tasks || []).map(t => state.tasks.find(x => x.id === t.id) || t);
+
+  list.innerHTML = `<div class="plan-week-wrap">
+    <div class="plan-week-header">
+      <h2 style="font-size:18px;font-weight:700;margin:0;">Plan My Week</h2>
+      <span style="color:var(--muted);font-size:13px;">Week of ${weekMon}</span>
+    </div>
+    <div class="plan-week-body">
+      <div class="plan-week-left">
+        <div style="font-size:12px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:10px;">Candidates (click to add)</div>
+        ${candidateHtml}
+      </div>
+      <div class="plan-week-right">
+        <div style="font-size:12px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px;">This Week's Sprint · ${sprintTaskIds.size} tasks</div>
+        <div class="sprint-cap-bar-wrap" style="margin-bottom:8px;">
+          <div class="sprint-cap-bar" style="width:${pct}%;background:${pct>90?'#ef4444':pct>70?'#f59e0b':'#10b981'}"></div>
+        </div>
+        <div style="font-size:11px;color:var(--muted);margin-bottom:12px;">${estHrs.toFixed(1)}h / ${maxHrs}h estimated</div>
+        ${sprintTasks.length ? sprintTasks.map(t => `<div class="plan-week-sprint-row" onclick="openDetail(${t.id})">
+          <span style="flex:1;font-size:13px;${t.status==='complete'?'text-decoration:line-through;color:var(--muted)':''}">${esc(t.title)}</span>
+          <button class="btn btn-ghost btn-sm" style="font-size:11px;padding:2px 6px;" onclick="event.stopPropagation();removeFromWeekSprint(${t.id})">✕</button>
+        </div>`).join('') : '<div style="font-size:13px;color:var(--muted);text-align:center;padding:20px 0;">Sprint is empty. Add tasks from the left.</div>'}
+        ${!state.weekSprint ? `<button class="btn btn-primary btn-sm" style="width:100%;margin-top:12px;" onclick="startWeekSprintAndRefresh()">Start Sprint</button>` : ''}
+        <button class="btn btn-primary" style="width:100%;margin-top:16px;" onclick="setView('sprint-week')">View Sprint →</button>
+      </div>
+    </div>
+  </div>`;
+}
+
+async function addToWeekSprintFromPlan(taskId) {
+  if (!state.weekSprint) {
+    state.weekSprint = await api('POST', '/api/sprint/week');
+  }
+  try {
+    await api('POST', `/api/tasks/${taskId}/focus-lists/${state.weekSprint.id}`);
+    state.weekSprint = await api('GET', '/api/sprint/week');
+    renderSidebar();
+    renderPlanWeek();
+  } catch(e) { toast(e.message || 'Failed to add task'); }
+}
+
+async function startWeekSprintAndRefresh() {
+  state.weekSprint = await api('POST', '/api/sprint/week');
+  renderSidebar();
+  renderPlanWeek();
+}
+
+async function addDetailTaskToWeekSprint() {
+  if (!state.selectedId) return;
+  try {
+    if (!state.weekSprint) state.weekSprint = await api('POST', '/api/sprint/week');
+    await api('POST', `/api/tasks/${state.selectedId}/focus-lists/${state.weekSprint.id}`);
+    state.weekSprint = await api('GET', '/api/sprint/week');
+    const task = state.tasks.find(t => t.id === state.selectedId);
+    if (task) {
+      task.focus_list_ids = [...(task.focus_list_ids || []), state.weekSprint.id];
+      renderDetailFocusList(task);
+    }
+    renderSidebar();
+    toast('Added to this week\'s sprint');
+  } catch(e) { toast(e.message || 'Failed to add to sprint'); }
+}
+
+function monDateStr(d) {
+  d = d || new Date();
+  const day = d.getDay();
+  const m = new Date(d);
+  m.setHours(0,0,0,0);
+  m.setDate(d.getDate() - (day === 0 ? 6 : day - 1));
+  return m.toISOString().slice(0, 10);
+}
+
 const SPRINT_STATUS_ORDER = ['active','upcoming','parked','complete'];
 const SPRINT_STATUS_LABELS = { active:'Active', upcoming:'Upcoming', parked:'Parked', complete:'Complete' };
 
@@ -3292,7 +3733,7 @@ function renderDbTodayWeek(todayStr, sunStr) {
 }
 
 function renderDbNeedsReviewOnHold() {
-  const tasks = state.tasks.filter(t => t.status === 'needs-review' || t.status === 'on-hold');
+  const tasks = state.tasks.filter(t => t.status === 'review' || t.status === 'needs-review' || t.status === 'on-hold');
   const count = tasks.length;
   const body = dbSectionTable(tasks,
     ['Task','Status','Project','Category'],
@@ -3302,9 +3743,9 @@ function renderDbNeedsReviewOnHold() {
       <td>${t.project ? esc(t.project) : '<span style="color:var(--muted)">—</span>'}</td>
       <td>${t.category ? catPill(t.category) : '<span style="color:var(--muted)">—</span>'}</td>
     </tr>`,
-    "setView('status:needs-review')"
+    "setView('status:review')"
   );
-  return `<div class="db-section"><div class="db-section-head">👀 Needs Review &amp; On Hold <span class="db-section-count">${count}</span></div>${body}</div>`;
+  return `<div class="db-section"><div class="db-section-head">👀 Review &amp; On Hold <span class="db-section-count">${count}</span></div>${body}</div>`;
 }
 
 function renderDbProjectsByDivision() {
@@ -3441,7 +3882,7 @@ function renderDashboard() {
   const pastDueTasks   = openTasks.filter(t => t.due_date && t.due_date < todayStr);
   const thisWeekTasks  = openTasks.filter(t => t.due_date && t.due_date >= todayStr && t.due_date <= sunStr);
   const inProgressTasks  = openTasks.filter(t => t.status === 'in-progress');
-  const needsReviewTasks = openTasks.filter(t => t.status === 'needs-review');
+  const needsReviewTasks = openTasks.filter(t => t.status === 'review' || t.status === 'needs-review');
   const completedRecent  = state.tasks.filter(t => t.status === 'complete' && (t.updated_at||'').slice(0,10) >= sevenAgo);
   const pctComplete = projectTasks.length ? Math.round(completeTasks.length / projectTasks.length * 100) : 0;
 
@@ -3493,9 +3934,9 @@ function renderDashboard() {
         <div class="db-card-val">${inProgressTasks.length}</div>
         <div class="db-card-lbl">In Progress</div>
       </div>
-      <div class="db-card" onclick="setView('status:needs-review')">
+      <div class="db-card" onclick="setView('status:review')">
         <div class="db-card-val">${needsReviewTasks.length}</div>
-        <div class="db-card-lbl">Needs Review</div>
+        <div class="db-card-lbl">Review</div>
       </div>
       <div class="db-card" onclick="setView('status:complete')">
         <div class="db-card-val">${completedRecent.length}</div>
@@ -3587,6 +4028,8 @@ function renderTaskList() {
   if (state.view === 'settings')      { renderSettings();      return; }
   if (state.view === 'all-projects')  { renderAllProjects();   return; }
   if (state.view === 'notes-search')  { renderNotesSearch();   return; }
+  if (state.view === 'plan-week')     { renderPlanWeek();      return; }
+  if (state.view === 'sprint-week')   { renderSprintWeek();    return; }
   if (state.view.startsWith('project:')) {
     const proj = state.projects.find(p => p.id == state.view.slice(8));
     if (proj) { renderProjectDetail(proj); return; }
@@ -4014,6 +4457,22 @@ async function openDetail(id) {
   document.getElementById('d-category').value               = task.category || '';
   document.getElementById('d-project').value                = task.project  || '';
   document.getElementById('d-due').value                    = task.due_date || '';
+  // Populate phase dropdown from project's phases
+  const phaseSel = document.getElementById('d-phase');
+  if (phaseSel) {
+    const proj = task.project ? state.projects.find(p => p.name === task.project) : null;
+    const phases = (proj && state.phases[proj.id]) || [];
+    phaseSel.innerHTML = '<option value="">None</option>' +
+      phases.map(ph => `<option value="${ph.id}">${esc(ph.name)}</option>`).join('');
+    phaseSel.value = task.phase_id || '';
+    if (proj && !state.phases[proj.id]) {
+      api('GET', `/api/projects/${proj.id}/phases`).then(p => {
+        state.phases[proj.id] = p;
+        phaseSel.innerHTML = '<option value="">None</option>' + p.map(ph => `<option value="${ph.id}">${esc(ph.name)}</option>`).join('');
+        phaseSel.value = task.phase_id || '';
+      }).catch(() => {});
+    }
+  }
   document.getElementById('d-notes').value                  = task.notes    || '';
 
   // Source email row
@@ -4077,7 +4536,8 @@ async function saveDetail() {
     due_date:          document.getElementById('d-due').value          || null,
     notes:             document.getElementById('d-notes').value        || null,
     estimated_minutes: document.getElementById('d-estimated-mins').value || null,
-    blocked_by_task_id: document.getElementById('d-blocked-by').value   || null
+    blocked_by_task_id: document.getElementById('d-blocked-by').value   || null,
+    phase_id:          document.getElementById('d-phase')?.value ? Number(document.getElementById('d-phase').value) : null
   };
   if (!payload.title) { toast('Title is required'); return; }
   const updated = await api('PUT', `/api/tasks/${state.selectedId}`, payload);
@@ -6360,6 +6820,7 @@ function renderDivisionList(type) {
       <span class="div-swatch" style="background:${d.color};"></span>
       <span class="div-row-name">${esc(d.name)}</span>
       <span class="div-row-count">${cnt} project${cnt !== 1 ? 's' : ''}</span>
+      <button class="btn btn-ghost btn-sm" onclick="openPhaseTemplateModal(${d.id},'${esc(d.name)}')">Phase Template</button>
       <button class="btn btn-ghost btn-sm" onclick="showEditDivisionRow(${d.id})">Edit</button>
       <button class="btn btn-ghost btn-sm" style="color:#ef4444" onclick="deleteDivision(${d.id})">Delete</button>
     </div>`;
@@ -6490,6 +6951,55 @@ async function confirmDeleteDivision() {
     renderSidebar(); renderTaskList();
     toast('Division deleted');
   } catch(e) { toast(e.message); }
+}
+
+// ── Division Phase Templates ───────────────────────────────────────────────────
+
+let _phaseTplDivId = null;
+
+async function openPhaseTemplateModal(divId, divName) {
+  _phaseTplDivId = divId;
+  document.getElementById('phase-tpl-modal-title').textContent = `Stage Template: ${divName}`;
+  let phases = [];
+  try { phases = await api('GET', `/api/divisions/${divId}/phase-template`); } catch(_) {}
+  // Default template if none
+  if (!phases.length) phases = [{name:'Plan'},{name:'Prepare'},{name:'Execute'},{name:'Wrap-up'}];
+  renderPhaseTemplateList(phases);
+  document.getElementById('phase-template-modal').classList.add('open');
+}
+
+function renderPhaseTemplateList(phases) {
+  document.getElementById('phase-tpl-list').innerHTML = phases.map((p, i) =>
+    `<div class="div-phase-tpl-row" data-tpl-idx="${i}">
+      <input type="text" value="${esc(p.name)}" placeholder="Stage name" style="flex:1;padding:5px 8px;border:1px solid var(--border);border-radius:6px;font-size:13px;">
+      <button class="btn btn-ghost btn-sm" style="color:#ef4444;padding:2px 6px;" onclick="this.closest('[data-tpl-idx]').remove()">✕</button>
+    </div>`
+  ).join('');
+}
+
+function addPhaseTemplateRow() {
+  const list = document.getElementById('phase-tpl-list');
+  const div = document.createElement('div');
+  div.className = 'div-phase-tpl-row';
+  div.dataset.tplIdx = Date.now();
+  div.innerHTML = `<input type="text" placeholder="Stage name" style="flex:1;padding:5px 8px;border:1px solid var(--border);border-radius:6px;font-size:13px;">
+    <button class="btn btn-ghost btn-sm" style="color:#ef4444;padding:2px 6px;" onclick="this.closest('[data-tpl-idx]').remove()">✕</button>`;
+  list.appendChild(div);
+  div.querySelector('input').focus();
+}
+
+function closePhaseTemplateModal() { document.getElementById('phase-template-modal').classList.remove('open'); }
+document.getElementById('phase-template-modal').addEventListener('click', e => { if (e.target===e.currentTarget) closePhaseTemplateModal(); });
+
+async function savePhaseTemplate() {
+  if (!_phaseTplDivId) return;
+  const rows = document.querySelectorAll('#phase-tpl-list [data-tpl-idx]');
+  const phases = Array.from(rows).map(r => ({ name: r.querySelector('input').value.trim() })).filter(p => p.name);
+  try {
+    await api('PUT', `/api/divisions/${_phaseTplDivId}/phase-template`, { phases });
+    closePhaseTemplateModal();
+    toast('Phase template saved');
+  } catch(e) { toast(e.message || 'Failed to save template'); }
 }
 
 // Drag-to-reorder for division list

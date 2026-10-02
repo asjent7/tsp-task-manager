@@ -183,6 +183,8 @@ try { db.prepare('ALTER TABLE tasks ADD COLUMN gmail_thread_id TEXT').run(); } c
 try { db.prepare('ALTER TABLE tasks ADD COLUMN source_url TEXT').run(); } catch(e) {}
 try { db.prepare('ALTER TABLE tasks ADD COLUMN source_sender TEXT').run(); } catch(e) {}
 try { db.prepare('ALTER TABLE tasks ADD COLUMN source_date TEXT').run(); } catch(e) {}
+try { db.prepare('ALTER TABLE tasks ADD COLUMN phase_id INTEGER REFERENCES phases(id) ON DELETE SET NULL').run(); } catch(e) {}
+try { db.prepare('ALTER TABLE focus_lists ADD COLUMN sprint_week TEXT').run(); } catch(e) {}
 // One-time: backfill source fields from existing Gmail task notes
 if (!db.prepare("SELECT value FROM settings WHERE key='gmail_source_backfill_v1'").get()) {
   try {
@@ -221,6 +223,23 @@ db.exec(`CREATE TABLE IF NOT EXISTS divisions (
   });
 try { db.prepare('ALTER TABLE projects ADD COLUMN division_id INTEGER REFERENCES divisions(id)').run(); } catch(e) {}
 try { db.prepare("ALTER TABLE divisions ADD COLUMN type TEXT NOT NULL DEFAULT 'professional'").run(); } catch(e) {}
+
+// Phases
+db.exec(`CREATE TABLE IF NOT EXISTS phases (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  name       TEXT NOT NULL,
+  sort_order INTEGER NOT NULL DEFAULT 0,
+  status     TEXT NOT NULL DEFAULT 'not-started'
+)`);
+
+// Division phase templates
+db.exec(`CREATE TABLE IF NOT EXISTS division_phase_templates (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  division_id INTEGER NOT NULL REFERENCES divisions(id) ON DELETE CASCADE,
+  name        TEXT NOT NULL,
+  sort_order  INTEGER NOT NULL DEFAULT 0
+)`);
 
 // One-time migration: map projects.division (text) → division_id
 if (!db.prepare("SELECT value FROM settings WHERE key='divisions_migration_v1'").get()) {
@@ -288,6 +307,27 @@ db.prepare('UPDATE tasks SET legacy_status = status WHERE legacy_status IS NULL'
   const n = db.prepare('UPDATE tasks SET status = ? WHERE status = ?').run(to, from).changes;
   if (n > 0) console.log(`[migration] Remapped ${n} task(s) from '${from}' to '${to}'`);
 });
+// Rename needs-review stage → review (any stragglers not caught above)
+{ const n = db.prepare("UPDATE tasks SET status='review' WHERE status='needs-review'").run().changes; if (n > 0) console.log(`[migration] Remapped ${n} task(s) needs-review → review`); }
+
+// One-time: convert "Priority Push" focus list to current week's sprint
+if (!db.prepare("SELECT value FROM settings WHERE key='weekly_sprint_v1'").get()) {
+  try {
+    const now = new Date();
+    const day = now.getDay();
+    const mon = new Date(now);
+    mon.setDate(now.getDate() - (day === 0 ? 6 : day - 1));
+    const wk = mon.toISOString().slice(0, 10);
+    db.transaction(() => {
+      const fl = db.prepare("SELECT * FROM focus_lists WHERE LOWER(name) LIKE '%priority push%'").get();
+      if (fl && !fl.sprint_week) {
+        db.prepare('UPDATE focus_lists SET sprint_week=?, name=? WHERE id=?').run(wk, `Week of ${wk}`, fl.id);
+      }
+      db.prepare("INSERT INTO settings (key,value) VALUES ('weekly_sprint_v1','1')").run();
+    })();
+    console.log('[migration] weekly_sprint_v1 complete');
+  } catch(e) { console.error('[migration] weekly_sprint_v1 failed:', e.message); }
+}
 
 // Default settings
 [['daily_capacity_minutes','480'],['day_start_hour','5'],['day_end_hour','21'],
@@ -424,15 +464,18 @@ app.put('/api/tasks/:id', (req, res) => {
   const blocked_by_task_id = body.blocked_by_task_id !== undefined
     ? (body.blocked_by_task_id ? Number(body.blocked_by_task_id) : null)
     : task.blocked_by_task_id;
+  const phase_id = body.phase_id !== undefined
+    ? (body.phase_id ? Number(body.phase_id) : null)
+    : task.phase_id;
 
   const titleChanged = title !== task.title;
   db.prepare(`
     UPDATE tasks SET
       title = ?, priority = ?, category = ?, project = ?, status = ?,
       due_date = ?, estimated_minutes = ?, notes = ?, is_inbox = ?,
-      blocked_by_task_id = ?, updated_at = datetime('now')
+      blocked_by_task_id = ?, phase_id = ?, updated_at = datetime('now')
     WHERE id = ?
-  `).run(title, priority, category, project, status, due_date, estimated_minutes, notes, is_inbox, blocked_by_task_id, req.params.id);
+  `).run(title, priority, category, project, status, due_date, estimated_minutes, notes, is_inbox, blocked_by_task_id, phase_id, req.params.id);
 
   // Fire-and-forget: update GCal titles for future blocks on task rename
   if (titleChanged) {
@@ -612,7 +655,17 @@ app.post('/api/projects', (req, res) => {
   if (!name?.trim()) return res.status(400).json({ error: 'Project name is required' });
   try {
     const result = db.prepare('INSERT INTO projects (name, type, division_id) VALUES (?, ?, ?)').run(name.trim(), type, division_id||null);
-    res.status(201).json(withLinks(db.prepare('SELECT * FROM projects WHERE id = ?').get(result.lastInsertRowid)));
+    const projId = result.lastInsertRowid;
+    if (division_id) {
+      const tpls = db.prepare('SELECT * FROM division_phase_templates WHERE division_id = ? ORDER BY sort_order').all(division_id);
+      if (tpls.length) {
+        const ins = db.prepare('INSERT INTO phases (project_id, name, sort_order, status) VALUES (?,?,?,?)');
+        db.transaction(() => {
+          tpls.forEach((t, i) => ins.run(projId, t.name, i + 1, i === 0 ? 'active' : 'not-started'));
+        })();
+      }
+    }
+    res.status(201).json(withLinks(db.prepare('SELECT * FROM projects WHERE id = ?').get(projId)));
   } catch (e) {
     if (e.message.includes('UNIQUE')) return res.status(409).json({ error: 'Project already exists' });
     throw e;
@@ -748,6 +801,28 @@ app.delete('/api/divisions/:id', (req, res) => {
     db.prepare('DELETE FROM divisions WHERE id=?').run(div.id);
   })();
   res.json({ ok: true });
+});
+
+// ── Division Phase Templates ───────────────────────────────────────────────────
+
+app.get('/api/divisions/:id/phase-template', (req, res) => {
+  const div = db.prepare('SELECT id FROM divisions WHERE id = ?').get(req.params.id);
+  if (!div) return res.status(404).json({ error: 'Division not found' });
+  res.json(db.prepare('SELECT * FROM division_phase_templates WHERE division_id = ? ORDER BY sort_order').all(req.params.id));
+});
+
+app.put('/api/divisions/:id/phase-template', (req, res) => {
+  const div = db.prepare('SELECT id FROM divisions WHERE id = ?').get(req.params.id);
+  if (!div) return res.status(404).json({ error: 'Division not found' });
+  const { phases } = req.body;
+  if (!Array.isArray(phases)) return res.status(400).json({ error: 'phases must be an array' });
+  db.transaction(() => {
+    db.prepare('DELETE FROM division_phase_templates WHERE division_id = ?').run(req.params.id);
+    phases.filter(p => p?.name?.trim()).forEach((p, i) => {
+      db.prepare('INSERT INTO division_phase_templates (division_id, name, sort_order) VALUES (?,?,?)').run(req.params.id, p.name.trim(), i + 1);
+    });
+  })();
+  res.json(db.prepare('SELECT * FROM division_phase_templates WHERE division_id = ? ORDER BY sort_order').all(req.params.id));
 });
 
 // ── Categories ────────────────────────────────────────────────────────────────
@@ -960,6 +1035,71 @@ app.delete('/api/sprints/:id/tasks/:taskId', (req, res) => {
   res.status(204).end();
 });
 
+// ── Phases ────────────────────────────────────────────────────────────────────
+
+app.get('/api/projects/:id/phases', (req, res) => {
+  const proj = db.prepare('SELECT id FROM projects WHERE id = ?').get(req.params.id);
+  if (!proj) return res.status(404).json({ error: 'Project not found' });
+  res.json(db.prepare('SELECT * FROM phases WHERE project_id = ? ORDER BY sort_order, id').all(req.params.id));
+});
+
+app.post('/api/projects/:id/phases', (req, res) => {
+  const proj = db.prepare('SELECT id FROM projects WHERE id = ?').get(req.params.id);
+  if (!proj) return res.status(404).json({ error: 'Project not found' });
+  const { name, status = 'not-started' } = req.body;
+  if (!name?.trim()) return res.status(400).json({ error: 'Name is required' });
+  const maxOrd = db.prepare('SELECT MAX(sort_order) AS m FROM phases WHERE project_id = ?').get(req.params.id)?.m || 0;
+  if (status === 'active') {
+    db.prepare("UPDATE phases SET status='not-started' WHERE project_id=? AND status='active'").run(req.params.id);
+  }
+  const r = db.prepare('INSERT INTO phases (project_id, name, sort_order, status) VALUES (?,?,?,?)').run(req.params.id, name.trim(), maxOrd + 1, status);
+  res.status(201).json(db.prepare('SELECT * FROM phases WHERE id = ?').get(r.lastInsertRowid));
+});
+
+app.put('/api/phases/:id', (req, res) => {
+  const phase = db.prepare('SELECT * FROM phases WHERE id = ?').get(req.params.id);
+  if (!phase) return res.status(404).json({ error: 'Phase not found' });
+  const { name, status, sort_order } = req.body;
+  if (status === 'active' && phase.status !== 'active') {
+    db.prepare("UPDATE phases SET status='not-started' WHERE project_id=? AND status='active' AND id!=?").run(phase.project_id, req.params.id);
+  }
+  db.prepare('UPDATE phases SET name=?, status=?, sort_order=? WHERE id=?').run(
+    name?.trim() ?? phase.name, status ?? phase.status, sort_order ?? phase.sort_order, req.params.id
+  );
+  res.json(db.prepare('SELECT * FROM phases WHERE id = ?').get(req.params.id));
+});
+
+app.patch('/api/phases/:id', (req, res) => {
+  const phase = db.prepare('SELECT * FROM phases WHERE id = ?').get(req.params.id);
+  if (!phase) return res.status(404).json({ error: 'Phase not found' });
+  const { status } = req.body;
+  if (status === 'active') {
+    db.prepare("UPDATE phases SET status='not-started' WHERE project_id=? AND status='active' AND id!=?").run(phase.project_id, req.params.id);
+  }
+  db.prepare('UPDATE phases SET status=? WHERE id=?').run(status ?? phase.status, req.params.id);
+  res.json(db.prepare('SELECT * FROM phases WHERE id = ?').get(req.params.id));
+});
+
+app.delete('/api/phases/:id', (req, res) => {
+  const result = db.prepare('DELETE FROM phases WHERE id = ?').run(req.params.id);
+  if (!result.changes) return res.status(404).json({ error: 'Phase not found' });
+  res.status(204).end();
+});
+
+app.post('/api/projects/:id/apply-phase-template', (req, res) => {
+  const proj = db.prepare('SELECT * FROM projects WHERE id = ?').get(req.params.id);
+  if (!proj) return res.status(404).json({ error: 'Project not found' });
+  if (!proj.division_id) return res.status(400).json({ error: 'Project has no division' });
+  const tpls = db.prepare('SELECT * FROM division_phase_templates WHERE division_id = ? ORDER BY sort_order').all(proj.division_id);
+  if (!tpls.length) return res.status(400).json({ error: 'No phase template for this division' });
+  const maxOrd = db.prepare('SELECT MAX(sort_order) AS m FROM phases WHERE project_id = ?').get(proj.id)?.m || 0;
+  const ins = db.prepare('INSERT INTO phases (project_id, name, sort_order, status) VALUES (?,?,?,?)');
+  db.transaction(() => {
+    tpls.forEach((t, i) => ins.run(proj.id, t.name, maxOrd + i + 1, 'not-started'));
+  })();
+  res.json(db.prepare('SELECT * FROM phases WHERE project_id = ? ORDER BY sort_order').all(proj.id));
+});
+
 // ── Focus Lists ───────────────────────────────────────────────────────────────
 
 const focusListStats = (id) => {
@@ -1041,6 +1181,68 @@ app.delete('/api/tasks/:taskId/focus-lists/:focusListId', (req, res) => {
   const result = db.prepare('DELETE FROM task_focus_lists WHERE task_id = ? AND focus_list_id = ?').run(req.params.taskId, req.params.focusListId);
   if (!result.changes) return res.status(404).json({ error: 'Task is not in this focus list' });
   res.status(204).end();
+});
+
+// ── Weekly Sprint ─────────────────────────────────────────────────────────────
+
+function monStr(d) {
+  d = d ? new Date(d) : new Date();
+  const day = d.getDay();
+  d.setDate(d.getDate() - (day === 0 ? 6 : day - 1));
+  return d.toISOString().slice(0, 10);
+}
+
+app.get('/api/sprint/week', (req, res) => {
+  const week = req.query.week || monStr();
+  const fl = db.prepare('SELECT * FROM focus_lists WHERE sprint_week = ?').get(week);
+  if (!fl) return res.json(null);
+  const tasks = db.prepare('SELECT t.* FROM tasks t JOIN task_focus_lists tfl ON t.id=tfl.task_id WHERE tfl.focus_list_id=? ORDER BY t.due_date,t.id').all(fl.id);
+  res.json({ ...fl, ...focusListStats(fl.id), tasks });
+});
+
+app.post('/api/sprint/week', (req, res) => {
+  const week = req.body.week || monStr();
+  let fl = db.prepare('SELECT * FROM focus_lists WHERE sprint_week = ?').get(week);
+  if (!fl) {
+    const name = `Week of ${week}`;
+    try {
+      const r = db.prepare('INSERT INTO focus_lists (name, sprint_week) VALUES (?, ?)').run(name, week);
+      fl = db.prepare('SELECT * FROM focus_lists WHERE id = ?').get(r.lastInsertRowid);
+    } catch (e) {
+      if (!e.message.includes('UNIQUE')) throw e;
+      const r = db.prepare('INSERT INTO focus_lists (name, sprint_week) VALUES (?, ?)').run(`${name} (2)`, week);
+      fl = db.prepare('SELECT * FROM focus_lists WHERE id = ?').get(r.lastInsertRowid);
+    }
+  }
+  const tasks = db.prepare('SELECT t.* FROM tasks t JOIN task_focus_lists tfl ON t.id=tfl.task_id WHERE tfl.focus_list_id=? ORDER BY t.due_date,t.id').all(fl.id);
+  res.json({ ...fl, ...focusListStats(fl.id), tasks });
+});
+
+app.post('/api/sprint/week/close', (req, res) => {
+  const week = req.body.week || monStr();
+  const fl = db.prepare('SELECT * FROM focus_lists WHERE sprint_week = ?').get(week);
+  if (!fl) return res.status(404).json({ error: 'No sprint for this week' });
+  const { rolls = [], returns = [] } = req.body;
+  const d = new Date(week + 'T00:00:00');
+  d.setDate(d.getDate() + 7);
+  const nextWeek = d.toISOString().slice(0, 10);
+  db.transaction(() => {
+    if (rolls.length) {
+      let nextFl = db.prepare('SELECT * FROM focus_lists WHERE sprint_week = ?').get(nextWeek);
+      if (!nextFl) {
+        const r = db.prepare('INSERT INTO focus_lists (name, sprint_week) VALUES (?, ?)').run(`Week of ${nextWeek}`, nextWeek);
+        nextFl = db.prepare('SELECT * FROM focus_lists WHERE id = ?').get(r.lastInsertRowid);
+      }
+      rolls.forEach(tid => {
+        try { db.prepare('INSERT INTO task_focus_lists (task_id, focus_list_id) VALUES (?,?)').run(tid, nextFl.id); } catch(_) {}
+        db.prepare('DELETE FROM task_focus_lists WHERE task_id=? AND focus_list_id=?').run(tid, fl.id);
+      });
+    }
+    returns.forEach(tid => {
+      db.prepare('DELETE FROM task_focus_lists WHERE task_id=? AND focus_list_id=?').run(tid, fl.id);
+    });
+  })();
+  res.json({ ok: true, nextWeek });
 });
 
 // ── Settings ─────────────────────────────────────────────────────────────────
