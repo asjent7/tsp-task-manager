@@ -4317,23 +4317,32 @@ async function submitSubtaskPasteArea() {
 
 document.getElementById('subtask-input').addEventListener('keydown', e => { if (e.key === 'Enter') addSubtask(); });
 
+// Capture raw clipboard text during paste (never preventDefault — browser always inserts).
+// The input event fires after the browser inserts/normalises the text; we use the raw
+// clipboard value stored here to detect and process multi-line pastes.
+let _subtaskPasteRaw = null;
 document.getElementById('subtask-input').addEventListener('paste', e => {
-  let text;
   try {
-    text = (e.clipboardData || window.clipboardData).getData('text/plain')
-        || (e.clipboardData || window.clipboardData).getData('text');
+    _subtaskPasteRaw = (e.clipboardData || window.clipboardData).getData('text/plain')
+                   || (e.clipboardData || window.clipboardData).getData('text') || null;
   } catch (_) {
-    return; // clipboard unreadable — let browser handle normally
+    _subtaskPasteRaw = null;
   }
-  if (!text || !text.includes('\n')) return; // single-line: let browser paste normally
-  e.preventDefault();
+  // Never preventDefault — let the browser paste normally for single-line.
+  // Multi-line is handled in the 'input' listener below.
+});
+
+document.getElementById('subtask-input').addEventListener('input', () => {
+  const raw = _subtaskPasteRaw;
+  _subtaskPasteRaw = null;
+  if (!raw || !raw.includes('\n')) return; // single-line or not a paste — nothing to do
+  // Multi-line paste: clear the browser-normalised value and run the subtask flow
   document.getElementById('subtask-input').value = '';
   let items;
   try {
-    items = parsePastedSubtasks(text);
+    items = parsePastedSubtasks(raw);
   } catch (_) {
-    // parsing failed — fall back to first line as plain text
-    document.getElementById('subtask-input').value = text.split('\n')[0].trim();
+    document.getElementById('subtask-input').value = raw.split('\n')[0].trim();
     return;
   }
   if (!items.length) return;
