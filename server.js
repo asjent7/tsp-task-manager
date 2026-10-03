@@ -185,6 +185,8 @@ try { db.prepare('ALTER TABLE tasks ADD COLUMN source_sender TEXT').run(); } cat
 try { db.prepare('ALTER TABLE tasks ADD COLUMN source_date TEXT').run(); } catch(e) {}
 try { db.prepare('ALTER TABLE tasks ADD COLUMN phase_id INTEGER REFERENCES phases(id) ON DELETE SET NULL').run(); } catch(e) {}
 try { db.prepare('ALTER TABLE focus_lists ADD COLUMN sprint_week TEXT').run(); } catch(e) {}
+try { db.prepare("ALTER TABLE tasks ADD COLUMN horizon TEXT NOT NULL DEFAULT 'active'").run(); } catch(e) {}
+try { db.prepare("ALTER TABLE projects ADD COLUMN horizon TEXT NOT NULL DEFAULT 'active'").run(); } catch(e) {}
 // One-time: backfill source fields from existing Gmail task notes
 if (!db.prepare("SELECT value FROM settings WHERE key='gmail_source_backfill_v1'").get()) {
   try {
@@ -425,21 +427,21 @@ app.get('/api/tasks/:id', (req, res) => {
 app.post('/api/tasks', (req, res) => {
   const {
     title, priority = 'medium', category, project,
-    status = 'new', due_date, estimated_minutes, notes
+    status = 'new', due_date, estimated_minutes, notes, horizon = 'active'
   } = req.body;
 
   if (!title?.trim()) return res.status(400).json({ error: 'Title is required' });
 
   const is_inbox = (!category && !project) ? 1 : 0;
   const result = db.prepare(`
-    INSERT INTO tasks (title, priority, category, project, status, due_date, estimated_minutes, notes, is_inbox)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO tasks (title, priority, category, project, status, due_date, estimated_minutes, notes, is_inbox, horizon)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     title.trim(), priority,
     category || null, project || null,
     status, due_date || null,
     estimated_minutes ? Number(estimated_minutes) : null,
-    notes || null, is_inbox
+    notes || null, is_inbox, horizon
   );
 
   res.status(201).json(db.prepare('SELECT * FROM tasks WHERE id = ?').get(result.lastInsertRowid));
@@ -467,15 +469,22 @@ app.put('/api/tasks/:id', (req, res) => {
   const phase_id = body.phase_id !== undefined
     ? (body.phase_id ? Number(body.phase_id) : null)
     : task.phase_id;
+  const horizon = body.horizon !== undefined ? body.horizon : (task.horizon || 'active');
 
   const titleChanged = title !== task.title;
-  db.prepare(`
-    UPDATE tasks SET
-      title = ?, priority = ?, category = ?, project = ?, status = ?,
-      due_date = ?, estimated_minutes = ?, notes = ?, is_inbox = ?,
-      blocked_by_task_id = ?, phase_id = ?, updated_at = datetime('now')
-    WHERE id = ?
-  `).run(title, priority, category, project, status, due_date, estimated_minutes, notes, is_inbox, blocked_by_task_id, phase_id, req.params.id);
+  const goingSomeday = horizon === 'someday' && (task.horizon || 'active') === 'active';
+  db.transaction(() => {
+    db.prepare(`
+      UPDATE tasks SET
+        title = ?, priority = ?, category = ?, project = ?, status = ?,
+        due_date = ?, estimated_minutes = ?, notes = ?, is_inbox = ?,
+        blocked_by_task_id = ?, phase_id = ?, horizon = ?, updated_at = datetime('now')
+      WHERE id = ?
+    `).run(title, priority, category, project, status, due_date, estimated_minutes, notes, is_inbox, blocked_by_task_id, phase_id, horizon, req.params.id);
+    if (goingSomeday) {
+      db.prepare('DELETE FROM task_focus_lists WHERE task_id = ?').run(req.params.id);
+    }
+  })();
 
   // Fire-and-forget: update GCal titles for future blocks on task rename
   if (titleChanged) {
@@ -489,6 +498,15 @@ app.put('/api/tasks/:id', (req, res) => {
   }
 
   res.json(db.prepare('SELECT * FROM tasks WHERE id = ?').get(req.params.id));
+});
+
+app.delete('/api/tasks/:id/future-blocks', (req, res) => {
+  const today = new Date().toISOString().slice(0, 10);
+  const futureBlocks = db.prepare('SELECT * FROM time_blocks WHERE task_id=? AND date>=?').all(req.params.id, today);
+  const eventIds = futureBlocks.map(b => b.gcal_event_id).filter(Boolean);
+  db.prepare('DELETE FROM time_blocks WHERE task_id=? AND date>=?').run(req.params.id, today);
+  if (eventIds.length) Promise.all(eventIds.map(id => deleteGoogleTaskBlockEvent(id))).catch(() => {});
+  res.json({ deleted: futureBlocks.length });
 });
 
 app.delete('/api/tasks/:id', (req, res) => {
@@ -675,14 +693,20 @@ app.post('/api/projects', (req, res) => {
 app.put('/api/projects/:id', (req, res) => {
   const proj = db.prepare('SELECT * FROM projects WHERE id = ?').get(req.params.id);
   if (!proj) return res.status(404).json({ error: 'Project not found' });
-  const { name, type, division_id } = req.body;
+  const { name, type, division_id, horizon } = req.body;
   if (!name?.trim()) return res.status(400).json({ error: 'Project name is required' });
-  const newType  = type       !== undefined ? type                  : proj.type;
-  const newDivId = division_id !== undefined ? (division_id||null) : proj.division_id;
+  const newType    = type       !== undefined ? type                  : proj.type;
+  const newDivId   = division_id !== undefined ? (division_id||null) : proj.division_id;
+  const newHorizon = horizon    !== undefined ? horizon              : (proj.horizon || 'active');
+  const goingSomeday = newHorizon === 'someday' && (proj.horizon || 'active') === 'active';
   try {
     db.transaction(() => {
-      db.prepare('UPDATE projects SET name=?, type=?, division_id=? WHERE id=?').run(name.trim(), newType, newDivId, req.params.id);
+      db.prepare('UPDATE projects SET name=?, type=?, division_id=?, horizon=? WHERE id=?').run(name.trim(), newType, newDivId, newHorizon, req.params.id);
       db.prepare("UPDATE tasks SET project=?, updated_at=datetime('now') WHERE project=?").run(name.trim(), proj.name);
+      if (goingSomeday) {
+        // Remove all of this project's tasks from focus lists (sprint)
+        db.prepare('DELETE FROM task_focus_lists WHERE task_id IN (SELECT id FROM tasks WHERE project=?)').run(name.trim());
+      }
     })();
     res.json(withLinks(db.prepare('SELECT * FROM projects WHERE id = ?').get(req.params.id)));
   } catch (e) {

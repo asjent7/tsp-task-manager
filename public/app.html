@@ -870,6 +870,12 @@
           <span class="nav-count" id="cnt-sprint-week">0</span>
         </div>
       </div>
+      <div class="nav-item" data-view="someday" onclick="setView('someday')">
+        <span class="nav-label"><span class="nav-icon">💭</span> Someday</span>
+        <div class="nav-right">
+          <span class="nav-count" id="cnt-someday">0</span>
+        </div>
+      </div>
     </div>
 
     <hr class="sidebar-divider">
@@ -1011,6 +1017,15 @@
         <div class="field">
           <label>Due Date</label>
           <input type="date" id="d-due">
+        </div>
+      </div>
+      <div class="field-row">
+        <div class="field">
+          <label>Horizon</label>
+          <div style="display:flex;gap:6px;margin-top:2px;">
+            <button id="d-horizon-active" class="btn btn-ghost btn-sm" onclick="setTaskHorizon(state.selectedId,'active')" style="flex:1;font-size:12px;">Active</button>
+            <button id="d-horizon-someday" class="btn btn-ghost btn-sm" onclick="setTaskHorizon(state.selectedId,'someday')" style="flex:1;font-size:12px;">Someday</button>
+          </div>
         </div>
       </div>
       <div class="field">
@@ -1157,6 +1172,13 @@
     <select id="edit-proj-division">
       <option value="">No division</option>
     </select>
+    <div style="margin-top:10px;">
+      <label style="font-size:12px;font-weight:600;color:var(--muted,#64748b);display:block;margin-bottom:4px;">Horizon</label>
+      <div style="display:flex;gap:6px;">
+        <button id="edit-proj-horizon-active" class="btn btn-primary btn-sm" onclick="editProjSetHorizon('active')" style="flex:1;">Active</button>
+        <button id="edit-proj-horizon-someday" class="btn btn-ghost btn-sm" onclick="editProjSetHorizon('someday')" style="flex:1;">Someday</button>
+      </div>
+    </div>
     <div class="modal-btns">
       <button class="btn btn-ghost btn-sm" onclick="closeRenameProject()">Cancel</button>
       <button class="btn btn-primary btn-sm" onclick="renameProject()">Save</button>
@@ -1645,6 +1667,16 @@ const STAGE_COLORS  = { new:'#94a3b8', assigned:'#60a5fa', 'in-progress':'#0ea5e
 const PHASE_STATUS_LABELS = { 'not-started':'Not Started', active:'Active', done:'Done' };
 let PX_PER_HOUR = 80;
 
+function isActiveProject(p) { return (p.horizon || 'active') === 'active'; }
+function isActiveTask(t) {
+  if ((t.horizon || 'active') !== 'active') return false;
+  if (t.project) {
+    const proj = state.projects.find(p => p.name === t.project);
+    if (proj && (proj.horizon || 'active') !== 'active') return false;
+  }
+  return true;
+}
+
 // ── State ─────────────────────────────────────────────────────────────────────
 
 function getWeekStart(date) {
@@ -1810,6 +1842,7 @@ function viewTitle(view) {
   if (view === 'notes-search') return `Notes: "${state._notesSearchQ || ''}"`;
   if (view === 'plan-week')    return 'Plan My Week';
   if (view === 'sprint-week')  return 'This Week\'s Sprint';
+  if (view === 'someday')      return 'Someday';
   const [type, val] = view.split(':');
   if (type === 'status')   return STATUS_LABELS[val] || val.replace(/-/g,' ').replace(/\b\w/g, c => c.toUpperCase());
   if (type === 'category') return catName(val);
@@ -1905,9 +1938,12 @@ function renderSidebar() {
   state.projects.forEach(p => { counts['proj:'+p.id] = 0; });
   counts['due:past-due'] = 0; counts['due:today'] = 0; counts['due:this-week'] = 0; counts['due:next-week'] = 0;
 
+  let somedayCount = 0;
   state.tasks.forEach(t => {
+    const active = isActiveTask(t);
     const done = t.status === 'complete';
-    counts['status:'+t.status] = (counts['status:'+t.status] || 0) + 1;
+    if (active) counts['status:'+t.status] = (counts['status:'+t.status] || 0) + 1;
+    if (!active) { if (!done) somedayCount++; return; }
     if (done) return; // exclude complete from all other counts
     counts.all++;
     if (t.is_inbox) counts.inbox++;
@@ -1928,10 +1964,14 @@ function renderSidebar() {
       if (d >= monNext && d <= sunNext) counts['due:next-week']++;
     }
   });
+  // Also count someday projects (with at least one task or none — just the hidden projects themselves)
+  state.projects.forEach(p => { if (!isActiveProject(p)) somedayCount++; });
 
   document.getElementById('cnt-inbox').textContent        = counts.inbox;
   document.getElementById('cnt-all').textContent          = counts.all;
-  document.getElementById('cnt-all-projects').textContent = state.projects.length;
+  document.getElementById('cnt-all-projects').textContent = state.projects.filter(isActiveProject).length;
+  const somedayEl = document.getElementById('cnt-someday');
+  if (somedayEl) somedayEl.textContent = somedayCount;
   document.getElementById('cnt-past-due').textContent = counts['due:past-due'];
   document.getElementById('cnt-today').textContent    = counts['due:today'];
   document.getElementById('cnt-this-week').textContent = counts['due:this-week'];
@@ -1949,7 +1989,7 @@ function renderSidebar() {
       <span class="nav-count">${counts['cat:'+c.slug] || 0}</span>
     </div>`).join('');
 
-  document.getElementById('proj-nav').innerHTML = state.projects.map(p => `
+  document.getElementById('proj-nav').innerHTML = state.projects.filter(isActiveProject).map(p => `
     <div class="nav-item" data-view="project:${p.id}" onclick="setView('project:${p.id}')">
       <span class="nav-label"><span class="nav-icon">📁</span> ${esc(p.name)}${p.division ? ` <span class="proj-div-tag" style="background:${p.division_color||'rgba(255,255,255,.1)'};color:#fff;">${esc(p.division)}</span>` : ''}</span>
       <div class="nav-right">
@@ -1991,7 +2031,7 @@ function populateFilterProject() {
   const cur = state.filters.project;
   const counts = {};
   state.tasks.forEach(t => {
-    if (t.status === 'complete' || !t.project) return;
+    if (t.status === 'complete' || !t.project || !isActiveTask(t)) return;
     counts[t.project] = (counts[t.project] || 0) + 1;
   });
   const names = Object.keys(counts).sort((a, b) => a.localeCompare(b));
@@ -2033,7 +2073,8 @@ function setView(view) {
   }
   const isPlanWeek    = view === 'plan-week';
   const isSprintWeek  = view === 'sprint-week';
-  const isListable    = !isDashboard && !isCalendar && !isSettings && !isAllProjects && !isProjectDetail && !isPlanWeek && !isSprintWeek;
+  const isSomeday     = view === 'someday';
+  const isListable    = !isDashboard && !isCalendar && !isSettings && !isAllProjects && !isProjectDetail && !isPlanWeek && !isSprintWeek && !isSomeday;
   document.getElementById('view-title').style.display    = (isProjectDetail || isDashboard || isPlanWeek) ? 'none' : '';
   document.getElementById('search-wrap').style.display   = isListable ? '' : 'none';
   document.getElementById('filter-bar').style.display    = isListable ? '' : 'none';
@@ -2071,6 +2112,9 @@ function getVisibleTasks() {
   const v = state.view;
   const td = today0();
   const day = td.getDay();
+
+  // Hide someday items from all regular views
+  if (v !== 'someday') tasks = tasks.filter(isActiveTask);
 
   if (v === 'inbox')               tasks = tasks.filter(t => t.is_inbox);
   else if (v === 'all')            {} // all
@@ -2140,10 +2184,10 @@ function renderAllProjects() {
   const inp     = document.getElementById('proj-search');
   const rawQ    = inp ? inp.value : '';
   const q       = rawQ.toLowerCase().trim();
-  const matched = state.projects.filter(p => !q || p.name.toLowerCase().includes(q));
+  const matched = state.projects.filter(p => isActiveProject(p) && (!q || p.name.toLowerCase().includes(q)));
 
   function makeCard(p) {
-    const all  = state.tasks.filter(t => t.project === p.name);
+    const all  = state.tasks.filter(t => t.project === p.name && isActiveTask(t));
     const done = all.filter(t => t.status === 'complete').length;
     const tot  = all.length;
     const pct  = tot ? Math.round(done / tot * 100) : 0;
@@ -2244,6 +2288,7 @@ function pdFilters(projId) { return pdState.filters[projId] || { phase:'', categ
 function pdGetTasks(proj) {
   const f = pdFilters(proj.id);
   return state.tasks.filter(t => {
+    if (!isActiveTask(t)) return false;
     if (t.project !== proj.name) return false;
     if (f.phase && t.status !== f.phase) return false;
     if (f.category && t.category !== f.category) return false;
@@ -2983,6 +3028,190 @@ async function applyDivisionPhaseTemplate(projId) {
   toast('Division phase template applied');
 }
 
+// ── Someday view ──────────────────────────────────────────────────────────────
+
+let _somedaySearch = '';
+let _somedayCat = '';
+let _somedaySelected = new Set(); // task ids + 'p:'+projectId
+
+function renderSomeday() {
+  const list = document.getElementById('task-list');
+  const q = _somedaySearch.toLowerCase().trim();
+  const cat = _somedayCat;
+
+  // Someday projects
+  const somedayProjs = state.projects.filter(p => !isActiveProject(p));
+  // Someday tasks: tasks with horizon=someday OR tasks with active horizon but their project is someday
+  const somedayTasks = state.tasks.filter(t => {
+    if (t.status === 'complete') return false;
+    if ((t.horizon || 'active') === 'someday') return true;
+    if (t.project) {
+      const proj = state.projects.find(p => p.name === t.project);
+      if (proj && !isActiveProject(proj)) return true;
+    }
+    return false;
+  });
+
+  // Apply filters
+  const filteredProjs = somedayProjs.filter(p => !q || p.name.toLowerCase().includes(q));
+  const filteredTasks = somedayTasks.filter(t => {
+    if (q && !t.title.toLowerCase().includes(q) && !(t.project||'').toLowerCase().includes(q)) return false;
+    if (cat && t.category !== cat) return false;
+    return true;
+  });
+
+  // Group tasks by project
+  const tasksByProj = {};
+  filteredTasks.forEach(t => {
+    const key = t.project || '';
+    if (!tasksByProj[key]) tasksByProj[key] = [];
+    tasksByProj[key].push(t);
+  });
+
+  const selectedAll = [..._somedaySelected];
+  const hasSelection = _somedaySelected.size > 0;
+
+  let html = `<div class="someday-wrap">
+    <div class="someday-hdr">
+      <h2 style="font-size:18px;font-weight:700;margin:0 0 12px">Someday</h2>
+      <div style="display:flex;gap:8px;align-items:center;margin-bottom:12px;flex-wrap:wrap;">
+        <input type="text" placeholder="Search…" value="${esc(_somedaySearch)}"
+          oninput="_somedaySearch=this.value;renderSomeday()"
+          style="flex:1;min-width:120px;max-width:260px;padding:5px 8px;font-size:13px;border:1px solid var(--border);border-radius:6px;background:var(--bg);color:var(--text);">
+        <select onchange="_somedayCat=this.value;renderSomeday()"
+          style="font-size:13px;padding:5px 8px;border:1px solid var(--border);border-radius:6px;background:var(--bg);color:var(--text);">
+          <option value="">All categories</option>
+          ${state.categories.map(c => `<option value="${esc(c.slug)}" ${c.slug===cat?'selected':''}>${esc(c.name)}</option>`).join('')}
+        </select>
+        ${hasSelection ? `<button class="btn btn-primary btn-sm" onclick="somedayMakeSelectedActive()">✓ Make ${_somedaySelected.size} Active</button>` : ''}
+      </div>
+    </div>`;
+
+  // Projects section
+  if (filteredProjs.length) {
+    html += `<div class="someday-section-label" style="font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);margin-bottom:8px;">Projects</div>`;
+    filteredProjs.forEach(p => {
+      const pKey = 'p:'+p.id;
+      const checked = _somedaySelected.has(pKey);
+      const projTaskCount = state.tasks.filter(t => t.project === p.name && t.status !== 'complete').length;
+      html += `<div class="someday-proj-card" style="display:flex;align-items:center;gap:10px;padding:10px 14px;border:1px solid var(--border);border-radius:8px;margin-bottom:6px;background:var(--bg);">
+        <input type="checkbox" ${checked?'checked':''} onchange="somedayToggleSelect('${pKey}',this.checked)" style="cursor:pointer;">
+        <span style="font-size:15px;">📁</span>
+        <span style="flex:1;font-weight:500;">${esc(p.name)}</span>
+        <span style="font-size:12px;color:var(--muted);">${projTaskCount} task${projTaskCount!==1?'s':''}</span>
+        <button class="btn btn-ghost btn-sm" onclick="setProjectHorizon(${p.id},'active')" style="font-size:12px;padding:3px 10px;">Make Active</button>
+      </div>`;
+    });
+  }
+
+  // Tasks section (grouped by project)
+  const taskKeys = Object.keys(tasksByProj).sort();
+  if (taskKeys.length) {
+    html += `<div class="someday-section-label" style="font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);margin:16px 0 8px;">Tasks</div>`;
+    taskKeys.forEach(projName => {
+      const pts = tasksByProj[projName];
+      if (projName) {
+        html += `<div style="font-size:12px;font-weight:600;color:var(--muted);margin:8px 0 4px;padding-left:2px;">${esc(projName)}</div>`;
+      }
+      pts.forEach(t => {
+        const checked = _somedaySelected.has(t.id);
+        html += `<div class="someday-task-row" style="display:flex;align-items:center;gap:8px;padding:8px 12px;border:1px solid var(--border);border-radius:6px;margin-bottom:4px;background:var(--bg);">
+          <input type="checkbox" ${checked?'checked':''} onchange="somedayToggleSelect(${t.id},this.checked)" style="cursor:pointer;">
+          <span style="flex:1;font-size:14px;">${esc(t.title)}</span>
+          ${t.category ? catPill(t.category) : ''}
+          <button class="btn btn-ghost btn-sm" onclick="setTaskHorizon(${t.id},'active')" style="font-size:12px;padding:3px 10px;">Make Active</button>
+        </div>`;
+      });
+    });
+  }
+
+  if (!filteredProjs.length && !filteredTasks.length) {
+    html += `<div style="text-align:center;padding:60px 0;color:var(--muted);">
+      <div style="font-size:40px;margin-bottom:12px;">💭</div>
+      <p style="font-size:14px;">${q || cat ? 'No matches.' : 'Nothing in Someday. Move tasks or projects here to keep them out of your active views.'}</p>
+    </div>`;
+  }
+
+  html += `</div>`;
+  list.innerHTML = html;
+}
+
+function somedayToggleSelect(id, checked) {
+  if (checked) _somedaySelected.add(id);
+  else _somedaySelected.delete(id);
+  // Re-render only the checkboxes header
+  renderSomeday();
+}
+
+async function somedayMakeSelectedActive() {
+  const ids = [..._somedaySelected];
+  _somedaySelected.clear();
+  for (const id of ids) {
+    if (typeof id === 'string' && id.startsWith('p:')) {
+      const projId = parseInt(id.slice(2));
+      await setProjectHorizon(projId, 'active', true);
+    } else {
+      await setTaskHorizon(id, 'active', true);
+    }
+  }
+  await loadAll();
+  renderSidebar(); renderTaskList();
+  toast(`Made ${ids.length} item${ids.length!==1?'s':''} active`);
+}
+
+async function setTaskHorizon(taskId, horizon, silent) {
+  const task = state.tasks.find(t => t.id === taskId);
+  if (!task) return;
+  if (horizon === 'someday' && (task.horizon || 'active') !== 'someday') {
+    const hasFutureBlocks = await api('GET', `/api/time-blocks?task_id=${taskId}`).then(blocks => {
+      const today = dateStr(new Date());
+      return (blocks || []).some(b => b.date >= today);
+    }).catch(() => false);
+    if (hasFutureBlocks) {
+      if (confirm(`Delete future calendar blocks for "${task.title}"?`)) {
+        await api('DELETE', `/api/tasks/${taskId}/future-blocks`).catch(() => {});
+      }
+    }
+  }
+  await api('PUT', `/api/tasks/${taskId}`, { horizon });
+  const idx = state.tasks.findIndex(t => t.id === taskId);
+  if (idx >= 0) state.tasks[idx] = { ...state.tasks[idx], horizon };
+  if (!silent) {
+    renderSidebar(); renderTaskList();
+    if (state.selectedId === taskId) openDetail(taskId);
+    toast(horizon === 'someday' ? 'Moved to Someday' : 'Made Active');
+  }
+}
+
+async function setProjectHorizon(projId, horizon, silent) {
+  const proj = state.projects.find(p => p.id === projId);
+  if (!proj) return;
+  if (horizon === 'someday' && (proj.horizon || 'active') !== 'someday') {
+    const taskCount = state.tasks.filter(t => t.project === proj.name && t.status !== 'complete').length;
+    if (taskCount > 0 && !confirm(`Hide "${proj.name}" and its ${taskCount} task${taskCount!==1?'s':''}?`)) return;
+    // Check for future blocks on any of this project's tasks
+    const projTaskIds = state.tasks.filter(t => t.project === proj.name).map(t => t.id);
+    const today = dateStr(new Date());
+    let hasFutureBlocks = false;
+    for (const tid of projTaskIds) {
+      const blocks = await api('GET', `/api/time-blocks?task_id=${tid}`).catch(() => []);
+      if ((blocks || []).some(b => b.date >= today)) { hasFutureBlocks = true; break; }
+    }
+    if (hasFutureBlocks && confirm(`Delete future calendar blocks for all tasks in "${proj.name}"?`)) {
+      for (const tid of projTaskIds) {
+        await api('DELETE', `/api/tasks/${tid}/future-blocks`).catch(() => {});
+      }
+    }
+  }
+  await api('PUT', `/api/projects/${projId}`, { name: proj.name, horizon });
+  const idx = state.projects.findIndex(p => p.id === projId);
+  if (idx >= 0) state.projects[idx] = { ...state.projects[idx], horizon };
+  if (!silent) {
+    renderSidebar(); renderTaskList();
+    toast(horizon === 'someday' ? 'Moved to Someday' : 'Made Active');
+  }
+}
+
 // ── Weekly Sprint view ────────────────────────────────────────────────────────
 
 async function renderSprintWeek() {
@@ -3125,6 +3354,7 @@ async function renderPlanWeek() {
 
   const candidates = state.tasks.filter(t => {
     if (t.status === 'complete') return false;
+    if (!isActiveTask(t)) return false;
     if (sprintTaskIds.has(t.id)) return false;
     return true;
   });
@@ -3434,7 +3664,7 @@ function openPdNoteModal(projId, note) {
     document.getElementById('pdn-body').value = MEETING_TEMPLATE;
   }
   // populate task selector with project tasks
-  const projTasks = state.tasks.filter(t => t.project === (state.projects.find(p=>p.id==projId)?.name));
+  const projTasks = state.tasks.filter(t => isActiveTask(t) && t.project === (state.projects.find(p=>p.id==projId)?.name));
   const taskSel = document.getElementById('pdn-task');
   taskSel.innerHTML = '<option value="">No linked task</option>' +
     projTasks.map(t => `<option value="${t.id}">${esc(t.title)}</option>`).join('');
@@ -3626,9 +3856,9 @@ function dbSearchDebounced(q) {
 async function dbSearch(q) {
   const qLow = q.toLowerCase();
   const tasks = state.tasks.filter(t =>
-    t.title.toLowerCase().includes(qLow) || (t.notes||'').toLowerCase().includes(qLow)
+    isActiveTask(t) && (t.title.toLowerCase().includes(qLow) || (t.notes||'').toLowerCase().includes(qLow))
   ).slice(0, 20);
-  const projects = state.projects.filter(p => p.name.toLowerCase().includes(qLow)).slice(0, 20);
+  const projects = state.projects.filter(p => isActiveProject(p) && p.name.toLowerCase().includes(qLow)).slice(0, 20);
   const [notes, links] = await Promise.all([
     api('GET', `/api/notes/search?q=${encodeURIComponent(q)}`).catch(() => []),
     api('GET', `/api/links/search?q=${encodeURIComponent(q)}`).catch(() => []),
@@ -3683,7 +3913,7 @@ function dbSectionTable(rows, cols, rowFn, viewAll, showMore) {
 }
 
 function renderDbInbox() {
-  const inbox = state.tasks.filter(t => t.is_inbox === 1 || t.is_inbox === '1');
+  const inbox = state.tasks.filter(t => isActiveTask(t) && (t.is_inbox === 1 || t.is_inbox === '1'));
   const count = inbox.length;
   const body = dbSectionTable(inbox,
     ['Task','Priority',''],
@@ -3698,7 +3928,7 @@ function renderDbInbox() {
 }
 
 function renderDbUrgentPastDue(todayStr) {
-  const tasks = state.tasks.filter(t => t.status !== 'complete' && (t.priority === 'urgent' || (t.due_date && t.due_date < todayStr)));
+  const tasks = state.tasks.filter(t => isActiveTask(t) && t.status !== 'complete' && (t.priority === 'urgent' || (t.due_date && t.due_date < todayStr)));
   const count = tasks.length;
   const body = dbSectionTable(tasks,
     ['Task','Project','Category','Due'],
@@ -3717,7 +3947,7 @@ function renderDbUrgentPastDue(todayStr) {
 }
 
 function renderDbTodayWeek(todayStr, sunStr) {
-  const tasks = state.tasks.filter(t => t.status !== 'complete' && t.due_date && t.due_date >= todayStr && t.due_date <= sunStr);
+  const tasks = state.tasks.filter(t => isActiveTask(t) && t.status !== 'complete' && t.due_date && t.due_date >= todayStr && t.due_date <= sunStr);
   const count = tasks.length;
   const body = dbSectionTable(tasks,
     ['Task','Project','Category','Due'],
@@ -3733,7 +3963,7 @@ function renderDbTodayWeek(todayStr, sunStr) {
 }
 
 function renderDbNeedsReviewOnHold() {
-  const tasks = state.tasks.filter(t => t.status === 'review' || t.status === 'needs-review' || t.status === 'on-hold');
+  const tasks = state.tasks.filter(t => isActiveTask(t) && (t.status === 'review' || t.status === 'needs-review' || t.status === 'on-hold'));
   const count = tasks.length;
   const body = dbSectionTable(tasks,
     ['Task','Status','Project','Category'],
@@ -3873,17 +4103,17 @@ function renderDashboard() {
   const sunStr = dateStr(sun);
   const sevenAgo = dateStr(new Date(td.getTime() - 7*86400000));
 
-  const allProjects  = state.projects;
+  const allProjects  = state.projects.filter(isActiveProject);
   const profProjects = allProjects.filter(p => (p.type||'professional') === 'professional');
   const persProjects = allProjects.filter(p => p.type === 'personal');
-  const projectTasks = state.tasks.filter(t => t.project && !t.is_inbox);
+  const projectTasks = state.tasks.filter(t => isActiveTask(t) && t.project && !t.is_inbox);
   const completeTasks  = projectTasks.filter(t => t.status === 'complete');
-  const openTasks      = state.tasks.filter(t => t.status !== 'complete');
+  const openTasks      = state.tasks.filter(t => isActiveTask(t) && t.status !== 'complete');
   const pastDueTasks   = openTasks.filter(t => t.due_date && t.due_date < todayStr);
   const thisWeekTasks  = openTasks.filter(t => t.due_date && t.due_date >= todayStr && t.due_date <= sunStr);
   const inProgressTasks  = openTasks.filter(t => t.status === 'in-progress');
   const needsReviewTasks = openTasks.filter(t => t.status === 'review' || t.status === 'needs-review');
-  const completedRecent  = state.tasks.filter(t => t.status === 'complete' && (t.updated_at||'').slice(0,10) >= sevenAgo);
+  const completedRecent  = state.tasks.filter(t => isActiveTask(t) && t.status === 'complete' && (t.updated_at||'').slice(0,10) >= sevenAgo);
   const pctComplete = projectTasks.length ? Math.round(completeTasks.length / projectTasks.length * 100) : 0;
 
   const dateLabel = td.toLocaleDateString('en-US', { weekday:'long', month:'long', day:'numeric', year:'numeric' });
@@ -3982,7 +4212,7 @@ function openDashboardQuickTask() {
   // populate project select
   const sel = document.getElementById('dbt-project');
   sel.innerHTML = '<option value="">No project (inbox)</option>' +
-    state.projects.map(p => `<option value="${esc(p.name)}">${esc(p.name)}</option>`).join('');
+    state.projects.filter(isActiveProject).map(p => `<option value="${esc(p.name)}">${esc(p.name)}</option>`).join('');
   document.getElementById('dbt-title').value    = '';
   document.getElementById('dbt-priority').value = 'medium';
   document.getElementById('dbt-due').value      = '';
@@ -4030,6 +4260,7 @@ function renderTaskList() {
   if (state.view === 'notes-search')  { renderNotesSearch();   return; }
   if (state.view === 'plan-week')     { renderPlanWeek();      return; }
   if (state.view === 'sprint-week')   { renderSprintWeek();    return; }
+  if (state.view === 'someday')       { renderSomeday();       return; }
   if (state.view.startsWith('project:')) {
     const proj = state.projects.find(p => p.id == state.view.slice(8));
     if (proj) { renderProjectDetail(proj); return; }
@@ -4189,7 +4420,7 @@ function renderCalendarWeek() {
 
   const byDate = {};
   days.forEach(d => { byDate[dateStr(d)] = []; });
-  state.tasks.filter(t => t.status !== 'complete' && t.due_date && byDate[t.due_date] !== undefined)
+  state.tasks.filter(t => isActiveTask(t) && t.status !== 'complete' && t.due_date && byDate[t.due_date] !== undefined)
     .forEach(t => byDate[t.due_date].push(t));
 
   let html = `
@@ -4275,7 +4506,7 @@ function renderCalendarMonth() {
   gridStart.setDate(firstDay.getDate() - firstDay.getDay()); // back to Sunday
 
   const tasksByDate = {};
-  state.tasks.filter(t => t.status !== 'complete' && t.due_date)
+  state.tasks.filter(t => isActiveTask(t) && t.status !== 'complete' && t.due_date)
     .forEach(t => { (tasksByDate[t.due_date] = tasksByDate[t.due_date] || []).push(t); });
 
   let html = `
@@ -4402,7 +4633,7 @@ async function calDrop(e, ds) {
   if (!task || task.due_date === ds) return;
   const updated = await api('PUT', `/api/tasks/${tid}`, { due_date: ds });
   state.tasks = state.tasks.map(t => t.id === updated.id ? { ...t, ...updated } : t);
-  if (state.calSelectedDay && !state.tasks.filter(t => t.status!=='complete' && t.due_date === state.calSelectedDay).length) {
+  if (state.calSelectedDay && !state.tasks.filter(t => isActiveTask(t) && t.status!=='complete' && t.due_date === state.calSelectedDay).length) {
     state.calSelectedDay = null;
   }
   renderCalendar();
@@ -4442,7 +4673,7 @@ function populateProjectSelect() {
   const sel = document.getElementById('d-project');
   const cur = sel.value;
   sel.innerHTML = `<option value="">None</option>` +
-    state.projects.map(p => `<option value="${esc(p.name)}">${esc(p.name)}</option>`).join('');
+    state.projects.filter(isActiveProject).map(p => `<option value="${esc(p.name)}">${esc(p.name)}</option>`).join('');
   sel.value = cur;
 }
 
@@ -4506,6 +4737,15 @@ async function openDetail(id) {
   document.getElementById('d-est').textContent              = task.estimated_minutes ? fmtMins(task.estimated_minutes) : '—';
   document.getElementById('d-scheduled').textContent        = task.scheduled_minutes  ? fmtMins(task.scheduled_minutes)  : '—';
   document.getElementById('d-actual').textContent           = fmtMins(task.actual_minutes);
+  const horizonActive = document.getElementById('d-horizon-active');
+  const horizonSomeday = document.getElementById('d-horizon-someday');
+  if (horizonActive && horizonSomeday) {
+    const h = task.horizon || 'active';
+    horizonActive.classList.toggle('btn-primary', h === 'active');
+    horizonActive.classList.toggle('btn-ghost', h !== 'active');
+    horizonSomeday.classList.toggle('btn-primary', h === 'someday');
+    horizonSomeday.classList.toggle('btn-ghost', h !== 'someday');
+  }
   const blockedSel = document.getElementById('d-blocked-by');
   blockedSel.innerHTML = `<option value="">Not blocked</option>` +
     state.tasks.filter(t => t.id !== id).map(t => {
@@ -4897,6 +5137,12 @@ async function createProject() {
 }
 
 // Edit project
+let _editProjHorizon = 'active';
+function editProjSetHorizon(h) {
+  _editProjHorizon = h;
+  document.getElementById('edit-proj-horizon-active').className  = `btn btn-sm ${h==='active' ?'btn-primary':'btn-ghost'}`;
+  document.getElementById('edit-proj-horizon-someday').className = `btn btn-sm ${h==='someday'?'btn-primary':'btn-ghost'}`;
+}
 function openRenameProject(id, name) {
   renameProjId = id;
   const proj = state.projects.find(p => p.id === id);
@@ -4905,6 +5151,7 @@ function openRenameProject(id, name) {
   populateDivisionSelects();
   document.getElementById('edit-proj-division').value = proj?.division_id || '';
   toggleEditProjDivision();
+  editProjSetHorizon(proj?.horizon || 'active');
   document.getElementById('rename-proj-modal').classList.add('open');
   setTimeout(() => document.getElementById('rename-proj-input').focus(), 50);
 }
@@ -4917,8 +5164,9 @@ async function renameProject() {
   if (!name) return;
   const type     = document.getElementById('edit-proj-type').value;
   const division_id = parseInt(document.getElementById('edit-proj-division').value) || null;
+  const horizon  = _editProjHorizon || 'active';
   try {
-    const updated = await api('PUT', `/api/projects/${renameProjId}`, { name, type, division_id });
+    const updated = await api('PUT', `/api/projects/${renameProjId}`, { name, type, division_id, horizon });
     const oldName = state.projects.find(p => p.id === renameProjId)?.name;
     state.projects = state.projects.map(p => p.id === renameProjId ? updated : p);
     state.projects.sort((a,b) => a.name.localeCompare(b.name));
@@ -5630,7 +5878,7 @@ function renderDayPanel() {
     return 3;
   }
 
-  let tasks = state.tasks.filter(t => t.status !== 'complete');
+  let tasks = state.tasks.filter(t => isActiveTask(t) && t.status !== 'complete');
   if (calPanelHideScheduled) tasks = tasks.filter(t => {
     const sched = t.scheduled_minutes || 0;
     const est = t.estimated_minutes || 0;
@@ -5649,7 +5897,7 @@ function renderDayPanel() {
   });
 
   const BUCKET_LABELS = ['Overdue', 'Today', 'This Week', 'Later'];
-  const projects = [...new Set(state.tasks.filter(t => t.project).map(t => t.project))].sort();
+  const projects = [...new Set(state.tasks.filter(t => isActiveTask(t) && t.project).map(t => t.project))].sort();
   const SEL = 'flex:1;min-width:0;font-size:11px;padding:3px 4px;border:1px solid var(--border);border-radius:4px;background:var(--bg);color:var(--text);';
 
   let html = `<div class="cal-day-panel-hdr" style="padding-bottom:4px;display:flex;align-items:center;justify-content:space-between;">
@@ -7048,7 +7296,7 @@ function setupDivDrag() {
 function renderCategoryList() {
   if (!state.categories.length) return `<div style="padding:12px 16px;font-size:13px;color:var(--muted);">No categories yet.</div>`;
   const catTaskMap = {};
-  state.tasks.filter(t => t.status !== 'complete').forEach(t => { if (t.category) catTaskMap[t.category] = (catTaskMap[t.category] || 0) + 1; });
+  state.tasks.filter(t => isActiveTask(t) && t.status !== 'complete').forEach(t => { if (t.category) catTaskMap[t.category] = (catTaskMap[t.category] || 0) + 1; });
   return state.categories.map(c => {
     const cnt = catTaskMap[c.slug] || 0;
     return `<div class="div-settings-row" draggable="true" data-cat-slug="${c.slug}" id="cat-row-${c.slug}">
@@ -7131,7 +7379,7 @@ async function saveEditCategory(slug) {
 async function deleteCategory(slug) {
   const cat = state.categories.find(c => c.slug === slug);
   if (!cat) return;
-  const count = state.tasks.filter(t => t.category === slug && t.status !== 'complete').length;
+  const count = state.tasks.filter(t => isActiveTask(t) && t.category === slug && t.status !== 'complete').length;
   if (count > 0) {
     _catDeleteId = slug;
     document.getElementById('cat-delete-msg').textContent =
