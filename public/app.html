@@ -2250,6 +2250,26 @@ async function loadAll() {
   }
 
   renderSidebar(); renderTaskList(); populateProjectSelect();
+
+  // One-time auto-repair: pull all block times from Google after the tz read-path fix.
+  if (state.googleCalConnected && !localStorage.getItem('gcalTzRepairV2Done')) {
+    setTimeout(async () => {
+      try {
+        const result = await api('POST', '/api/time-blocks/repair-from-google');
+        const changed = result.changed || 0;
+        localStorage.setItem('gcalTzRepairV2Done', '1');
+        if (changed > 0) {
+          toast(`Auto-repair: ${changed} block${changed!==1?'s':''} corrected from Google (timezone fix)`, null, 5000);
+          if (state.view === 'calendar') {
+            if (state.calMode === 'week' && state.calWeekGridMode) { await loadWeekBlocks(true); renderCalendarWeekGrid(); }
+            else if (state.calMode === 'day') { await loadTimeBlocks(state.calDayStr, true); renderCalendarDay(); }
+          }
+        } else {
+          localStorage.setItem('gcalTzRepairV2Done', '1');
+        }
+      } catch(_) { /* non-fatal */ }
+    }, 3000); // slight delay so the UI is rendered first
+  }
 }
 
 // ── Sidebar ───────────────────────────────────────────────────────────────────
@@ -6612,6 +6632,46 @@ function gcalSyncToolbar() {
   return `<button id="gcal-sync-btn" class="btn btn-ghost btn-sm" onclick="runTwoWaySync(false)" title="Two-way sync with Google Calendar">↻ Sync now</button><span id="gcal-sync-label" style="font-size:10px;color:#94a3b8;">${label}</span>`;
 }
 
+async function verifyBlocksVsGoogle() {
+  if (!state.googleCalConnected) { toast('Google Calendar not connected'); return; }
+  toast('Checking block times vs Google…');
+  try {
+    const result = await api('POST', '/api/time-blocks/repair-from-google');
+    const all = result.items || [];
+    if (!all.length) { toast('No blocks with Google events to compare.'); return; }
+    const rows = all.map(i => `<tr style="border-bottom:1px solid #f1f5f9;${i.changed?'background:#fef9c3':''}">
+      <td style="padding:5px 8px;font-size:12px;max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${esc(i.taskTitle)}">${esc(i.taskTitle)}</td>
+      <td style="padding:5px 8px;font-size:12px;white-space:nowrap;${i.changed?'color:#ef4444;text-decoration:line-through':''}">${esc(i.before)}</td>
+      <td style="padding:5px 8px;font-size:12px;white-space:nowrap;${i.changed?'color:#16a34a;font-weight:600':''}">${esc(i.after)}</td>
+      <td style="padding:5px 8px;font-size:12px;">${i.changed?'<span style="color:#ef4444;">✗ fixed</span>':'<span style="color:#22c55e;">✓</span>'}</td>
+    </tr>`).join('');
+    const m = document.createElement('div');
+    m.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:10000;display:flex;align-items:center;justify-content:center;';
+    m.innerHTML = `<div style="background:#fff;border-radius:10px;padding:24px;max-width:680px;width:95%;max-height:80vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,.3);">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
+        <span style="font-size:15px;font-weight:700;">Block times — App vs Google</span>
+        <button onclick="this.closest('[style*=fixed]').remove()" style="background:none;border:none;font-size:18px;cursor:pointer;">×</button>
+      </div>
+      <div style="margin-bottom:10px;font-size:12px;color:#64748b;">${result.changed} block${result.changed!==1?'s':''} were incorrect and have been fixed. ${result.unchanged} already matched.</div>
+      <table style="width:100%;border-collapse:collapse;">
+        <thead><tr style="border-bottom:2px solid #e2e8f0;">
+          <th style="padding:4px 8px;font-size:11px;text-align:left;color:#64748b;">Task</th>
+          <th style="padding:4px 8px;font-size:11px;text-align:left;color:#64748b;">App (was)</th>
+          <th style="padding:4px 8px;font-size:11px;text-align:left;color:#64748b;">Google</th>
+          <th style="padding:4px 8px;font-size:11px;text-align:left;color:#64748b;">Status</th>
+        </tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>`;
+    m.addEventListener('click', e => { if (e.target === m) m.remove(); });
+    document.body.appendChild(m);
+    if (result.changed > 0 && state.view === 'calendar') {
+      if (state.calMode === 'week' && state.calWeekGridMode) { await loadWeekBlocks(true); renderCalendarWeekGrid(); }
+      else if (state.calMode === 'day') { await loadTimeBlocks(state.calDayStr, true); renderCalendarDay(); }
+    }
+  } catch(e) { toast('Verify failed: ' + e.message); }
+}
+
 function checkMyCalendar() {
   const allEvts = Object.values(state.googleWeekEvents || {}).flat();
   if (!allEvts.length) { toast('No Google Calendar events found for this week.'); return; }
@@ -6700,18 +6760,23 @@ async function loadTimeBlocks(date, skipSync = false) {
     let changed = false;
     const ownedIds = new Set(blocks.map(b => b.gcal_event_id).filter(Boolean));
 
-    // Sync moved/deleted linked blocks
+    // Parse date+time from a Google dateTime string using the embedded offset (not browser TZ)
+    function parseDt(dtStr) {
+      const m = dtStr && dtStr.match(/^(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2})/);
+      return m ? { date: m[1], time: m[2] } : null;
+    }
+    function durMins(s, e) { return e ? Math.round((new Date(e) - new Date(s)) / 60000) : 60; }
+
+    // Sync moved/deleted linked blocks (gcal_linked=1 — events in primary calendar)
     for (const b of blocks.filter(x => x.gcal_linked)) {
       const evt = gcalEvts.find(e => e.id === b.gcal_event_id);
       if (!evt) {
         await api('DELETE', `/api/time-blocks/${b.id}`).catch(() => {});
         changed = true;
       } else {
-        const evtStart = new Date(evt.start);
-        const evtEnd   = evt.end ? new Date(evt.end) : new Date(evtStart.getTime() + 3600000);
-        const newDate  = `${evtStart.getFullYear()}-${String(evtStart.getMonth()+1).padStart(2,'0')}-${String(evtStart.getDate()).padStart(2,'0')}`;
-        const newTime  = `${String(evtStart.getHours()).padStart(2,'0')}:${String(evtStart.getMinutes()).padStart(2,'0')}`;
-        const newDur   = Math.round((evtEnd - evtStart) / 60000);
+        const p = parseDt(evt.start);
+        if (!p) continue;
+        const newDate = p.date, newTime = p.time, newDur = durMins(evt.start, evt.end);
         if (newDate !== b.date || newTime !== b.start_time || newDur !== b.duration_minutes) {
           await api('PATCH', `/api/time-blocks/${b.id}`, { date: newDate, start_time: newTime, duration_minutes: newDur }).catch(() => {});
           changed = true;
@@ -6726,12 +6791,9 @@ async function loadTimeBlocks(date, skipSync = false) {
       if (!m) continue;
       const taskId = Number(m[1]);
       if (!state.tasks.find(t => t.id === taskId)) continue;
-      const evtStart = new Date(evt.start);
-      const evtEnd   = evt.end ? new Date(evt.end) : new Date(evtStart.getTime() + 3600000);
-      const newDate  = `${evtStart.getFullYear()}-${String(evtStart.getMonth()+1).padStart(2,'0')}-${String(evtStart.getDate()).padStart(2,'0')}`;
-      const newTime  = `${String(evtStart.getHours()).padStart(2,'0')}:${String(evtStart.getMinutes()).padStart(2,'0')}`;
-      const dur      = Math.round((evtEnd - evtStart) / 60000);
-      await api('POST', '/api/gcal/link', { task_id: taskId, gcal_event_id: evt.id, date: newDate, start_time: newTime, duration_minutes: dur }).catch(() => {});
+      const p = parseDt(evt.start);
+      if (!p) continue;
+      await api('POST', '/api/gcal/link', { task_id: taskId, gcal_event_id: evt.id, date: p.date, start_time: p.time, duration_minutes: durMins(evt.start, evt.end) }).catch(() => {});
       changed = true;
     }
 
@@ -6907,6 +6969,7 @@ function renderCalendarDay() {
       <button class="btn btn-ghost btn-sm" onclick="openDaySettings()" title="Day settings">⚙️</button>
       ${gcalSyncToolbar()}
       <button class="btn btn-sm btn-ghost" onclick="showSyncReport()" title="Sync report" style="padding:4px 6px;">📋</button>
+      <button class="btn btn-sm btn-ghost" onclick="verifyBlocksVsGoogle()" title="Verify block times vs Google" style="padding:4px 6px;">✓</button>
       <button class="btn btn-ghost btn-sm cal-panel-toggle-btn" onclick="toggleCalPanel()">${calPanelCollapsed ? 'Tasks ▶' : 'Tasks ◀'}</button>
     </div>
     ${gcalAllDayHtml}${dueChipsHtml}
@@ -7885,6 +7948,7 @@ function renderCalendarWeekGrid() {
       ${state.googleCalConnected && state.calWeekGridMode ? `<button class="btn btn-ghost btn-sm" onclick="checkMyCalendar()">🗓 Check calendar</button>` : ''}
       ${gcalSyncToolbar()}
       <button class="btn btn-sm btn-ghost" onclick="showSyncReport()" title="Sync report" style="padding:4px 6px;">📋</button>
+      <button class="btn btn-sm btn-ghost" onclick="verifyBlocksVsGoogle()" title="Verify block times vs Google" style="padding:4px 6px;">✓</button>
       <button class="btn btn-ghost btn-sm cal-panel-toggle-btn" onclick="toggleCalPanel()">${calPanelCollapsed ? 'Tasks ▶' : 'Tasks ◀'}</button>
     </div>
     <div class="cal-wtg-wrap">
@@ -8302,6 +8366,13 @@ function renderSettings() {
             <div class="settings-row-desc">Re-push all future task blocks to Google Calendar with the correct time zone. Use after changing the time zone setting or if blocks appear at wrong times.</div>
           </div>
           <div style="flex-shrink:0;"><button class="btn btn-ghost btn-sm" onclick="repairTimezone()">Repair</button></div>
+        </div>
+        <div class="settings-row">
+          <div class="settings-row-info">
+            <div class="settings-row-label" style="color:#b91c1c;">Repair Blocks from Google</div>
+            <div class="settings-row-desc">Pull every block's date/time/duration from Google Calendar (Google is the source of truth). Use after a timezone or sync error caused app times to drift. <strong>Does not push anything to Google.</strong></div>
+          </div>
+          <div style="flex-shrink:0;"><button class="btn btn-ghost btn-sm" style="border-color:#ef4444;color:#b91c1c;" onclick="repairBlocksFromGoogle()">Repair from Google</button></div>
         </div>` : ''}
         <div class="settings-row">
           <div class="settings-row-info">
@@ -8855,6 +8926,32 @@ async function repairTimezone() {
     toast('Repair failed: ' + e.message);
   } finally {
     if (btn) { btn.textContent = 'Repair'; btn.disabled = false; }
+  }
+}
+
+async function repairBlocksFromGoogle() {
+  const btn = document.querySelector('[onclick="repairBlocksFromGoogle()"]');
+  if (btn) { btn.textContent = 'Repairing…'; btn.disabled = true; }
+  try {
+    const result = await api('POST', '/api/time-blocks/repair-from-google');
+    const changed  = result.changed  || 0;
+    const unchanged = result.unchanged || 0;
+    const errCnt   = result.errors?.length || 0;
+    toast(`Repair complete: ${changed} block${changed!==1?'s':''} updated from Google, ${unchanged} already correct${errCnt?`, ${errCnt} error(s)`:''}`, null, 6000);
+    if (changed > 0 && state.view === 'calendar') {
+      if (state.calMode === 'week' && state.calWeekGridMode) { await loadWeekBlocks(true); renderCalendarWeekGrid(); }
+      else if (state.calMode === 'day') { await loadTimeBlocks(state.calDayStr, true); renderCalendarDay(); }
+    }
+    // Show detail list in console for verification
+    if (result.items?.length) {
+      console.group('Repair from Google — block-by-block');
+      result.items.filter(i => i.changed).forEach(i => console.log(`#${i.blockId} ${i.taskTitle}: ${i.before} → ${i.after}`));
+      console.groupEnd();
+    }
+  } catch(e) {
+    toast('Repair failed: ' + e.message);
+  } finally {
+    if (btn) { btn.textContent = 'Repair from Google'; btn.disabled = false; }
   }
 }
 

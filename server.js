@@ -1751,13 +1751,13 @@ app.get('/api/time-blocks/sync-status', (req, res) => {
 
 app.post('/api/time-blocks/two-way-sync', async (req, res) => {
   const auth = db.prepare('SELECT refresh_token FROM google_auth WHERE id = 1').get();
-  if (!auth) return res.json({ ok: false, reason: 'not_connected', updated_from_google: 0, pushed_to_google: 0, unlinked: [], deleted: [], errors: [] });
+  if (!auth) return res.json({ ok: false, reason: 'not_connected', updated_from_google: 0, unlinked: [], deleted: [], tz_suspect: [], errors: [] });
 
   const today       = new Date().toISOString().slice(0, 10);
   const twoWeeksOut = new Date(Date.now() + 14 * 86400000).toISOString().slice(0, 10);
   const from = req.body.from || today;
   const to   = req.body.to   || twoWeeksOut;
-  const report = { ok: true, updated_from_google: 0, pushed_to_google: 0, unlinked: [], deleted: [], errors: [], synced_at: new Date().toISOString() };
+  const report = { ok: true, updated_from_google: 0, unlinked: [], deleted: [], tz_suspect: [], errors: [], synced_at: new Date().toISOString() };
 
   try {
     const token  = await googleAccessToken(auth.refresh_token);
@@ -1796,36 +1796,36 @@ app.post('/api/time-blocks/two-way-sync', async (req, res) => {
       }
       if (!gevt.start?.dateTime) continue;
 
-      const evtStart = new Date(gevt.start.dateTime);
-      const evtEnd   = gevt.end?.dateTime ? new Date(gevt.end.dateTime) : new Date(evtStart.getTime() + 3600000);
-      const gDate    = `${evtStart.getFullYear()}-${String(evtStart.getMonth()+1).padStart(2,'0')}-${String(evtStart.getDate()).padStart(2,'0')}`;
-      const gTime    = `${String(evtStart.getHours()).padStart(2,'0')}:${String(evtStart.getMinutes()).padStart(2,'0')}`;
-      const gDur     = Math.round((evtEnd - evtStart) / 60000);
-      const changed  = gDate !== block.date || gTime !== block.start_time || gDur !== block.duration_minutes;
+      // Use regex extraction — avoids UTC-server getHours() returning wrong local hour
+      const gParsed = parseGoogleDt(gevt.start.dateTime);
+      if (!gParsed) continue;
+      const { date: gDate, time: gTime } = gParsed;
+      const gDur    = googleDurMins(gevt.start.dateTime, gevt.end?.dateTime);
+      const changed = gDate !== block.date || gTime !== block.start_time || gDur !== block.duration_minutes;
 
       if (!changed) {
         if (block.sync_error) db.prepare('UPDATE time_blocks SET sync_error=NULL WHERE id=?').run(block.id);
         continue;
       }
 
-      const googleUpdatedMs = new Date(gevt.updated).getTime();
-      const blockUpdatedMs  = block.updated_at ? new Date(block.updated_at).getTime() : 0;
-
-      if (googleUpdatedMs >= blockUpdatedMs) {
-        db.prepare("UPDATE time_blocks SET date=?, start_time=?, duration_minutes=?, updated_at=?, sync_error=NULL WHERE id=?")
-          .run(gDate, gTime, gDur, new Date(gevt.updated).toISOString().replace('T',' ').slice(0,19), block.id);
-        report.updated_from_google++;
-      } else {
-        const result = await syncTaskBlockToGoogle(block, block.gcal_event_id);
-        if (result && typeof result === 'string') {
-          db.prepare('UPDATE time_blocks SET sync_error=NULL WHERE id=?').run(block.id);
-          report.pushed_to_google++;
-        } else {
-          const errMsg = result?.error || 'Push failed';
-          db.prepare('UPDATE time_blocks SET sync_error=? WHERE id=?').run(errMsg, block.id);
-          report.errors.push({ blockId: block.id, message: errMsg });
-        }
+      // Safety check: if app time differs from Google by exactly ±4h/5h, flag it
+      // (indicates a timezone mis-parse — don't silently overwrite in either direction)
+      if (isTzOffsetMismatch(block.date, block.start_time, gDate, gTime)) {
+        report.tz_suspect.push({
+          blockId: block.id, taskId: block.task_id,
+          appTime: `${block.date} ${block.start_time}`,
+          googleTime: `${gDate} ${gTime}`,
+          diffH: Math.abs((parseInt(block.start_time) * 60 + parseInt(block.start_time.split(':')[1])) -
+                          (parseInt(gTime) * 60 + parseInt(gTime.split(':')[1]))) / 60
+        });
+        // Still pull from Google (Google is authoritative), but flag it
       }
+
+      // PULL-ONLY: Google is always the source of truth for block positions.
+      // Pushes happen synchronously in PATCH when the user moves a block in the app.
+      db.prepare("UPDATE time_blocks SET date=?, start_time=?, duration_minutes=?, updated_at=?, sync_error=NULL WHERE id=?")
+        .run(gDate, gTime, gDur, new Date(gevt.updated).toISOString().replace('T',' ').slice(0,19), block.id);
+      report.updated_from_google++;
     }
 
     // Google events in TSP calendar that have no matching block → re-link if description has task URL
@@ -1833,13 +1833,12 @@ app.post('/api/time-blocks/two-way-sync', async (req, res) => {
       if (processedEvtIds.has(gevt.id) || !gevt.start?.dateTime) continue;
       const anyBlock = db.prepare('SELECT id FROM time_blocks WHERE gcal_event_id=?').get(gevt.id);
       if (anyBlock) continue;
+      const gParsed = parseGoogleDt(gevt.start.dateTime);
+      if (!gParsed) continue;
+      const { date: gDate, time: gTime } = gParsed;
+      const gDur = googleDurMins(gevt.start.dateTime, gevt.end?.dateTime);
       const desc = gevt.description || '';
       const m    = desc.match(/\/app\.html\?task=(\d+)/);
-      const evtStart = new Date(gevt.start.dateTime);
-      const evtEnd   = gevt.end?.dateTime ? new Date(gevt.end.dateTime) : new Date(evtStart.getTime() + 3600000);
-      const gDate    = `${evtStart.getFullYear()}-${String(evtStart.getMonth()+1).padStart(2,'0')}-${String(evtStart.getDate()).padStart(2,'0')}`;
-      const gTime    = `${String(evtStart.getHours()).padStart(2,'0')}:${String(evtStart.getMinutes()).padStart(2,'0')}`;
-      const gDur     = Math.round((evtEnd - evtStart) / 60000);
       if (m) {
         const taskId = Number(m[1]);
         const task   = db.prepare('SELECT id FROM tasks WHERE id=?').get(taskId);
@@ -1859,6 +1858,83 @@ app.post('/api/time-blocks/two-way-sync', async (req, res) => {
   } catch(e) {
     console.error('two-way-sync error:', e.message);
     res.json({ ...report, ok: false, error: e.message });
+  }
+});
+
+// Repair: overwrite every block's date/time/duration from Google (Google is authoritative).
+// Does NOT push anything to Google. Returns a per-block before→after report.
+app.post('/api/time-blocks/repair-from-google', async (req, res) => {
+  const auth = db.prepare('SELECT refresh_token FROM google_auth WHERE id = 1').get();
+  if (!auth) return res.status(400).json({ error: 'Google Calendar not connected' });
+
+  try {
+    const token  = await googleAccessToken(auth.refresh_token);
+    const calId  = await getTaskCalendarId(token);
+    const calEnc = encodeURIComponent(calId);
+
+    const blocks = db.prepare(
+      'SELECT tb.*, t.title AS task_title FROM time_blocks tb JOIN tasks t ON tb.task_id=t.id WHERE tb.gcal_event_id IS NOT NULL AND tb.gcal_linked=0'
+    ).all();
+
+    if (!blocks.length) return res.json({ changed: 0, unchanged: 0, errors: [], items: [] });
+
+    // Batch-fetch events from TSP Time Blocks calendar in one call (all-time range)
+    const params = new URLSearchParams({
+      timeMin: '2020-01-01T00:00:00Z',
+      timeMax: new Date(Date.now() + 365 * 86400000).toISOString(),
+      singleEvents: 'true', orderBy: 'startTime', maxResults: '2500'
+    });
+    const data = await httpsReq({
+      hostname: 'www.googleapis.com',
+      path: `/calendar/v3/calendars/${calEnc}/events?${params}`,
+      method: 'GET',
+      headers: { Authorization: 'Bearer ' + token }
+    });
+    if (data?.error) throw new Error(data.error.message);
+
+    const googleEvtMap = {};
+    (data.items || []).filter(e => e.status !== 'cancelled').forEach(e => { googleEvtMap[e.id] = e; });
+
+    let changed = 0, unchanged = 0;
+    const items = [], errors = [];
+
+    for (const block of blocks) {
+      const gevt = googleEvtMap[block.gcal_event_id];
+      if (!gevt || !gevt.start?.dateTime) {
+        errors.push({ blockId: block.id, title: block.task_title, reason: gevt ? 'all-day event' : 'not found in Google' });
+        continue;
+      }
+
+      const gParsed = parseGoogleDt(gevt.start.dateTime);
+      if (!gParsed) { errors.push({ blockId: block.id, title: block.task_title, reason: 'unparseable dateTime' }); continue; }
+
+      const { date: gDate, time: gTime } = gParsed;
+      const gDur = googleDurMins(gevt.start.dateTime, gevt.end?.dateTime);
+      const noChange = gDate === block.date && gTime === block.start_time && gDur === block.duration_minutes;
+
+      const entry = {
+        blockId:   block.id,
+        taskTitle: block.task_title,
+        before:    `${block.date} ${block.start_time} (${block.duration_minutes}m)`,
+        after:     `${gDate} ${gTime} (${gDur}m)`,
+        changed:   !noChange
+      };
+
+      if (!noChange) {
+        db.prepare("UPDATE time_blocks SET date=?, start_time=?, duration_minutes=?, updated_at=datetime('now'), sync_error=NULL WHERE id=?")
+          .run(gDate, gTime, gDur, block.id);
+        changed++;
+      } else {
+        unchanged++;
+      }
+      items.push(entry);
+    }
+
+    db.prepare("INSERT OR REPLACE INTO settings (key,value) VALUES ('gcal_last_sync',?)").run(new Date().toISOString());
+    res.json({ changed, unchanged, errors, items });
+  } catch(e) {
+    console.error('repair-from-google error:', e.message);
+    res.status(500).json({ error: e.message });
   }
 });
 
@@ -2071,6 +2147,32 @@ async function getTaskCalendarId(token) {
     }
   } catch(e) { console.error('getTaskCalendarId error:', e.message); }
   return 'primary';
+}
+
+// Extract date ("YYYY-MM-DD") and time ("HH:MM") from a Google dateTime string.
+// Google's dateTime already contains the LOCAL time with an offset, e.g.
+// "2024-10-04T09:00:00-04:00" → date="2024-10-04", time="09:00".
+// Using Date().getHours() on a UTC server would return 13 instead — this avoids that.
+function parseGoogleDt(dtStr) {
+  if (!dtStr) return null;
+  const m = dtStr.match(/^(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2})/);
+  return m ? { date: m[1], time: m[2] } : null;
+}
+
+// Duration in minutes between two Google dateTime strings (always UTC-safe).
+function googleDurMins(startStr, endStr) {
+  if (!endStr) return 60;
+  return Math.round((new Date(endStr) - new Date(startStr)) / 60000);
+}
+
+// Safety check: returns true if the difference between two "HH:MM" strings on the
+// same date is exactly ±4h or ±5h — the EDT/EST→UTC offset that indicates a
+// timezone mis-parse (app stored UTC instead of local time).
+function isTzOffsetMismatch(date1, time1, date2, time2) {
+  if (date1 !== date2) return false; // date mismatch is a real move, not a tz issue
+  const toMins = t => { const [h,m] = t.split(':').map(Number); return h * 60 + m; };
+  const diff = Math.abs(toMins(time1) - toMins(time2));
+  return diff === 240 || diff === 300; // ±4h (EDT) or ±5h (EST)
 }
 
 async function syncTaskBlockToGoogle(block, existingEventId) {
