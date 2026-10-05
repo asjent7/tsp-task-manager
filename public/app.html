@@ -798,6 +798,56 @@
     /* ── Division phase templates ── */
     .div-phase-tpl-row { display: flex; align-items: center; gap: 6px; padding: 4px 0; }
     .div-phase-tpl-row input[type=text] { flex: 1; padding: 4px 8px; border: 1px solid var(--border); border-radius: 6px; font-size: 13px; }
+
+    /* ── Bulk selection ── */
+    .task-cb-col { flex-shrink: 0; display: flex; align-items: flex-start; padding-top: 3px; padding-right: 6px; }
+    .task-cb-col input[type=checkbox] { width: 15px; height: 15px; cursor: pointer; accent-color: var(--accent); }
+    .task-card.bulk-sel { background: #eff6ff; border-left-color: var(--accent) !important; }
+    .bulk-sel-header { display: flex; align-items: center; gap: 8px; padding: 4px 4px 8px; border-bottom: 1px solid var(--border); margin-bottom: 6px; font-size: 12px; color: var(--muted); }
+    .bulk-sel-header input[type=checkbox] { cursor: pointer; accent-color: var(--accent); width: 15px; height: 15px; }
+    #task-list-wrap.has-bulk-bar { padding-bottom: 58px; }
+
+    /* ── Bulk action bar ── */
+    #bulk-bar { display: none; position: fixed; bottom: 0; left: var(--sidebar-w); right: 0; z-index: 300; background: #1e293b; color: #e2e8f0; padding: 9px 16px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; border-top: 2px solid var(--accent); }
+    #bulk-bar.hidden { display: none !important; }
+    .bulk-count { font-size: 13px; font-weight: 600; color: #93c5fd; min-width: 80px; flex-shrink: 0; }
+    .bulk-sel { padding: 4px 8px; border: 1px solid #475569; border-radius: 5px; font-size: 12px; background: #1e293b; color: #e2e8f0; cursor: pointer; outline: none; }
+    .bulk-sel:focus { border-color: var(--accent); }
+    .bulk-btn { padding: 4px 10px; border-radius: 5px; font-size: 12px; cursor: pointer; border: 1px solid #475569; background: #334155; color: #e2e8f0; transition: background .1s; }
+    .bulk-btn:hover { background: #475569; }
+    .bulk-btn-red { border-color: #ef4444; color: #fca5a5; }
+    .bulk-btn-red:hover { background: #7f1d1d; }
+    .bulk-undo { background: none; border: none; color: #60a5fa; font-size: 12px; cursor: pointer; text-decoration: underline; padding: 0; }
+    .bulk-close { background: none; border: none; color: #94a3b8; font-size: 18px; cursor: pointer; padding: 0 4px; margin-left: auto; flex-shrink: 0; }
+
+    /* ── Audience tags ── */
+    .aud-tag { display: inline-flex; align-items: center; padding: 1px 6px; border-radius: 100px; font-size: 10px; font-weight: 600; letter-spacing: .03em; text-transform: uppercase; }
+    .aud-internal { background: #ecfdf5; color: #059669; }
+    .aud-client   { background: #eff6ff; color: #2563eb; }
+    .aud-unset    { background: #f1f5f9; color: #94a3b8; }
+
+    /* ── Audience filter pills ── */
+    .aud-filter-bar { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 12px; align-items: center; }
+    .aud-pill { padding: 3px 12px; border-radius: 100px; font-size: 12px; cursor: pointer; border: 1px solid var(--border); background: var(--surface); color: var(--muted); user-select: none; }
+    .aud-pill.active { background: var(--accent); color: white; border-color: var(--accent); }
+
+    /* ── Project table view ── */
+    .proj-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    .proj-table th { text-align: left; padding: 7px 10px; border-bottom: 2px solid var(--border); font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); cursor: pointer; user-select: none; white-space: nowrap; }
+    .proj-table td { padding: 8px 10px; border-bottom: 1px solid var(--border); vertical-align: middle; }
+    .proj-table tr:hover td { background: var(--bg); }
+    .proj-table input[type=checkbox] { cursor: pointer; accent-color: var(--accent); width: 15px; height: 15px; }
+    .proj-view-toggle { display: flex; gap: 4px; }
+    .proj-view-btn { padding: 3px 10px; border-radius: 5px; font-size: 12px; cursor: pointer; border: 1px solid var(--border); background: var(--bg); color: var(--muted); }
+    .proj-view-btn.active { background: var(--accent); color: white; border-color: var(--accent); }
+    .proj-sel-toggle { padding: 3px 10px; border-radius: 5px; font-size: 12px; cursor: pointer; border: 1px solid var(--border); background: var(--bg); color: var(--muted); }
+    .proj-sel-toggle.active { background: #1e293b; color: white; border-color: #1e293b; }
+    .proj-card .proj-cb-wrap { position: absolute; top: 8px; left: 8px; display: none; }
+    .proj-card.selectable .proj-cb-wrap { display: block; }
+    .proj-card.selectable { position: relative; padding-left: 32px; cursor: default; }
+    .proj-card.proj-sel-on { background: #eff6ff; box-shadow: 0 0 0 2px var(--accent); }
+    .proj-card.selectable .proj-card-top { cursor: pointer; }
+    .proj-card.selectable .proj-card-top:hover { text-decoration: underline; }
   </style>
 </head>
 <body>
@@ -1005,6 +1055,10 @@
     </div>
 
     <div id="task-list-wrap">
+      <div id="bulk-sel-header" style="display:none" class="bulk-sel-header">
+        <input type="checkbox" id="sel-all-cb" onchange="bulkSelAll(this.checked)" title="Select all filtered tasks">
+        <label for="sel-all-cb" id="sel-all-label" style="cursor:pointer;">Select all</label>
+      </div>
       <div id="task-list"></div>
     </div>
     <div id="board-wrap" style="display:none"></div>
@@ -1196,12 +1250,17 @@
     <h3>New Project</h3>
     <div class="modal-sub">Creates a blank project</div>
     <input type="text" id="new-proj-name" placeholder="Project name">
-    <select id="new-proj-type" onchange="toggleNewProjDivision()">
+    <select id="new-proj-type" onchange="toggleNewProjDivision();toggleNewProjAudience()">
       <option value="professional">Professional</option>
       <option value="personal">Personal</option>
     </select>
     <select id="new-proj-division">
       <option value="">No division</option>
+    </select>
+    <select id="new-proj-audience" style="">
+      <option value="">Audience: Unset</option>
+      <option value="internal">Internal</option>
+      <option value="client">Client-facing</option>
     </select>
     <div class="modal-btns">
       <button class="btn btn-ghost btn-sm" onclick="closeAddProject()">Cancel</button>
@@ -1216,12 +1275,17 @@
     <h3>Edit Project</h3>
     <div class="modal-sub">Updates all tasks assigned to this project</div>
     <input type="text" id="rename-proj-input" placeholder="Project name">
-    <select id="edit-proj-type" onchange="toggleEditProjDivision()">
+    <select id="edit-proj-type" onchange="toggleEditProjDivision();toggleEditProjAudience()">
       <option value="professional">Professional</option>
       <option value="personal">Personal</option>
     </select>
     <select id="edit-proj-division">
       <option value="">No division</option>
+    </select>
+    <select id="edit-proj-audience">
+      <option value="">Audience: Unset</option>
+      <option value="internal">Internal</option>
+      <option value="client">Client-facing</option>
     </select>
     <div style="margin-top:10px;">
       <label style="font-size:12px;font-weight:600;color:var(--muted,#64748b);display:block;margin-bottom:4px;">Horizon</label>
@@ -1763,6 +1827,51 @@
   </div>
 </div>
 
+<!-- Bulk action bar -->
+<div id="bulk-bar" class="hidden">
+  <span class="bulk-count" id="bulk-count"></span>
+  <div id="bulk-actions" style="display:flex;gap:6px;flex:1;flex-wrap:wrap;align-items:center;"></div>
+  <button class="bulk-close" onclick="clearAllSel()" title="Clear selection">✕</button>
+</div>
+
+<!-- Bulk delete confirm modal -->
+<div class="overlay" id="bulk-delete-modal">
+  <div class="modal" style="max-width:400px">
+    <h3>Delete Tasks</h3>
+    <div class="modal-sub" id="bulk-del-msg"></div>
+    <input type="text" id="bulk-del-confirm" placeholder='Type "DELETE" to confirm' autocomplete="off" oninput="document.getElementById('bulk-del-btn').disabled=this.value!=='DELETE'">
+    <div class="modal-btns">
+      <button class="btn btn-ghost btn-sm" onclick="closeBulkDeleteModal()">Cancel</button>
+      <button class="btn btn-danger btn-sm" id="bulk-del-btn" disabled onclick="confirmBulkDelete()">Delete</button>
+    </div>
+  </div>
+</div>
+
+<!-- Bulk due date modal -->
+<div class="overlay" id="bulk-due-modal">
+  <div class="modal" style="max-width:320px">
+    <h3>Bulk Set Due Date</h3>
+    <div style="display:flex;flex-direction:column;gap:8px;">
+      <label style="font-size:12px;font-weight:600;color:var(--muted);">Set to specific date</label>
+      <input type="date" id="bulk-due-date" style="padding:6px 8px;border:1px solid var(--border);border-radius:6px;font-size:13px;">
+      <button class="btn btn-primary btn-sm" onclick="bulkApplyDueSet()">Set date</button>
+      <hr style="border:none;border-top:1px solid var(--border);margin:4px 0;">
+      <label style="font-size:12px;font-weight:600;color:var(--muted);">Shift existing dates by</label>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;">
+        <button class="btn btn-ghost btn-sm" onclick="bulkApplyDueShift(-7)">−7 days</button>
+        <button class="btn btn-ghost btn-sm" onclick="bulkApplyDueShift(-1)">−1 day</button>
+        <button class="btn btn-ghost btn-sm" onclick="bulkApplyDueShift(1)">+1 day</button>
+        <button class="btn btn-ghost btn-sm" onclick="bulkApplyDueShift(7)">+7 days</button>
+        <button class="btn btn-ghost btn-sm" onclick="bulkApplyDueShift(14)">+14 days</button>
+        <button class="btn btn-ghost btn-sm" onclick="bulkApplyDueShift(30)">+30 days</button>
+      </div>
+      <hr style="border:none;border-top:1px solid var(--border);margin:4px 0;">
+      <button class="btn btn-ghost btn-sm" style="color:#ef4444;" onclick="bulkApplyDueClear()">Clear all due dates</button>
+    </div>
+    <div class="modal-btns"><button class="btn btn-ghost btn-sm" onclick="closeBulkDueModal()">Close</button></div>
+  </div>
+</div>
+
 <div id="toast"></div>
 
 <script>
@@ -1871,6 +1980,8 @@ let state = {
   calWeekGridMode: true,   // true = compressed time-grid, false = task-card view
   boardMode: false,
   gcalEventLogs: {},       // {[gcal_event_id]: total_minutes} — refreshed after logging
+  selTasks: new Set(),
+  selProjects: new Set(),
 };
 
 let draggedTaskId  = null;
@@ -1921,6 +2032,8 @@ let calPanelDuePills = (() => {
 let slotPickerDate = null, slotPickerTime = null;
 let taskSchedBlocks = [];
 let toastUndoFn = null;
+let _lastSelTaskIdx = null;
+let _bulkUndo = null;
 
 // ── API ───────────────────────────────────────────────────────────────────────
 
@@ -2231,6 +2344,10 @@ function populateFilterProject() {
 // ── View / Filters ────────────────────────────────────────────────────────────
 
 function setView(view) {
+  state.selTasks.clear();
+  state.selProjects.clear();
+  _lastSelTaskIdx = null;
+  _projSelMode = false;
   state.view = view;
   state.calSelectedDay = null;
   state.filters = { priority:'', status:'', search:'', due:'', dueFrom:'', dueTo:'', project:'' };
@@ -2367,33 +2484,68 @@ function renderProjectHeader(proj) {
 
 const PROJ_DOT_COLORS = ['#3b82f6','#10b981','#f59e0b','#ef4444','#8b5cf6','#06b6d4','#f97316','#84cc16'];
 
+let _projAudFilter = ''; // '' | 'internal' | 'client' | 'personal' | 'unset'
+let _projViewMode  = 'card'; // 'card' | 'table'
+let _projSelMode   = false;
+
+function audTag(p) {
+  if ((p.type||'professional') === 'personal') return `<span class="aud-tag aud-unset">Personal</span>`;
+  if (p.audience === 'internal') return `<span class="aud-tag aud-internal">Internal</span>`;
+  if (p.audience === 'client')   return `<span class="aud-tag aud-client">Client</span>`;
+  return '';
+}
+
 function renderAllProjects() {
-  const inp     = document.getElementById('proj-search');
-  const rawQ    = inp ? inp.value : '';
-  const q       = rawQ.toLowerCase().trim();
-  const matched = state.projects.filter(p => isActiveProject(p) && (!q || p.name.toLowerCase().includes(q)));
+  const inp  = document.getElementById('proj-search');
+  const rawQ = inp ? inp.value : '';
+  const q    = rawQ.toLowerCase().trim();
+  let active = state.projects.filter(isActiveProject);
+
+  // Audience filter
+  if (_projAudFilter === 'internal') active = active.filter(p => (p.type||'professional') !== 'personal' && p.audience === 'internal');
+  else if (_projAudFilter === 'client')   active = active.filter(p => (p.type||'professional') !== 'personal' && p.audience === 'client');
+  else if (_projAudFilter === 'personal') active = active.filter(p => p.type === 'personal');
+  else if (_projAudFilter === 'unset')    active = active.filter(p => (p.type||'professional') !== 'personal' && !p.audience);
+
+  const matched = active.filter(p => !q || p.name.toLowerCase().includes(q));
+
+  // Audience pill counts
+  const all = state.projects.filter(isActiveProject);
+  const audCounts = {
+    '': all.length,
+    internal: all.filter(p => (p.type||'professional') !== 'personal' && p.audience === 'internal').length,
+    client:   all.filter(p => (p.type||'professional') !== 'personal' && p.audience === 'client').length,
+    personal: all.filter(p => p.type === 'personal').length,
+    unset:    all.filter(p => (p.type||'professional') !== 'personal' && !p.audience).length,
+  };
+  const audPills = [['','All'],['internal','Internal'],['client','Client-facing'],['personal','Personal'],['unset','Unset']]
+    .filter(([k]) => audCounts[k] > 0)
+    .map(([k,lbl]) => `<span class="aud-pill${_projAudFilter===k?' active':''}" onclick="_projAudFilter='${k}';renderAllProjects();">${lbl} (${audCounts[k]})</span>`).join('');
 
   function makeCard(p) {
-    const all  = state.tasks.filter(t => t.project === p.name && isActiveTask(t));
-    const done = all.filter(t => t.status === 'complete').length;
-    const tot  = all.length;
+    const all2 = state.tasks.filter(t => t.project === p.name && isActiveTask(t));
+    const done = all2.filter(t => t.status === 'complete').length;
+    const tot  = all2.length;
     const pct  = tot ? Math.round(done / tot * 100) : 0;
     const dot  = PROJ_DOT_COLORS[p.id % PROJ_DOT_COLORS.length];
-    const desc = p.description
-      ? `<span>${esc(p.description)}</span>`
-      : `<span style="font-style:italic;color:var(--muted)">No description</span>`;
-    return `<div class="proj-card" onclick="setView('project:${p.id}')">
+    const isSel = state.selProjects.has(p.id);
+    const selClass = (_projSelMode ? ' selectable' : '') + (isSel ? ' proj-sel-on' : '');
+    const cbHtml = _projSelMode ? `<div class="proj-cb-wrap" onclick="event.stopPropagation()"><input type="checkbox" ${isSel?'checked':''} onclick="event.stopPropagation();toggleProjSel(${p.id},event)"></div>` : '';
+    const div = state.divisions.find(d => d.id === p.division_id);
+    return `<div class="proj-card${selClass}" data-proj-id="${p.id}" onclick="${_projSelMode ? `toggleProjSel(${p.id},event)` : `setView('project:${p.id}')`}">
+      ${cbHtml}
       <div class="proj-card-top">
         <div class="proj-card-name-row">
           <div class="proj-card-dot" style="background:${dot}"></div>
           <span class="proj-card-name" title="${esc(p.name)}">${esc(p.name)}</span>
+          ${audTag(p)}
         </div>
         <div class="proj-card-actions">
+          ${div ? `<span style="font-size:10px;color:${div.color};font-weight:600;margin-right:4px;">${esc(div.name)}</span>` : ''}
           <button class="proj-card-btn" onclick="event.stopPropagation();openRenameProject(${p.id},'${esc(p.name)}')" title="Edit">✏️</button>
           <button class="proj-card-btn" onclick="event.stopPropagation();openMergeProject(${p.id},'${esc(p.name)}')" title="Delete / merge into…">⇒</button>
         </div>
       </div>
-      <div class="proj-card-desc">${desc}</div>
       <div>
         <div class="proj-card-bar-wrap"><div class="proj-card-bar-fill" style="width:${pct}%"></div></div>
         <div class="proj-card-bar-label">${done}/${tot} complete · ${pct}%</div>
@@ -2401,45 +2553,71 @@ function renderAllProjects() {
     </div>`;
   }
 
+  function makeTableRow(p) {
+    const all2 = state.tasks.filter(t => t.project === p.name && isActiveTask(t));
+    const done = all2.filter(t => t.status === 'complete').length;
+    const tot  = all2.length;
+    const pct  = tot ? Math.round(done / tot * 100) : 0;
+    const div  = state.divisions.find(d => d.id === p.division_id);
+    const isSel = state.selProjects.has(p.id);
+    const phases = state.phases[p.id] || [];
+    const activePhase = phases.find(ph => ph.status === 'active')?.name || '—';
+    return `<tr>
+      <td><input type="checkbox" ${isSel?'checked':''} onclick="toggleProjSel(${p.id},event)"></td>
+      <td><a style="cursor:pointer;color:var(--accent)" onclick="setView('project:${p.id}')">${esc(p.name)}</a></td>
+      <td>${div ? `<span style="color:${div.color}">${esc(div.name)}</span>` : '<span style="color:var(--muted)">—</span>'}</td>
+      <td>${audTag(p) || '<span style="color:var(--muted)">—</span>'}</td>
+      <td>${esc(activePhase)}</td>
+      <td>${tot}</td>
+      <td>${pct}%</td>
+    </tr>`;
+  }
+
   function makeGrid(projects) {
     return `<div class="proj-card-grid">${projects.map(makeCard).join('')}</div>`;
   }
+  function makeTable(projects) {
+    return `<table class="proj-table"><thead><tr>
+      <th style="width:32px;"><input type="checkbox" onchange="projSelAll(this.checked)"></th>
+      <th>Name</th><th>Division</th><th>Audience</th><th>Active Phase</th><th>Tasks</th><th>% Done</th>
+    </tr></thead><tbody>${projects.map(makeTableRow).join('')}</tbody></table>`;
+  }
 
   const divOrder = [...state.divisions].sort((a,b) => a.sort_order - b.sort_order);
-  const professional = matched.filter(p => (p.type || 'professional') === 'professional');
+  const professional = matched.filter(p => (p.type||'professional') === 'professional');
   const personal     = matched.filter(p => p.type === 'personal');
 
   let body = '';
-
-  if (professional.length) {
-    body += `<div class="proj-type-section"><div class="proj-type-label">Professional</div>`;
-    for (const div of divOrder) {
-      const group = professional.filter(p => p.division_id === div.id).sort((a,b) => a.name.localeCompare(b.name));
-      if (!group.length) continue;
-      body += `<div class="proj-subsection-label" style="border-left:3px solid ${div.color};padding-left:8px;">${esc(div.name)}</div>${makeGrid(group)}`;
+  if (_projViewMode === 'table') {
+    body = matched.length ? makeTable(matched.sort((a,b)=>a.name.localeCompare(b.name))) : '';
+  } else {
+    if (professional.length) {
+      body += `<div class="proj-type-section"><div class="proj-type-label">Professional</div>`;
+      for (const div of divOrder) {
+        const group = professional.filter(p => p.division_id === div.id).sort((a,b) => a.name.localeCompare(b.name));
+        if (!group.length) continue;
+        body += `<div class="proj-subsection-label" style="border-left:3px solid ${div.color};padding-left:8px;">${esc(div.name)}</div>${makeGrid(group)}`;
+      }
+      const unassigned = professional.filter(p => !p.division_id).sort((a,b) => a.name.localeCompare(b.name));
+      if (unassigned.length) body += `<div class="proj-subsection-label">Unassigned</div>${makeGrid(unassigned)}`;
+      body += `</div>`;
     }
-    const unassigned = professional.filter(p => !p.division_id).sort((a,b) => a.name.localeCompare(b.name));
-    if (unassigned.length) body += `<div class="proj-subsection-label">Unassigned</div>${makeGrid(unassigned)}`;
-    body += `</div>`;
-  }
-
-  if (personal.length) {
-    body += `<div class="proj-type-section"><div class="proj-type-label">Personal</div>`;
-    const personalDivOrder = divOrder.filter(d => (d.type || 'professional') === 'personal');
-    for (const div of personalDivOrder) {
-      const group = personal.filter(p => p.division_id === div.id).sort((a,b) => a.name.localeCompare(b.name));
-      if (!group.length) continue;
-      body += `<div class="proj-subsection-label" style="border-left:3px solid ${div.color};padding-left:8px;">${esc(div.name)}</div>${makeGrid(group)}`;
+    if (personal.length) {
+      body += `<div class="proj-type-section"><div class="proj-type-label">Personal</div>`;
+      const personalDivOrder = divOrder.filter(d => (d.type||'professional') === 'personal');
+      for (const div of personalDivOrder) {
+        const group = personal.filter(p => p.division_id === div.id).sort((a,b) => a.name.localeCompare(b.name));
+        if (!group.length) continue;
+        body += `<div class="proj-subsection-label" style="border-left:3px solid ${div.color};padding-left:8px;">${esc(div.name)}</div>${makeGrid(group)}`;
+      }
+      const unassigned = personal.filter(p => !p.division_id).sort((a,b) => a.name.localeCompare(b.name));
+      if (unassigned.length) body += `${personalDivOrder.length ? '<div class="proj-subsection-label">Unassigned</div>' : ''}${makeGrid(unassigned)}`;
+      body += `</div>`;
     }
-    const unassigned = personal.filter(p => !p.division_id).sort((a,b) => a.name.localeCompare(b.name));
-    if (unassigned.length) body += `${personalDivOrder.length ? '<div class="proj-subsection-label">Unassigned</div>' : ''}${makeGrid(unassigned)}`;
-    body += `</div>`;
   }
+  if (!matched.length) body = `<div class="empty-state"><div class="icon">📁</div><p>${q ? 'No projects match' : 'No projects yet'}</p></div>`;
 
-  if (!matched.length) {
-    body = `<div class="empty-state"><div class="icon">📁</div><p>${q ? 'No projects match "'+esc(rawQ)+'"' : 'No projects yet'}</p></div>`;
-  }
-
+  const nSel = state.selProjects.size;
   document.getElementById('task-list').innerHTML = `
     <div class="proj-grid-header">
       <div class="proj-grid-search-wrap">
@@ -2448,12 +2626,21 @@ function renderAllProjects() {
         <button class="proj-grid-search-clear${rawQ ? ' vis' : ''}"
           onclick="document.getElementById('proj-search').value='';renderAllProjects()">✕</button>
       </div>
-      <button class="btn btn-primary btn-sm" onclick="openAddProject()">＋ New Project</button>
+      <div style="display:flex;gap:6px;align-items:center;">
+        <div class="proj-view-toggle">
+          <button class="proj-view-btn${_projViewMode==='card'?' active':''}" onclick="_projViewMode='card';renderAllProjects()">⊞ Cards</button>
+          <button class="proj-view-btn${_projViewMode==='table'?' active':''}" onclick="_projViewMode='table';renderAllProjects()">≡ Table</button>
+        </div>
+        <button class="proj-sel-toggle${_projSelMode?' active':''}" onclick="_projSelMode=!_projSelMode;if(!_projSelMode){state.selProjects.clear();updateBulkProjBar();}renderAllProjects();">${_projSelMode && nSel ? `✓ ${nSel} sel` : 'Select'}</button>
+        <button class="btn btn-primary btn-sm" onclick="openAddProject()">＋ New Project</button>
+      </div>
     </div>
+    <div class="aud-filter-bar">${audPills}</div>
     ${body}`;
 
   const next = document.getElementById('proj-search');
   if (next && rawQ) { next.focus(); next.setSelectionRange(next.value.length, next.value.length); }
+  if (_projSelMode && nSel > 0) updateBulkProjBar();
 }
 
 // ── Project Detail Page ──────────────────────────────────────────────────────
@@ -4551,6 +4738,11 @@ function openGlobalNoteModal() {
 }
 
 function renderTaskList() {
+  // Hide bulk header for non-list special views
+  const isBulkableView = !['dashboard','calendar','settings','all-projects','notes-search','plan-week','sprint-week'].includes(state.view);
+  const bulkHdr = document.getElementById('bulk-sel-header');
+  if (bulkHdr) bulkHdr.style.display = isBulkableView ? '' : 'none';
+
   if (state.view === 'dashboard')     { renderDashboard();     return; }
   if (state.view === 'calendar')      { renderCalendar();      return; }
   if (state.view === 'settings')      { renderSettings();      return; }
@@ -4613,9 +4805,14 @@ function renderTaskList() {
       const short = blocker.title.length > 28 ? blocker.title.slice(0,28)+'…' : blocker.title;
       return `<span class="blocked-badge" onclick="event.stopPropagation();openDetail(${blocker.id})" title="Click to open blocking task">🔒 ${esc(short)}</span>`;
     })();
+    const isBulkSel = state.selTasks.has(t.id);
     return `
-    <div class="task-card${t.id === state.selectedId ? ' selected' : ''}"
+    <div class="task-card${t.id === state.selectedId ? ' selected' : ''}${isBulkSel ? ' bulk-sel' : ''}"
          data-id="${t.id}" data-priority="${t.priority}" onclick="openDetail(${t.id})">
+      <div class="task-cb-col" onclick="event.stopPropagation()">
+        <input type="checkbox" class="task-cb" ${isBulkSel?'checked':''} data-id="${t.id}"
+          onclick="toggleTaskSel(${t.id}, event)">
+      </div>
       <div class="task-card-body">
         <div class="task-card-title${t.status === 'complete' ? ' done' : ''}">${esc(t.title)}</div>
         <div class="task-card-meta">
@@ -4640,6 +4837,7 @@ function renderTaskList() {
   }).join('');
 
   list.innerHTML = html;
+  updateBulkSelHeader(tasks);
 }
 
 // ── Calendar ──────────────────────────────────────────────────────────────────
@@ -5589,12 +5787,22 @@ function toggleNewProjDivision() {
 function toggleEditProjDivision() {
   populateDivisionSelects();
 }
+function toggleNewProjAudience() {
+  const type = document.getElementById('new-proj-type').value;
+  document.getElementById('new-proj-audience').style.display = type === 'professional' ? '' : 'none';
+}
+function toggleEditProjAudience() {
+  const type = document.getElementById('edit-proj-type').value;
+  document.getElementById('edit-proj-audience').style.display = type === 'professional' ? '' : 'none';
+}
 
 function openAddProject() {
-  document.getElementById('new-proj-name').value    = '';
-  document.getElementById('new-proj-type').value    = 'professional';
+  document.getElementById('new-proj-name').value     = '';
+  document.getElementById('new-proj-type').value     = 'professional';
   document.getElementById('new-proj-division').value = '';
+  document.getElementById('new-proj-audience').value = '';
   populateDivisionSelects();
+  toggleNewProjAudience();
   document.getElementById('proj-modal').classList.add('open');
   setTimeout(() => document.getElementById('new-proj-name').focus(), 50);
 }
@@ -5607,8 +5815,9 @@ async function createProject() {
   if (!name) return;
   const type     = document.getElementById('new-proj-type').value;
   const division_id = parseInt(document.getElementById('new-proj-division').value) || null;
+  const audience = type === 'personal' ? null : (document.getElementById('new-proj-audience').value || null);
   try {
-    const proj = await api('POST', '/api/projects', { name, type, division_id });
+    const proj = await api('POST', '/api/projects', { name, type, division_id, audience });
     state.projects.push(proj); state.projects.sort((a,b)=>a.name.localeCompare(b.name));
     closeAddProject(); populateProjectSelect(); renderSidebar(); renderTaskList();
     toast(`Project "${name}" created`);
@@ -5625,11 +5834,13 @@ function editProjSetHorizon(h) {
 function openRenameProject(id, name) {
   renameProjId = id;
   const proj = state.projects.find(p => p.id === id);
-  document.getElementById('rename-proj-input').value  = name;
-  document.getElementById('edit-proj-type').value     = proj?.type     || 'professional';
+  document.getElementById('rename-proj-input').value   = name;
+  document.getElementById('edit-proj-type').value      = proj?.type     || 'professional';
   populateDivisionSelects();
-  document.getElementById('edit-proj-division').value = proj?.division_id || '';
+  document.getElementById('edit-proj-division').value  = proj?.division_id || '';
+  document.getElementById('edit-proj-audience').value  = proj?.audience  || '';
   toggleEditProjDivision();
+  toggleEditProjAudience();
   editProjSetHorizon(proj?.horizon || 'active');
   document.getElementById('rename-proj-modal').classList.add('open');
   setTimeout(() => document.getElementById('rename-proj-input').focus(), 50);
@@ -5641,11 +5852,12 @@ document.getElementById('rename-proj-modal').addEventListener('click', e => { if
 async function renameProject() {
   const name = document.getElementById('rename-proj-input').value.trim();
   if (!name) return;
-  const type     = document.getElementById('edit-proj-type').value;
+  const type        = document.getElementById('edit-proj-type').value;
   const division_id = parseInt(document.getElementById('edit-proj-division').value) || null;
-  const horizon  = _editProjHorizon || 'active';
+  const audience    = type === 'personal' ? null : (document.getElementById('edit-proj-audience').value || null);
+  const horizon     = _editProjHorizon || 'active';
   try {
-    const updated = await api('PUT', `/api/projects/${renameProjId}`, { name, type, division_id, horizon });
+    const updated = await api('PUT', `/api/projects/${renameProjId}`, { name, type, division_id, audience, horizon });
     const oldName = state.projects.find(p => p.id === renameProjId)?.name;
     state.projects = state.projects.map(p => p.id === renameProjId ? updated : p);
     state.projects.sort((a,b) => a.name.localeCompare(b.name));
@@ -8670,6 +8882,351 @@ document.addEventListener('click', e => {
     document.querySelectorAll('.gcal-log-task-drop').forEach(d => { d.style.display = 'none'; });
   }
 });
+
+// ── Bulk selection & actions ──────────────────────────────────────────────────
+
+function toggleTaskSel(id, e) {
+  const tasks = getVisibleTasks();
+  const idx = tasks.findIndex(t => t.id === id);
+  if (e && e.shiftKey && _lastSelTaskIdx !== null) {
+    const lo = Math.min(_lastSelTaskIdx, idx), hi = Math.max(_lastSelTaskIdx, idx);
+    const addMode = !state.selTasks.has(id);
+    for (let i = lo; i <= hi; i++) {
+      if (addMode) state.selTasks.add(tasks[i].id);
+      else state.selTasks.delete(tasks[i].id);
+    }
+  } else {
+    if (state.selTasks.has(id)) state.selTasks.delete(id);
+    else state.selTasks.add(id);
+    _lastSelTaskIdx = idx;
+  }
+  updateTaskSelUI(tasks);
+}
+
+function updateTaskSelUI(tasks) {
+  const t = tasks || getVisibleTasks();
+  document.querySelectorAll('.task-cb').forEach(cb => {
+    const tid = parseInt(cb.dataset.id);
+    cb.checked = state.selTasks.has(tid);
+    const card = cb.closest('.task-card');
+    if (card) card.classList.toggle('bulk-sel', state.selTasks.has(tid));
+  });
+  updateBulkSelHeader(t);
+  updateBulkBar();
+}
+
+function bulkSelAll(checked) {
+  const tasks = getVisibleTasks();
+  if (checked) tasks.forEach(t => state.selTasks.add(t.id));
+  else state.selTasks.clear();
+  _lastSelTaskIdx = null;
+  updateTaskSelUI(tasks);
+}
+
+function clearAllSel() {
+  state.selTasks.clear();
+  state.selProjects.clear();
+  _lastSelTaskIdx = null;
+  _projSelMode = false;
+  updateTaskSelUI();
+  if (state.view === 'all-projects') renderAllProjects();
+  else { const bar = document.getElementById('bulk-bar'); if (bar) bar.classList.add('hidden'); document.getElementById('task-list-wrap').classList.remove('has-bulk-bar'); }
+}
+
+function updateBulkSelHeader(tasks) {
+  const hdr = document.getElementById('bulk-sel-header');
+  if (!hdr || hdr.style.display === 'none') return;
+  const cb = document.getElementById('sel-all-cb');
+  const lbl = document.getElementById('sel-all-label');
+  const n = state.selTasks.size, total = (tasks || getVisibleTasks()).length;
+  if (cb) { cb.checked = n > 0 && n >= total; cb.indeterminate = n > 0 && n < total; }
+  if (lbl) lbl.textContent = n > 0 ? `${n} selected` : 'Select all';
+}
+
+function updateBulkBar() {
+  const bar = document.getElementById('bulk-bar');
+  if (!bar) return;
+  const n = state.selTasks.size;
+  if (n === 0) { bar.classList.add('hidden'); document.getElementById('task-list-wrap').classList.remove('has-bulk-bar'); return; }
+  bar.classList.remove('hidden');
+  document.getElementById('task-list-wrap').classList.add('has-bulk-bar');
+  document.getElementById('bulk-count').textContent = `${n} task${n===1?'':'s'}`;
+  const acts = document.getElementById('bulk-actions');
+  const projs = state.projects.filter(p => p.horizon === 'active');
+  const cats  = state.categories;
+  acts.innerHTML = `
+    <select onchange="if(this.value)bulkSetProject(this.value);this.value=''" style="font-size:12px;padding:3px 6px;border:1px solid #cbd5e1;border-radius:5px;background:#fff;cursor:pointer;max-width:130px;">
+      <option value="">Project…</option>
+      ${projs.map(p=>`<option value="${esc(p.name)}">${esc(p.name)}</option>`).join('')}
+    </select>
+    <select onchange="if(this.value)bulkSetCategory(this.value);this.value=''" style="font-size:12px;padding:3px 6px;border:1px solid #cbd5e1;border-radius:5px;background:#fff;cursor:pointer;">
+      <option value="">Category…</option>
+      ${cats.map(c=>`<option value="${c.slug}">${c.icon||''} ${esc(c.name)}</option>`).join('')}
+    </select>
+    <select onchange="if(this.value)bulkSetPriority(this.value);this.value=''" style="font-size:12px;padding:3px 6px;border:1px solid #cbd5e1;border-radius:5px;background:#fff;cursor:pointer;">
+      <option value="">Priority…</option>
+      <option value="critical">Critical</option><option value="high">High</option>
+      <option value="medium">Medium</option><option value="low">Low</option>
+    </select>
+    <select onchange="if(this.value)bulkSetStatus(this.value);this.value=''" style="font-size:12px;padding:3px 6px;border:1px solid #cbd5e1;border-radius:5px;background:#fff;cursor:pointer;">
+      <option value="">Status…</option>
+      <option value="active">Active</option><option value="pending">Pending</option>
+      <option value="in-progress">In Progress</option><option value="blocked">Blocked</option>
+      <option value="complete">Complete</option>
+    </select>
+    <button class="bulk-btn" onclick="openBulkDueModal()">📅 Due</button>
+    <select onchange="if(this.value)bulkSetHorizon(this.value);this.value=''" style="font-size:12px;padding:3px 6px;border:1px solid #cbd5e1;border-radius:5px;background:#fff;cursor:pointer;">
+      <option value="">Move to…</option>
+      <option value="active">Active</option><option value="someday">Someday</option>
+    </select>
+    <button class="bulk-btn bulk-btn-red" onclick="openBulkDeleteModal()">🗑 Delete</button>`;
+}
+
+function applyBulkUpdate(updated) {
+  if (!Array.isArray(updated)) return;
+  const byId = {};
+  updated.forEach(t => { byId[t.id] = t; });
+  state.tasks = state.tasks.map(t => byId[t.id] ? { ...t, ...byId[t.id] } : t);
+  renderSidebar(); renderTaskList();
+}
+
+async function bulkSetProject(projName) {
+  const ids = [...state.selTasks];
+  const snap = ids.map(id => { const t = state.tasks.find(x => x.id===id); return t ? { id, project: t.project||null, phase_id: t.phase_id||null } : null; }).filter(Boolean);
+  try {
+    const updated = await api('PATCH', '/api/tasks/bulk', { ids, patch: { project: projName } });
+    applyBulkUpdate(updated); _bulkUndo = { snapshots: snap };
+    toastWithUndo(`Project set on ${ids.length} task${ids.length===1?'':'s'}`);
+  } catch(e) { toast(e.message); }
+}
+
+async function bulkSetCategory(cat) {
+  const ids = [...state.selTasks];
+  const snap = ids.map(id => { const t = state.tasks.find(x => x.id===id); return t ? { id, category: t.category||null } : null; }).filter(Boolean);
+  try {
+    const updated = await api('PATCH', '/api/tasks/bulk', { ids, patch: { category: cat } });
+    applyBulkUpdate(updated); _bulkUndo = { snapshots: snap };
+    toastWithUndo(`Category set on ${ids.length} task${ids.length===1?'':'s'}`);
+  } catch(e) { toast(e.message); }
+}
+
+async function bulkSetPriority(priority) {
+  const ids = [...state.selTasks];
+  const snap = ids.map(id => { const t = state.tasks.find(x => x.id===id); return t ? { id, priority: t.priority } : null; }).filter(Boolean);
+  try {
+    const updated = await api('PATCH', '/api/tasks/bulk', { ids, patch: { priority } });
+    applyBulkUpdate(updated); _bulkUndo = { snapshots: snap };
+    toastWithUndo(`Priority updated on ${ids.length} task${ids.length===1?'':'s'}`);
+  } catch(e) { toast(e.message); }
+}
+
+async function bulkSetStatus(status) {
+  const ids = [...state.selTasks];
+  const snap = ids.map(id => { const t = state.tasks.find(x => x.id===id); return t ? { id, status: t.status } : null; }).filter(Boolean);
+  try {
+    const updated = await api('PATCH', '/api/tasks/bulk', { ids, patch: { status } });
+    applyBulkUpdate(updated); _bulkUndo = { snapshots: snap };
+    toastWithUndo(`Status updated on ${ids.length} task${ids.length===1?'':'s'}`);
+  } catch(e) { toast(e.message); }
+}
+
+async function bulkSetHorizon(horizon) {
+  const ids = [...state.selTasks];
+  const snap = ids.map(id => { const t = state.tasks.find(x => x.id===id); return t ? { id, horizon: t.horizon||'active' } : null; }).filter(Boolean);
+  try {
+    const updated = await api('PATCH', '/api/tasks/bulk', { ids, patch: { horizon } });
+    applyBulkUpdate(updated); _bulkUndo = { snapshots: snap };
+    toastWithUndo(`Moved ${ids.length} task${ids.length===1?'':'s'} to ${horizon}`);
+  } catch(e) { toast(e.message); }
+}
+
+// Due date modal
+function openBulkDueModal() { document.getElementById('bulk-due-date').value = ''; document.getElementById('bulk-due-modal').classList.add('open'); }
+function closeBulkDueModal() { document.getElementById('bulk-due-modal').classList.remove('open'); }
+document.getElementById('bulk-due-modal').addEventListener('click', e => { if (e.target===e.currentTarget) closeBulkDueModal(); });
+
+async function bulkApplyDueSet() {
+  const val = document.getElementById('bulk-due-date').value;
+  if (!val) { toast('Pick a date first'); return; }
+  const ids = [...state.selTasks];
+  const snap = ids.map(id => { const t = state.tasks.find(x => x.id===id); return t ? { id, due_date: t.due_date||null } : null; }).filter(Boolean);
+  try {
+    const updated = await api('PATCH', '/api/tasks/bulk', { ids, patch: { due_date: val } });
+    applyBulkUpdate(updated); _bulkUndo = { snapshots: snap }; closeBulkDueModal();
+    toastWithUndo(`Due date set on ${ids.length} task${ids.length===1?'':'s'}`);
+  } catch(e) { toast(e.message); }
+}
+
+async function bulkApplyDueShift(days) {
+  const ids = [...state.selTasks];
+  const snap = ids.map(id => { const t = state.tasks.find(x => x.id===id); return t ? { id, due_date: t.due_date||null } : null; }).filter(Boolean);
+  try {
+    const updated = await api('PATCH', '/api/tasks/bulk', { ids, patch: { due_date: { shift: days } } });
+    applyBulkUpdate(updated); _bulkUndo = { snapshots: snap }; closeBulkDueModal();
+    toastWithUndo(`Due dates shifted ${days>0?'+':''}${days}d on ${ids.length} task${ids.length===1?'':'s'}`);
+  } catch(e) { toast(e.message); }
+}
+
+async function bulkApplyDueClear() {
+  const ids = [...state.selTasks];
+  const snap = ids.map(id => { const t = state.tasks.find(x => x.id===id); return t ? { id, due_date: t.due_date||null } : null; }).filter(Boolean);
+  try {
+    const updated = await api('PATCH', '/api/tasks/bulk', { ids, patch: { due_date: null } });
+    applyBulkUpdate(updated); _bulkUndo = { snapshots: snap }; closeBulkDueModal();
+    toastWithUndo(`Due dates cleared on ${ids.length} task${ids.length===1?'':'s'}`);
+  } catch(e) { toast(e.message); }
+}
+
+// Bulk delete modal
+function openBulkDeleteModal() {
+  const n = state.selTasks.size;
+  document.getElementById('bulk-del-msg').textContent = `Permanently delete ${n} task${n===1?'':'s'}? This cannot be undone.`;
+  document.getElementById('bulk-del-confirm').value = '';
+  document.getElementById('bulk-del-btn').disabled = true;
+  document.getElementById('bulk-delete-modal').classList.add('open');
+}
+function closeBulkDeleteModal() { document.getElementById('bulk-delete-modal').classList.remove('open'); }
+document.getElementById('bulk-delete-modal').addEventListener('click', e => { if (e.target===e.currentTarget) closeBulkDeleteModal(); });
+
+async function confirmBulkDelete() {
+  const ids = [...state.selTasks];
+  try {
+    await api('DELETE', '/api/tasks/bulk', { ids });
+    state.tasks = state.tasks.filter(t => !state.selTasks.has(t.id));
+    state.selTasks.clear(); closeBulkDeleteModal();
+    updateBulkBar(); renderSidebar(); renderTaskList();
+    toast(`Deleted ${ids.length} task${ids.length===1?'':'s'}`);
+  } catch(e) { toast(e.message); }
+}
+
+async function undoBulk() {
+  if (!_bulkUndo) return;
+  try {
+    await api('POST', '/api/tasks/bulk-restore', { snapshots: _bulkUndo.snapshots });
+    _bulkUndo.snapshots.forEach(snap => { state.tasks = state.tasks.map(t => t.id===snap.id ? { ...t, ...snap } : t); });
+    _bulkUndo = null; renderSidebar(); renderTaskList(); toast('Undone');
+  } catch(e) { toast(e.message); }
+}
+
+function toastWithUndo(msg) {
+  const el = document.getElementById('toast');
+  clearTimeout(toastTimer);
+  el.innerHTML = `<span>${esc(msg)}</span><button class="bulk-undo" onclick="undoBulk()" style="margin-left:8px;padding:2px 10px;border:1px solid rgba(255,255,255,.4);border-radius:4px;background:rgba(255,255,255,.15);color:#fff;cursor:pointer;font-size:12px;">Undo</button>`;
+  el.className = 'show';
+  toastTimer = setTimeout(() => { el.className = ''; }, 5000);
+}
+
+// ── Project bulk selection & actions ─────────────────────────────────────────
+
+function toggleProjSel(id, e) {
+  if (e) e.stopPropagation();
+  if (state.selProjects.has(id)) state.selProjects.delete(id);
+  else state.selProjects.add(id);
+  updateBulkProjBar();
+  // update checkboxes in place without full re-render
+  document.querySelectorAll('[data-proj-id]').forEach(card => {
+    const pid = parseInt(card.dataset.projId);
+    const cb = card.querySelector('input[type=checkbox]');
+    const isSel = state.selProjects.has(pid);
+    if (cb) cb.checked = isSel;
+    card.classList.toggle('proj-sel-on', isSel);
+  });
+  // update select-all checkbox
+  const allSel = document.querySelector('.proj-view-toggle')?.closest('#task-list');
+  const selAllCb = document.querySelector('#task-list .proj-table thead input[type=checkbox], .aud-filter-bar + * input[type=checkbox]');
+  const selToggle = document.querySelector('.proj-sel-toggle');
+  if (selToggle) {
+    const nSel = state.selProjects.size;
+    selToggle.textContent = (_projSelMode && nSel) ? `✓ ${nSel} sel` : 'Select';
+  }
+}
+
+function projSelAll(checked) {
+  const active = state.projects.filter(p => p.horizon !== 'someday');
+  let filtered = [...active];
+  if (_projAudFilter === 'internal') filtered = filtered.filter(p => (p.type||'professional') !== 'personal' && p.audience === 'internal');
+  else if (_projAudFilter === 'client') filtered = filtered.filter(p => (p.type||'professional') !== 'personal' && p.audience === 'client');
+  else if (_projAudFilter === 'personal') filtered = filtered.filter(p => p.type === 'personal');
+  else if (_projAudFilter === 'unset') filtered = filtered.filter(p => (p.type||'professional') !== 'personal' && !p.audience);
+  if (checked) filtered.forEach(p => state.selProjects.add(p.id));
+  else state.selProjects.clear();
+  updateBulkProjBar();
+  renderAllProjects();
+}
+
+function updateBulkProjBar() {
+  const bar = document.getElementById('bulk-bar');
+  if (!bar) return;
+  if (state.selTasks.size > 0) return; // task bar takes priority
+  const n = state.selProjects.size;
+  if (n === 0) { bar.classList.add('hidden'); document.getElementById('task-list-wrap').classList.remove('has-bulk-bar'); return; }
+  bar.classList.remove('hidden');
+  document.getElementById('task-list-wrap').classList.remove('has-bulk-bar');
+  document.getElementById('bulk-count').textContent = `${n} project${n===1?'':'s'}`;
+  const acts = document.getElementById('bulk-actions');
+  const divs = state.divisions || [];
+  acts.innerHTML = `
+    ${divs.length ? `<select onchange="if(this.value)bulkProjSetDivision(parseInt(this.value));this.value=''" style="font-size:12px;padding:3px 6px;border:1px solid #cbd5e1;border-radius:5px;background:#fff;cursor:pointer;">
+      <option value="">Division…</option>${divs.map(d=>`<option value="${d.id}">${esc(d.name)}</option>`).join('')}
+    </select>` : ''}
+    <select onchange="bulkProjSetAudience(this.value==='__unset__'?null:this.value||undefined);this.value=''" style="font-size:12px;padding:3px 6px;border:1px solid #cbd5e1;border-radius:5px;background:#fff;cursor:pointer;">
+      <option value="">Audience…</option>
+      <option value="internal">Internal</option>
+      <option value="client">Client-facing</option>
+      <option value="__unset__">Unset</option>
+    </select>
+    <select onchange="if(this.value)bulkProjSetType(this.value);this.value=''" style="font-size:12px;padding:3px 6px;border:1px solid #cbd5e1;border-radius:5px;background:#fff;cursor:pointer;">
+      <option value="">Type…</option>
+      <option value="professional">Professional</option>
+      <option value="personal">Personal</option>
+    </select>
+    <select onchange="if(this.value)bulkProjSetHorizon(this.value);this.value=''" style="font-size:12px;padding:3px 6px;border:1px solid #cbd5e1;border-radius:5px;background:#fff;cursor:pointer;">
+      <option value="">Move to…</option>
+      <option value="active">Active</option>
+      <option value="someday">Someday</option>
+    </select>`;
+}
+
+async function bulkProjSetDivision(division_id) {
+  const ids = [...state.selProjects];
+  try {
+    await api('PATCH', '/api/projects/bulk', { ids, patch: { division_id } });
+    state.projects = state.projects.map(p => ids.includes(p.id) ? { ...p, division_id } : p);
+    renderSidebar(); renderAllProjects();
+    toast(`Division set on ${ids.length} project${ids.length===1?'':'s'}`);
+  } catch(e) { toast(e.message); }
+}
+
+async function bulkProjSetAudience(audience) {
+  if (audience === undefined) return;
+  const ids = [...state.selProjects];
+  try {
+    await api('PATCH', '/api/projects/bulk', { ids, patch: { audience } });
+    state.projects = state.projects.map(p => ids.includes(p.id) ? { ...p, audience } : p);
+    renderAllProjects();
+    toast(`Audience set on ${ids.length} project${ids.length===1?'':'s'}`);
+  } catch(e) { toast(e.message); }
+}
+
+async function bulkProjSetType(type) {
+  const ids = [...state.selProjects];
+  try {
+    await api('PATCH', '/api/projects/bulk', { ids, patch: { type } });
+    state.projects = state.projects.map(p => ids.includes(p.id) ? { ...p, type } : p);
+    renderSidebar(); renderAllProjects();
+    toast(`Type set on ${ids.length} project${ids.length===1?'':'s'}`);
+  } catch(e) { toast(e.message); }
+}
+
+async function bulkProjSetHorizon(horizon) {
+  const ids = [...state.selProjects];
+  try {
+    await api('PATCH', '/api/projects/bulk', { ids, patch: { horizon } });
+    state.projects = state.projects.map(p => ids.includes(p.id) ? { ...p, horizon } : p);
+    renderSidebar(); renderAllProjects();
+    toast(`Moved ${ids.length} project${ids.length===1?'':'s'} to ${horizon}`);
+  } catch(e) { toast(e.message); }
+}
 
 // ── Init ──────────────────────────────────────────────────────────────────────
 

@@ -207,6 +207,7 @@ if (!db.prepare("SELECT value FROM settings WHERE key='gmail_source_backfill_v1'
 }
 try { db.prepare("ALTER TABLE projects ADD COLUMN type TEXT NOT NULL DEFAULT 'professional'").run(); } catch(e) {}
 try { db.prepare('ALTER TABLE projects ADD COLUMN division TEXT').run(); } catch(e) {}
+try { db.prepare('ALTER TABLE projects ADD COLUMN audience TEXT').run(); } catch(e) {}
 // One-time: clear app-managed category blocks (replaced by Google Calendar theme mappings)
 if (!db.prepare("SELECT value FROM settings WHERE key='cat_blocks_cleared_v1'").get()) {
   try {
@@ -632,6 +633,117 @@ app.delete('/api/tasks/:id', (req, res) => {
   res.status(204).end();
 });
 
+// ── Bulk Task Endpoints ───────────────────────────────────────────────────────
+
+app.patch('/api/tasks/bulk', (req, res) => {
+  const { ids, patch } = req.body;
+  if (!Array.isArray(ids) || !ids.length) return res.status(400).json({ error: 'ids required' });
+  if (!patch || typeof patch !== 'object') return res.status(400).json({ error: 'patch required' });
+  db.transaction(() => {
+    for (const id of ids) {
+      const task = db.prepare('SELECT * FROM tasks WHERE id=?').get(id);
+      if (!task) continue;
+      const category = 'category' in patch ? (patch.category||null) : task.category;
+      const project  = 'project'  in patch ? (patch.project||null)  : task.project;
+      const phase_id = 'phase_id' in patch ? (patch.phase_id||null) : task.phase_id;
+      const priority = 'priority' in patch ? patch.priority : task.priority;
+      const status   = 'status'   in patch ? patch.status   : task.status;
+      const horizon  = 'horizon'  in patch ? patch.horizon  : (task.horizon||'active');
+      const estimated_minutes = 'estimated_minutes' in patch
+        ? (patch.estimated_minutes ? Number(patch.estimated_minutes) : null)
+        : task.estimated_minutes;
+      let due_date = task.due_date;
+      if ('due_date' in patch) {
+        if (patch.due_date === null || patch.due_date === '') {
+          due_date = null;
+        } else if (patch.due_date && typeof patch.due_date === 'object' && 'shift' in patch.due_date) {
+          if (due_date) {
+            const d = new Date(due_date + 'T00:00:00');
+            d.setDate(d.getDate() + patch.due_date.shift);
+            due_date = d.toISOString().slice(0, 10);
+          }
+        } else {
+          due_date = patch.due_date;
+        }
+      }
+      const is_inbox = (!category && !project) ? 1 : 0;
+      const goingSomeday = horizon === 'someday' && (task.horizon||'active') === 'active';
+      db.prepare(`UPDATE tasks SET category=?,project=?,phase_id=?,priority=?,status=?,due_date=?,estimated_minutes=?,horizon=?,is_inbox=?,updated_at=datetime('now') WHERE id=?`)
+        .run(category, project, phase_id, priority, status, due_date, estimated_minutes, horizon, is_inbox, id);
+      if (goingSomeday) db.prepare('DELETE FROM task_focus_lists WHERE task_id=?').run(id);
+    }
+    if (patch.sprint === 'add' || patch.sprint === 'remove') {
+      const sprint = db.prepare("SELECT * FROM focus_lists WHERE sprint_week IS NOT NULL ORDER BY sprint_week DESC LIMIT 1").get();
+      if (sprint) {
+        const ins = db.prepare('INSERT OR IGNORE INTO task_focus_lists (task_id,focus_list_id) VALUES (?,?)');
+        const del = db.prepare('DELETE FROM task_focus_lists WHERE task_id=? AND focus_list_id=?');
+        ids.forEach(id => patch.sprint === 'add' ? ins.run(id, sprint.id) : del.run(id, sprint.id));
+      }
+    }
+  })();
+  const ph = ids.map(()=>'?').join(',');
+  res.json(db.prepare(`SELECT * FROM tasks WHERE id IN (${ph})`).all(...ids));
+});
+
+app.delete('/api/tasks/bulk', (req, res) => {
+  const { ids } = req.body;
+  if (!Array.isArray(ids) || !ids.length) return res.status(400).json({ error: 'ids required' });
+  const today = new Date().toISOString().slice(0, 10);
+  const ph = ids.map(()=>'?').join(',');
+  const futureEventIds = db.prepare(`SELECT gcal_event_id FROM time_blocks WHERE task_id IN (${ph}) AND date>=? AND gcal_event_id IS NOT NULL`)
+    .all(...ids, today).map(r => r.gcal_event_id);
+  db.transaction(() => {
+    db.prepare(`UPDATE tasks SET blocked_by_task_id=NULL WHERE blocked_by_task_id IN (${ph})`).run(...ids);
+    db.prepare(`DELETE FROM tasks WHERE id IN (${ph})`).run(...ids);
+  })();
+  if (futureEventIds.length) Promise.all(futureEventIds.map(id => deleteGoogleTaskBlockEvent(id))).catch(() => {});
+  res.json({ deleted: ids.length });
+});
+
+// Restore heterogeneous per-task patches (used for Undo)
+app.post('/api/tasks/bulk-restore', (req, res) => {
+  const { snapshots } = req.body; // [{ id, category, project, phase_id, priority, status, due_date, estimated_minutes, horizon }]
+  if (!Array.isArray(snapshots) || !snapshots.length) return res.status(400).json({ error: 'snapshots required' });
+  db.transaction(() => {
+    for (const s of snapshots) {
+      const task = db.prepare('SELECT * FROM tasks WHERE id=?').get(s.id);
+      if (!task) continue;
+      const is_inbox = (!s.category && !s.project) ? 1 : 0;
+      db.prepare(`UPDATE tasks SET category=?,project=?,phase_id=?,priority=?,status=?,due_date=?,estimated_minutes=?,horizon=?,is_inbox=?,updated_at=datetime('now') WHERE id=?`)
+        .run(s.category||null, s.project||null, s.phase_id||null, s.priority, s.status, s.due_date||null, s.estimated_minutes||null, s.horizon||'active', is_inbox, s.id);
+    }
+  })();
+  const ids = snapshots.map(s => s.id);
+  const ph = ids.map(()=>'?').join(',');
+  res.json(db.prepare(`SELECT * FROM tasks WHERE id IN (${ph})`).all(...ids));
+});
+
+app.patch('/api/projects/bulk', (req, res) => {
+  const { ids, patch } = req.body;
+  if (!Array.isArray(ids) || !ids.length) return res.status(400).json({ error: 'ids required' });
+  db.transaction(() => {
+    for (const id of ids) {
+      const proj = db.prepare('SELECT * FROM projects WHERE id=?').get(id);
+      if (!proj) continue;
+      const div_id   = 'division_id' in patch ? (patch.division_id||null) : proj.division_id;
+      const type     = 'type'        in patch ? patch.type                : proj.type;
+      const horizon  = 'horizon'     in patch ? patch.horizon             : (proj.horizon||'active');
+      const rawAud   = 'audience'    in patch ? (patch.audience||null)    : proj.audience;
+      const audience = type === 'personal' ? null : rawAud;
+      const goingSomeday = horizon === 'someday' && (proj.horizon||'active') === 'active';
+      db.prepare('UPDATE projects SET division_id=?,type=?,horizon=?,audience=? WHERE id=?').run(div_id, type, horizon, audience, id);
+      if (goingSomeday) db.prepare('DELETE FROM task_focus_lists WHERE task_id IN (SELECT id FROM tasks WHERE project=?)').run(proj.name);
+    }
+  })();
+  const divMap = {};
+  db.prepare('SELECT * FROM divisions').all().forEach(d => { divMap[d.id] = d; });
+  const ph = ids.map(()=>'?').join(',');
+  res.json(db.prepare(`SELECT * FROM projects WHERE id IN (${ph})`).all(...ids).map(p => {
+    const div = p.division_id ? divMap[p.division_id] : null;
+    return { ...p, division: div?.name||null, division_color: div?.color||null };
+  }));
+});
+
 // ── Time Logs ─────────────────────────────────────────────────────────────────
 
 const syncActualMinutes = (taskId) => {
@@ -779,10 +891,11 @@ app.get('/api/projects', (req, res) => {
 });
 
 app.post('/api/projects', (req, res) => {
-  const { name, type = 'professional', division_id } = req.body;
+  const { name, type = 'professional', division_id, audience } = req.body;
   if (!name?.trim()) return res.status(400).json({ error: 'Project name is required' });
   try {
-    const result = db.prepare('INSERT INTO projects (name, type, division_id) VALUES (?, ?, ?)').run(name.trim(), type, division_id||null);
+    const aud = type === 'personal' ? null : (audience || null);
+    const result = db.prepare('INSERT INTO projects (name, type, division_id, audience) VALUES (?, ?, ?, ?)').run(name.trim(), type, division_id||null, aud);
     const projId = result.lastInsertRowid;
     if (division_id) {
       const tpls = db.prepare('SELECT * FROM division_phase_templates WHERE division_id = ? ORDER BY sort_order').all(division_id);
@@ -803,15 +916,17 @@ app.post('/api/projects', (req, res) => {
 app.put('/api/projects/:id', (req, res) => {
   const proj = db.prepare('SELECT * FROM projects WHERE id = ?').get(req.params.id);
   if (!proj) return res.status(404).json({ error: 'Project not found' });
-  const { name, type, division_id, horizon } = req.body;
+  const { name, type, division_id, horizon, audience } = req.body;
   if (!name?.trim()) return res.status(400).json({ error: 'Project name is required' });
-  const newType    = type       !== undefined ? type                  : proj.type;
-  const newDivId   = division_id !== undefined ? (division_id||null) : proj.division_id;
-  const newHorizon = horizon    !== undefined ? horizon              : (proj.horizon || 'active');
+  const newType     = type        !== undefined ? type                   : proj.type;
+  const newDivId    = division_id !== undefined ? (division_id||null)    : proj.division_id;
+  const newHorizon  = horizon     !== undefined ? horizon                : (proj.horizon || 'active');
+  const newAudience = audience    !== undefined ? (audience||null)       : proj.audience;
+  const finalAudience = newType === 'personal' ? null : newAudience;
   const goingSomeday = newHorizon === 'someday' && (proj.horizon || 'active') === 'active';
   try {
     db.transaction(() => {
-      db.prepare('UPDATE projects SET name=?, type=?, division_id=?, horizon=? WHERE id=?').run(name.trim(), newType, newDivId, newHorizon, req.params.id);
+      db.prepare('UPDATE projects SET name=?, type=?, division_id=?, horizon=?, audience=? WHERE id=?').run(name.trim(), newType, newDivId, newHorizon, finalAudience, req.params.id);
       db.prepare("UPDATE tasks SET project=?, updated_at=datetime('now') WHERE project=?").run(name.trim(), proj.name);
       if (goingSomeday) {
         // Remove all of this project's tasks from focus lists (sprint)
