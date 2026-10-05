@@ -795,10 +795,13 @@ app.delete('/api/time-logs/:id', (req, res) => {
 
 // ── Subtasks ──────────────────────────────────────────────────────────────────
 
+// Idempotent: add position column for drag-to-reorder
+try { db.exec('ALTER TABLE subtasks ADD COLUMN position INTEGER NOT NULL DEFAULT 0'); } catch(e) {}
+
 app.get('/api/tasks/:id/subtasks', (req, res) => {
   const task = db.prepare('SELECT id FROM tasks WHERE id = ?').get(req.params.id);
   if (!task) return res.status(404).json({ error: 'Task not found' });
-  res.json(db.prepare('SELECT * FROM subtasks WHERE task_id = ? ORDER BY created_at ASC').all(req.params.id));
+  res.json(db.prepare('SELECT * FROM subtasks WHERE task_id = ? ORDER BY position ASC, id ASC').all(req.params.id));
 });
 
 app.post('/api/tasks/:id/subtasks', (req, res) => {
@@ -806,7 +809,8 @@ app.post('/api/tasks/:id/subtasks', (req, res) => {
   if (!task) return res.status(404).json({ error: 'Task not found' });
   const { title } = req.body;
   if (!title?.trim()) return res.status(400).json({ error: 'Title is required' });
-  const r = db.prepare('INSERT INTO subtasks (task_id, title) VALUES (?, ?)').run(req.params.id, title.trim());
+  const maxPos = db.prepare('SELECT COALESCE(MAX(position),0)+1 AS pos FROM subtasks WHERE task_id=?').get(req.params.id).pos;
+  const r = db.prepare('INSERT INTO subtasks (task_id, title, position) VALUES (?, ?, ?)').run(req.params.id, title.trim(), maxPos);
   res.status(201).json(db.prepare('SELECT * FROM subtasks WHERE id = ?').get(r.lastInsertRowid));
 });
 
@@ -817,6 +821,15 @@ app.patch('/api/subtasks/:id', (req, res) => {
   const completed = req.body.completed !== undefined ? (req.body.completed ? 1 : 0)           : sub.completed;
   db.prepare('UPDATE subtasks SET title = ?, completed = ? WHERE id = ?').run(title, completed, req.params.id);
   res.json(db.prepare('SELECT * FROM subtasks WHERE id = ?').get(req.params.id));
+});
+
+app.patch('/api/tasks/:id/subtasks/reorder', (req, res) => {
+  const { ids } = req.body;
+  if (!Array.isArray(ids)) return res.status(400).json({ error: 'ids required' });
+  db.transaction(() => {
+    ids.forEach((sid, i) => db.prepare('UPDATE subtasks SET position=? WHERE id=? AND task_id=?').run(i, sid, req.params.id));
+  })();
+  res.json({ ok: true });
 });
 
 app.delete('/api/subtasks/:id', (req, res) => {
@@ -864,6 +877,15 @@ app.post('/api/tasks/:id/updates', (req, res) => {
   if (!content?.trim()) return res.status(400).json({ error: 'content is required' });
   const r = db.prepare('INSERT INTO task_updates (task_id, content) VALUES (?, ?)').run(req.params.id, content.trim());
   res.status(201).json(db.prepare('SELECT * FROM task_updates WHERE id = ?').get(r.lastInsertRowid));
+});
+
+app.put('/api/updates/:id', (req, res) => {
+  const { content } = req.body;
+  if (!content?.trim()) return res.status(400).json({ error: 'content is required' });
+  const u = db.prepare('SELECT * FROM task_updates WHERE id=?').get(req.params.id);
+  if (!u) return res.status(404).json({ error: 'Update not found' });
+  db.prepare('UPDATE task_updates SET content=? WHERE id=?').run(content.trim(), req.params.id);
+  res.json(db.prepare('SELECT * FROM task_updates WHERE id=?').get(req.params.id));
 });
 
 app.delete('/api/updates/:id', (req, res) => {

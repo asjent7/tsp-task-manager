@@ -462,6 +462,12 @@
     .upd-entry:last-child { border-bottom: none; }
     .upd-entry-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 5px; }
     .upd-entry-ts { font-size: 11px; color: var(--muted); font-weight: 500; }
+    .upd-entry-acts { display: flex; gap: 2px; opacity: 0; transition: opacity .1s; }
+    .upd-entry:hover .upd-entry-acts { opacity: 1; }
+    .log-edit { background: none; border: none; color: #94a3b8; cursor: pointer; font-size: 12px; padding: 2px 4px; border-radius: 3px; }
+    .log-edit:hover { color: var(--accent); background: #eff6ff; }
+    .upd-edit-ta { width: 100%; min-height: 60px; font-size: 13px; font-family: inherit; padding: 6px 8px; border: 1px solid var(--accent); border-radius: 5px; resize: vertical; box-sizing: border-box; outline: none; }
+    .upd-edit-btns { display: flex; gap: 6px; margin-top: 4px; justify-content: flex-end; }
     .upd-entry-body { font-size: 13px; line-height: 1.55; color: var(--text); }
     .upd-entry-body p { margin: 0 0 5px; }
     .upd-entry-body p:last-child { margin-bottom: 0; }
@@ -479,7 +485,12 @@
     /* ── Subtasks ── */
     .subtask-item { display: flex; align-items: center; gap: 8px; padding: 6px 8px; background: var(--bg); border-radius: 5px; margin-bottom: 4px; }
     .subtask-item input[type="checkbox"] { flex-shrink: 0; cursor: pointer; width: 15px; height: 15px; }
-    .subtask-item label { flex: 1; font-size: 13px; cursor: pointer; }
+    .subtask-drag-handle { color: #cbd5e1; cursor: grab; font-size: 13px; flex-shrink: 0; line-height: 1; user-select: none; }
+    .subtask-drag-handle:active { cursor: grabbing; }
+    .subtask-text { flex: 1; font-size: 13px; cursor: text; border-radius: 3px; padding: 1px 3px; }
+    .subtask-text:hover { background: #f1f5f9; }
+    .subtask-edit-input { flex: 1; font-size: 13px; padding: 2px 6px; border: 1px solid var(--accent); border-radius: 4px; outline: none; font-family: inherit; background: var(--bg); }
+    .subtask-item.drag-over { outline: 2px dashed var(--accent); outline-offset: -2px; }
     .subtask-done { text-decoration: line-through; color: var(--muted); }
     .subtask-add-form { display: flex; gap: 6px; margin-top: 8px; }
     .subtask-add-form input { flex: 1; padding: 6px 10px; border: 1px solid var(--border); border-radius: 6px; font-size: 12px; outline: none; font-family: inherit; }
@@ -1162,10 +1173,10 @@
       <div id="mn-list"></div>
       <div id="mn-add-form" style="display:none;">
         <div class="mn-inline-form">
-          <input type="text" id="mn-title" placeholder="Title">
+          <input type="text" id="mn-title" placeholder="Title" oninput="mnDraftSave()">
           <div style="display:flex;gap:6px;">
             <input type="date" id="mn-date" style="flex:1;">
-            <select id="mn-type" style="flex:1;" onchange="mnTypeChange()">
+            <select id="mn-type" style="flex:1;" onchange="mnTypeChange();mnDraftSave()">
               <option value="meeting-notes">Meeting Notes</option>
               <option value="meeting-link">Meeting Link</option>
               <option value="other">Other</option>
@@ -1179,8 +1190,8 @@
             <button class="note-tb-btn" onclick="mdTool('mn-body','check')" title="Checklist" style="font-size:11px;padding:2px 5px">☑</button>
             <button class="note-tb-btn" onclick="mdTool('mn-body','template')" title="Template" style="font-size:11px;padding:2px 5px">📋</button>
           </div>
-          <textarea id="mn-body" placeholder="Notes… markdown supported" style="min-height:70px;resize:vertical;font-family:monospace;font-size:12px;"></textarea>
-          <input type="url" id="mn-ai-url" placeholder="AI summary URL (optional)" style="font-size:12px;">
+          <textarea id="mn-body" placeholder="Notes… markdown supported" style="min-height:70px;resize:vertical;font-family:monospace;font-size:12px;" oninput="mnDraftSave()"></textarea>
+          <input type="url" id="mn-ai-url" placeholder="AI summary URL (optional)" style="font-size:12px;" oninput="mnDraftSave()">
           <div style="display:flex;gap:6px;justify-content:flex-end;">
             <button class="btn btn-ghost btn-sm" onclick="hideMnForm()">Cancel</button>
             <button class="btn btn-primary btn-sm" onclick="saveMnNote()">Save</button>
@@ -2924,7 +2935,7 @@ function pdRenderLinks(proj, f) {
       <div class="pd-link-actions">
         <a href="${esc(l.url)}" target="_blank" rel="noopener" class="btn btn-ghost btn-sm">Open ↗</a>
         <button class="btn btn-ghost btn-sm" onclick="navigator.clipboard.writeText('${esc(l.url).replace(/'/g,"\\'")}').then(()=>toast('Copied'))">Copy</button>
-        <button class="btn btn-ghost btn-sm" onclick="openPdLinkModal(${proj.id},${JSON.stringify(l)})">Edit</button>
+        <button class="btn btn-ghost btn-sm" onclick="openPdLinkById(${proj.id},${l.id})">Edit</button>
         <button class="btn btn-ghost btn-sm" style="color:#ef4444" onclick="deleteProjectLink(${proj.id},${l.id})">Delete</button>
       </div>
     </div>`;
@@ -5274,6 +5285,18 @@ function wireNewProjOption(selId, onSaveFn) {
 }
 
 async function openDetail(id) {
+  // Save notes for the currently-open task before switching
+  if (state.selectedId && state.selectedId !== id) {
+    const notesEl = document.getElementById('d-notes');
+    if (notesEl) {
+      const currVal = notesEl.value || null;
+      const currTask = state.tasks.find(t => t.id === state.selectedId);
+      if (currTask && currVal !== (currTask.notes || null)) {
+        currTask.notes = currVal;
+        api('PUT', `/api/tasks/${state.selectedId}`, { notes: currVal }).catch(() => {});
+      }
+    }
+  }
   state.selectedId = id;
   const task = state.tasks.find(t => t.id === id);
   if (!task) return;
@@ -5492,10 +5515,15 @@ function renderSubtasks() {
     return;
   }
   list.innerHTML = state.subtasks.map(s => `
-    <div class="subtask-item">
-      <input type="checkbox" id="sub-${s.id}" ${s.completed?'checked':''} onchange="toggleSubtask(${s.id},this.checked)">
-      <label for="sub-${s.id}" class="${s.completed?'subtask-done':''}">${esc(s.title)}</label>
-      <button class="log-del" onclick="deleteSubtask(${s.id})">✕</button>
+    <div class="subtask-item" draggable="true" data-sid="${s.id}"
+         ondragstart="stDragStart(event,${s.id})"
+         ondragover="stDragOver(event,${s.id})"
+         ondrop="stDrop(event,${s.id})"
+         ondragleave="stDragLeave(event)">
+      <span class="subtask-drag-handle" title="Drag to reorder">⋮⋮</span>
+      <input type="checkbox" ${s.completed?'checked':''} onchange="toggleSubtask(${s.id},this.checked)">
+      <span class="subtask-text${s.completed?' subtask-done':''}" onclick="startSubtaskEdit(${s.id},event)">${esc(s.title)}</span>
+      <button class="log-del" onclick="deleteSubtask(${s.id})" title="Delete">✕</button>
     </div>`).join('');
 }
 
@@ -5679,11 +5707,85 @@ async function toggleSubtask(id, completed) {
 }
 
 async function deleteSubtask(id) {
+  const sub = state.subtasks.find(s => s.id === id);
+  const taskId = state.selectedId;
   await api('DELETE', `/api/subtasks/${id}`);
   state.subtasks = state.subtasks.filter(s => s.id !== id);
-  const task = state.tasks.find(t => t.id === state.selectedId);
+  const task = state.tasks.find(t => t.id === taskId);
   if (task) { task.subtask_count = Math.max(0,(task.subtask_count||1)-1); task.subtask_done = state.subtasks.filter(s=>s.completed).length; }
   renderSubtasks(); renderTaskList();
+  if (sub) toast('Subtask deleted', async () => {
+    const restored = await api('POST', `/api/tasks/${taskId}/subtasks`, { title: sub.title });
+    if (sub.completed) await api('PATCH', `/api/subtasks/${restored.id}`, { completed: true }).catch(() => {});
+    state.subtasks.push({ ...restored, completed: sub.completed ? 1 : 0 });
+    const t = state.tasks.find(t2 => t2.id === taskId);
+    if (t) { t.subtask_count = (t.subtask_count||0) + 1; t.subtask_done = state.subtasks.filter(s=>s.completed).length; }
+    renderSubtasks(); renderTaskList();
+  });
+}
+
+function startSubtaskEdit(id, e) {
+  const item = document.querySelector(`.subtask-item[data-sid="${id}"]`);
+  if (!item) return;
+  const span = item.querySelector('.subtask-text');
+  if (!span) return;
+  const sub = state.subtasks.find(s => s.id === id);
+  const original = sub?.title || span.textContent;
+  let saved = false;
+  const input = document.createElement('input');
+  input.className = 'subtask-edit-input';
+  input.value = original;
+  input.onkeydown = ke => {
+    if (ke.key === 'Enter'  && !saved) { saved = true; _saveSubtaskEdit(id, input, original); }
+    if (ke.key === 'Escape' && !saved) { saved = true; renderSubtasks(); }
+  };
+  input.onblur = () => { if (!saved) { saved = true; _saveSubtaskEdit(id, input, original); } };
+  span.replaceWith(input);
+  input.focus(); input.select();
+}
+
+async function _saveSubtaskEdit(id, input, original) {
+  const title = input.value.trim();
+  if (!title || title === original) { renderSubtasks(); return; }
+  try {
+    const updated = await api('PATCH', `/api/subtasks/${id}`, { title });
+    const sub = state.subtasks.find(s => s.id === id);
+    if (sub) sub.title = updated.title;
+  } catch(e) { toast(e.message); }
+  renderSubtasks();
+}
+
+let _stDragId = null;
+
+function stDragStart(e, id) {
+  _stDragId = id;
+  e.dataTransfer.effectAllowed = 'move';
+}
+function stDragOver(e, id) {
+  if (_stDragId === null || _stDragId === id) return;
+  e.preventDefault();
+  document.querySelectorAll('.subtask-item.drag-over').forEach(el => el.classList.remove('drag-over'));
+  e.currentTarget.classList.add('drag-over');
+}
+function stDragLeave(e) {
+  e.currentTarget.classList.remove('drag-over');
+}
+async function stDrop(e, toId) {
+  e.preventDefault();
+  e.currentTarget.classList.remove('drag-over');
+  if (_stDragId === null || _stDragId === toId) return;
+  const fromIdx = state.subtasks.findIndex(s => s.id === _stDragId);
+  const toIdx   = state.subtasks.findIndex(s => s.id === toId);
+  _stDragId = null;
+  if (fromIdx < 0 || toIdx < 0) return;
+  const arr = [...state.subtasks];
+  const [moved] = arr.splice(fromIdx, 1);
+  arr.splice(toIdx, 0, moved);
+  state.subtasks = arr;
+  renderSubtasks();
+  try {
+    await api('PATCH', `/api/tasks/${state.selectedId}/subtasks/reorder`, { ids: state.subtasks.map(s => s.id) });
+  } catch(e) { toast(e.message); }
 }
 
 // ── Division helpers ──────────────────────────────────────────────────────────
@@ -5948,17 +6050,35 @@ function mnToggleBody(id) {
 
 let _mnEditId = null;
 
+const MN_DRAFT_KEY = 'mn_draft_new';
+
+function mnDraftSave() {
+  try {
+    localStorage.setItem(MN_DRAFT_KEY, JSON.stringify({
+      title: document.getElementById('mn-title').value,
+      date:  document.getElementById('mn-date').value,
+      type:  document.getElementById('mn-type').value,
+      body:  document.getElementById('mn-body').value,
+      ai_url: document.getElementById('mn-ai-url')?.value || '',
+    }));
+  } catch(e) {}
+}
+
 function showMnForm(note) {
   _mnEditId = note ? note.id : null;
   document.getElementById('mn-add-form').style.display = '';
   document.getElementById('mn-add-btn').style.display  = 'none';
-  document.getElementById('mn-title').value  = note?.title          || '';
-  document.getElementById('mn-date').value   = note?.note_date      || new Date().toISOString().slice(0, 10);
-  document.getElementById('mn-type').value   = note?.type           || 'meeting-notes';
-  document.getElementById('mn-body').value   = note?.body           || '';
-  document.getElementById('mn-ai-url').value = note?.ai_summary_url || '';
-  // auto-fill meeting template for new meeting notes
-  if (!note && document.getElementById('mn-type').value === 'meeting-notes') {
+  let draft = null;
+  if (!note) {
+    try { draft = JSON.parse(localStorage.getItem(MN_DRAFT_KEY)); } catch(e) {}
+  }
+  document.getElementById('mn-title').value  = draft?.title ?? note?.title          ?? '';
+  document.getElementById('mn-date').value   =                 note?.note_date      || new Date().toISOString().slice(0, 10);
+  document.getElementById('mn-type').value   =                 note?.type           || 'meeting-notes';
+  document.getElementById('mn-body').value   = draft?.body  ?? note?.body           ?? '';
+  if (document.getElementById('mn-ai-url')) document.getElementById('mn-ai-url').value = draft?.ai_url ?? note?.ai_summary_url ?? '';
+  // auto-fill meeting template only for brand new notes with no draft
+  if (!note && !draft && document.getElementById('mn-type').value === 'meeting-notes') {
     document.getElementById('mn-body').value = MEETING_TEMPLATE;
   }
   document.getElementById('mn-title').focus();
@@ -5972,7 +6092,11 @@ function hideMnForm() {
 
 function mnEditNote(id) {
   const note = state.meetingNotes.find(n => n.id === id);
-  if (note) showMnForm(note);
+  if (!note) return;
+  // Use the full project-detail modal so all fields (phase, category, task, AI URL) are editable
+  const task = state.tasks.find(t => t.id === state.selectedId);
+  const proj = task?.project ? state.projects.find(p => p.name === task.project) : null;
+  openPdNoteModal(proj?.id || null, note);
 }
 
 async function saveMnNote() {
@@ -5996,6 +6120,7 @@ async function saveMnNote() {
       if (task) task.meeting_notes_count = (task.meeting_notes_count || 0) + 1;
       toast('Note added');
     }
+    try { localStorage.removeItem(MN_DRAFT_KEY); } catch(e) {}
     hideMnForm();
     renderMeetingNotes();
     if (proj && state.view === `project:${proj.id}` && pdState.tabHistory[proj.id] === 'notes') {
@@ -6088,7 +6213,10 @@ function renderTaskUpdates() {
     <div class="upd-entry" data-uid="${u.id}">
       <div class="upd-entry-header">
         <span class="upd-entry-ts">${fmtUpdateTime(u.created_at)}</span>
-        <button class="log-del" onclick="deleteTaskUpdate(${u.id})" title="Delete this update">✕</button>
+        <span class="upd-entry-acts">
+          <button class="log-edit" onclick="startUpdateEdit(${u.id})" title="Edit">✏</button>
+          <button class="log-del"  onclick="deleteTaskUpdate(${u.id})" title="Delete">✕</button>
+        </span>
       </div>
       <div class="upd-entry-body">${renderMarkdown(u.content)}</div>
     </div>`).join('');
@@ -6110,8 +6238,55 @@ async function deleteTaskUpdate(id) {
   renderTaskUpdates();
 }
 
+function startUpdateEdit(id) {
+  const entry = document.querySelector(`.upd-entry[data-uid="${id}"]`);
+  if (!entry) return;
+  const body = entry.querySelector('.upd-entry-body');
+  const upd  = state.taskUpdates.find(u => u.id === id);
+  if (!body || !upd) return;
+  const ta = document.createElement('textarea');
+  ta.className = 'upd-edit-ta';
+  ta.value = upd.content;
+  const btns = document.createElement('div');
+  btns.className = 'upd-edit-btns';
+  const saveBtn   = document.createElement('button');
+  saveBtn.className = 'btn btn-primary btn-sm';
+  saveBtn.textContent = 'Save';
+  saveBtn.onclick = () => _saveUpdateEdit(id, ta);
+  const cancelBtn = document.createElement('button');
+  cancelBtn.className = 'btn btn-ghost btn-sm';
+  cancelBtn.textContent = 'Cancel';
+  cancelBtn.onclick = () => renderTaskUpdates();
+  btns.appendChild(saveBtn); btns.appendChild(cancelBtn);
+  body.innerHTML = '';
+  body.appendChild(ta); body.appendChild(btns);
+  ta.focus();
+  ta.addEventListener('keydown', e => { if ((e.ctrlKey||e.metaKey) && e.key==='Enter') _saveUpdateEdit(id, ta); if (e.key==='Escape') renderTaskUpdates(); });
+}
+
+async function _saveUpdateEdit(id, ta) {
+  const content = ta.value.trim();
+  if (!content) { toast('Content cannot be empty'); return; }
+  try {
+    const updated = await api('PUT', `/api/updates/${id}`, { content });
+    const upd = state.taskUpdates.find(u => u.id === id);
+    if (upd) upd.content = updated.content;
+    renderTaskUpdates();
+  } catch(e) { toast(e.message); }
+}
+
 document.getElementById('upd-input').addEventListener('keydown', e => {
   if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') addTaskUpdate();
+});
+
+// Save notes field on blur so edits aren't lost when focus moves away
+document.getElementById('d-notes').addEventListener('blur', function() {
+  if (!state.selectedId) return;
+  const val = this.value || null;
+  const task = state.tasks.find(t => t.id === state.selectedId);
+  if (!task || val === (task.notes || null)) return;
+  task.notes = val;
+  api('PUT', `/api/tasks/${state.selectedId}`, { notes: val }).catch(() => {});
 });
 
 // ── Project Links ─────────────────────────────────────────────────────────────
@@ -6120,6 +6295,11 @@ let _pdLinkEditId  = null;
 let _pdLinkProjId  = null;
 
 function openAddProjectLink(projId) { openPdLinkModal(projId, null); }
+function openPdLinkById(projId, linkId) {
+  const proj = state.projects.find(p => p.id === projId);
+  const link = (proj?.links || []).find(l => l.id === linkId);
+  openPdLinkModal(projId, link || null);
+}
 
 function openPdLinkModal(projId, link) {
   _pdLinkProjId  = projId;
@@ -6142,12 +6322,13 @@ document.getElementById('pd-sprint-modal-name').addEventListener('keydown', e =>
 
 async function savePdLink() {
   const label    = document.getElementById('pdl-label').value.trim();
-  const url      = document.getElementById('pdl-url').value.trim();
+  let   url      = document.getElementById('pdl-url').value.trim();
   const type     = document.getElementById('pdl-type').value;
   const phase    = document.getElementById('pdl-phase').value    || null;
   const category = document.getElementById('pdl-category').value || null;
   if (!label) { toast('Enter a title'); return; }
   if (!url)   { toast('Enter a URL');   return; }
+  if (url && !/^https?:\/\//i.test(url)) url = 'https://' + url;
   try {
     if (_pdLinkEditId) {
       const updated = await api('PUT', `/api/project-links/${_pdLinkEditId}`, { label, url, type, phase, category });
@@ -6161,7 +6342,9 @@ async function savePdLink() {
       toast('Link added');
     }
     closePdLinkModal();
-    renderTaskList();
+    const proj = state.projects.find(p => p.id === _pdLinkProjId);
+    if (proj && state.view === `project:${_pdLinkProjId}`) renderProjectDetail(proj);
+    else renderTaskList();
   } catch(e) { toast(e.message); }
 }
 
@@ -6170,7 +6353,8 @@ async function deleteProjectLink(projId, linkId) {
   await api('DELETE', `/api/project-links/${linkId}`);
   const proj = state.projects.find(p => p.id === projId);
   if (proj) proj.links = (proj.links || []).filter(l => l.id !== linkId);
-  renderTaskList();
+  if (proj && state.view === `project:${projId}`) renderProjectDetail(proj);
+  else renderTaskList();
   toast('Link removed');
 }
 
