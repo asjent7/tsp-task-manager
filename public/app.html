@@ -2002,8 +2002,8 @@ let state = {
   calWeekGridMode: true,   // true = compressed time-grid, false = task-card view
   boardMode: false,
   gcalEventLogs: {},       // {[gcal_event_id]: total_minutes} — refreshed after logging
-  gcalLastSync: null,      // ISO string of last two-way sync
-  gcalSyncReport: null,    // last sync report object
+  gcalLastSync: null,
+  gcalSyncReport: null,
   selTasks: new Set(),
   selProjects: new Set(),
 };
@@ -2251,25 +2251,6 @@ async function loadAll() {
 
   renderSidebar(); renderTaskList(); populateProjectSelect();
 
-  // One-time auto-repair: pull all block times from Google after the tz read-path fix.
-  if (state.googleCalConnected && !localStorage.getItem('gcalTzRepairV2Done')) {
-    setTimeout(async () => {
-      try {
-        const result = await api('POST', '/api/time-blocks/repair-from-google');
-        const changed = result.changed || 0;
-        localStorage.setItem('gcalTzRepairV2Done', '1');
-        if (changed > 0) {
-          toast(`Auto-repair: ${changed} block${changed!==1?'s':''} corrected from Google (timezone fix)`, null, 5000);
-          if (state.view === 'calendar') {
-            if (state.calMode === 'week' && state.calWeekGridMode) { await loadWeekBlocks(true); renderCalendarWeekGrid(); }
-            else if (state.calMode === 'day') { await loadTimeBlocks(state.calDayStr, true); renderCalendarDay(); }
-          }
-        } else {
-          localStorage.setItem('gcalTzRepairV2Done', '1');
-        }
-      } catch(_) { /* non-fatal */ }
-    }, 3000); // slight delay so the UI is rendered first
-  }
 }
 
 // ── Sidebar ───────────────────────────────────────────────────────────────────
@@ -6543,134 +6524,26 @@ function getThemeMapping(title) {
 
 // ── Two-way Google Calendar sync ──────────────────────────────────────────────
 
-let _gcalSyncRunning = false;
-let _gcalSyncTimer   = null;
-
-function ensureGcalSyncTimer() {
-  if (_gcalSyncTimer) return;
-  _gcalSyncTimer = setInterval(() => {
-    if (state.view === 'calendar' && state.googleCalConnected) runTwoWaySync(true);
-  }, 5 * 60 * 1000);
+function gcalRefreshButton() {
+  if (!state.googleCalConnected) return '';
+  return `<button class="btn btn-ghost btn-sm" id="gcal-refresh-btn" onclick="refreshCalendar()" title="Refresh from Google Calendar">↻ Refresh</button>`;
 }
 
-async function runTwoWaySync(silent = false) {
-  if (_gcalSyncRunning || !state.googleCalConnected) return;
-  _gcalSyncRunning = true;
-  const syncBtn = document.getElementById('gcal-sync-btn');
-  if (syncBtn) syncBtn.textContent = '↻ Syncing…';
+async function refreshCalendar() {
+  const btn = document.getElementById('gcal-refresh-btn');
+  if (btn) { btn.textContent = '↻ Refreshing…'; btn.disabled = true; }
   try {
-    // Range: visible week + 2 weeks ahead
-    const days = [];
-    for (let i = 0; i < 7; i++) {
-      const d = new Date(state.calWeekStart); d.setDate(d.getDate() + i); days.push(d);
+    if (state.calMode === 'week' && state.calWeekGridMode) {
+      await loadWeekBlocks(); renderCalendarWeekGrid();
+    } else if (state.calMode === 'day') {
+      await loadTimeBlocks(state.calDayStr); renderCalendarDay();
     }
-    const from = state.calMode === 'day' ? state.calDayStr : dateStr(days[0]);
-    const twoWeeksOut = new Date(Date.now() + 14 * 86400000).toISOString().slice(0, 10);
-    const to   = twoWeeksOut;
-
-    const report = await api('POST', '/api/time-blocks/two-way-sync', { from, to });
-    state.gcalLastSync  = report.synced_at || new Date().toISOString();
-    state.gcalSyncReport = report;
-
-    const changed = (report.updated_from_google || 0) + (report.deleted?.length || 0) + (report.unlinked?.filter(u => !u.noTask)?.length || 0);
-    if (changed > 0) {
-      // Reload blocks to reflect DB changes
-      if (state.calMode === 'week' && state.calWeekGridMode) {
-        await loadWeekBlocks(true); // pass skipSync=true to avoid recursion
-        renderCalendarWeekGrid();
-      } else if (state.calMode === 'day') {
-        await loadTimeBlocks(state.calDayStr, true);
-        renderCalendarDay();
-      }
-      if (!silent) toast(`Sync: ${report.updated_from_google} from Google, ${report.pushed_to_google} pushed`);
-    } else if (report.errors?.length && !silent) {
-      toast(`Sync: ${report.errors.length} error(s) — check blocks marked ⚠`);
-    }
-
-    // Update toolbar sync label
-    _updateSyncLabel();
-  } catch(e) {
-    if (!silent) toast('Sync failed: ' + e.message);
-  } finally {
-    _gcalSyncRunning = false;
-    if (syncBtn) syncBtn.textContent = '↻ Sync now';
+  } catch(e) { toast('Refresh failed: ' + e.message); }
+  finally {
+    if (btn) { btn.textContent = '↻ Refresh'; btn.disabled = false; }
   }
 }
 
-function _updateSyncLabel() {
-  const el = document.getElementById('gcal-sync-label');
-  if (!el || !state.gcalLastSync) return;
-  const mins = Math.round((Date.now() - new Date(state.gcalLastSync)) / 60000);
-  el.textContent = mins < 1 ? 'just now' : mins === 1 ? '1 min ago' : `${mins} min ago`;
-}
-
-function showSyncReport() {
-  const r = state.gcalSyncReport;
-  if (!r) { toast('No sync report yet — click Sync now first.'); return; }
-  const syncedAt = r.synced_at ? new Date(r.synced_at).toLocaleTimeString() : 'unknown';
-  const errored = r.errors?.length || 0;
-  const relinked = r.unlinked?.filter(u => !u.noTask)?.length || 0;
-  const orphaned = r.unlinked?.filter(u => u.noTask)?.length || 0;
-  const lines = [
-    `Synced at ${syncedAt}`,
-    `↓ ${r.updated_from_google || 0} updated from Google`,
-    `↑ ${r.pushed_to_google || 0} pushed to Google`,
-    r.deleted?.length ? `🗑 ${r.deleted.length} deleted (removed from Google)` : '',
-    relinked ? `🔗 ${relinked} re-linked orphaned event(s)` : '',
-    orphaned ? `❓ ${orphaned} unrecognized Google event(s) (no task link)` : '',
-    errored  ? `⚠ ${errored} sync error(s) — blocks marked with ⚠` : '',
-  ].filter(Boolean);
-  toast(lines.join('\n'), null, 6000);
-}
-
-function gcalSyncToolbar() {
-  if (!state.googleCalConnected) return '';
-  const label = state.gcalLastSync ? (() => {
-    const mins = Math.round((Date.now() - new Date(state.gcalLastSync)) / 60000);
-    return mins < 1 ? 'just now' : mins === 1 ? '1 min ago' : `${mins} min ago`;
-  })() : '';
-  return `<button id="gcal-sync-btn" class="btn btn-ghost btn-sm" onclick="runTwoWaySync(false)" title="Two-way sync with Google Calendar">↻ Sync now</button><span id="gcal-sync-label" style="font-size:10px;color:#94a3b8;">${label}</span>`;
-}
-
-async function verifyBlocksVsGoogle() {
-  if (!state.googleCalConnected) { toast('Google Calendar not connected'); return; }
-  toast('Checking block times vs Google…');
-  try {
-    const result = await api('POST', '/api/time-blocks/repair-from-google');
-    const all = result.items || [];
-    if (!all.length) { toast('No blocks with Google events to compare.'); return; }
-    const rows = all.map(i => `<tr style="border-bottom:1px solid #f1f5f9;${i.changed?'background:#fef9c3':''}">
-      <td style="padding:5px 8px;font-size:12px;max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${esc(i.taskTitle)}">${esc(i.taskTitle)}</td>
-      <td style="padding:5px 8px;font-size:12px;white-space:nowrap;${i.changed?'color:#ef4444;text-decoration:line-through':''}">${esc(i.before)}</td>
-      <td style="padding:5px 8px;font-size:12px;white-space:nowrap;${i.changed?'color:#16a34a;font-weight:600':''}">${esc(i.after)}</td>
-      <td style="padding:5px 8px;font-size:12px;">${i.changed?'<span style="color:#ef4444;">✗ fixed</span>':'<span style="color:#22c55e;">✓</span>'}</td>
-    </tr>`).join('');
-    const m = document.createElement('div');
-    m.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:10000;display:flex;align-items:center;justify-content:center;';
-    m.innerHTML = `<div style="background:#fff;border-radius:10px;padding:24px;max-width:680px;width:95%;max-height:80vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,.3);">
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
-        <span style="font-size:15px;font-weight:700;">Block times — App vs Google</span>
-        <button onclick="this.closest('[style*=fixed]').remove()" style="background:none;border:none;font-size:18px;cursor:pointer;">×</button>
-      </div>
-      <div style="margin-bottom:10px;font-size:12px;color:#64748b;">${result.changed} block${result.changed!==1?'s':''} were incorrect and have been fixed. ${result.unchanged} already matched.</div>
-      <table style="width:100%;border-collapse:collapse;">
-        <thead><tr style="border-bottom:2px solid #e2e8f0;">
-          <th style="padding:4px 8px;font-size:11px;text-align:left;color:#64748b;">Task</th>
-          <th style="padding:4px 8px;font-size:11px;text-align:left;color:#64748b;">App (was)</th>
-          <th style="padding:4px 8px;font-size:11px;text-align:left;color:#64748b;">Google</th>
-          <th style="padding:4px 8px;font-size:11px;text-align:left;color:#64748b;">Status</th>
-        </tr></thead>
-        <tbody>${rows}</tbody>
-      </table>
-    </div>`;
-    m.addEventListener('click', e => { if (e.target === m) m.remove(); });
-    document.body.appendChild(m);
-    if (result.changed > 0 && state.view === 'calendar') {
-      if (state.calMode === 'week' && state.calWeekGridMode) { await loadWeekBlocks(true); renderCalendarWeekGrid(); }
-      else if (state.calMode === 'day') { await loadTimeBlocks(state.calDayStr, true); renderCalendarDay(); }
-    }
-  } catch(e) { toast('Verify failed: ' + e.message); }
-}
 
 function checkMyCalendar() {
   const allEvts = Object.values(state.googleWeekEvents || {}).flat();
@@ -6742,11 +6615,21 @@ function gcalBusyConflict(date, startTimeStr, durationMins, eventsOverride) {
 }
 
 // Load/render
-async function loadTimeBlocks(date, skipSync = false) {
+async function loadTimeBlocks(date) {
   const tMin = encodeURIComponent(new Date(date + 'T00:00:00').toISOString());
   const tMax = encodeURIComponent(new Date(date + 'T23:59:59').toISOString());
+
+  // When connected, read task blocks directly from Google (server rebuilds DB cache).
+  // Also fetch primary calendar events for the overlay display.
+  const blocksPromise = state.googleCalConnected
+    ? api('GET', `/api/time-blocks/from-google?date=${date}`).catch(e => {
+        toast('Calendar load failed: ' + e.message);
+        return api('GET', `/api/time-blocks?date=${date}`);
+      })
+    : api('GET', `/api/time-blocks?date=${date}`);
+
   const [blocks, gcalEvts, catBlocks] = await Promise.all([
-    api('GET', `/api/time-blocks?date=${date}`),
+    blocksPromise,
     state.googleCalConnected
       ? api('GET', `/api/calendar/google-events?timeMin=${tMin}&timeMax=${tMax}`).catch(() => [])
       : Promise.resolve([]),
@@ -6760,14 +6643,13 @@ async function loadTimeBlocks(date, skipSync = false) {
     let changed = false;
     const ownedIds = new Set(blocks.map(b => b.gcal_event_id).filter(Boolean));
 
-    // Parse date+time from a Google dateTime string using the embedded offset (not browser TZ)
     function parseDt(dtStr) {
       const m = dtStr && dtStr.match(/^(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2})/);
       return m ? { date: m[1], time: m[2] } : null;
     }
     function durMins(s, e) { return e ? Math.round((new Date(e) - new Date(s)) / 60000) : 60; }
 
-    // Sync moved/deleted linked blocks (gcal_linked=1 — events in primary calendar)
+    // Sync moved/deleted linked blocks (gcal_linked=1 — events from primary calendar)
     for (const b of blocks.filter(x => x.gcal_linked)) {
       const evt = gcalEvts.find(e => e.id === b.gcal_event_id);
       if (!evt) {
@@ -6784,7 +6666,7 @@ async function loadTimeBlocks(date, skipSync = false) {
       }
     }
 
-    // Auto-link events whose description contains an app task URL
+    // Auto-link primary calendar events whose description contains an app task URL
     for (const evt of gcalEvts) {
       if (ownedIds.has(evt.id) || !evt.description) continue;
       const m = evt.description.match(/\/app\.html\?task=(\d+)/);
@@ -6800,10 +6682,6 @@ async function loadTimeBlocks(date, skipSync = false) {
     if (changed) {
       state.timeBlocks = await api('GET', `/api/time-blocks?date=${date}`).catch(() => state.timeBlocks);
     }
-  }
-  if (!skipSync) {
-    ensureGcalSyncTimer();
-    runTwoWaySync(true);
   }
 }
 
@@ -6857,7 +6735,7 @@ function renderCalendarDay() {
       : b.logged ? `<span style="font-size:9px;color:rgba(255,255,255,.65);">✓ logged</span>` : '';
 
     const syncIcon = b.sync_error
-      ? `<span title="Sync error: ${esc(b.sync_error)}" onclick="event.stopPropagation();runTwoWaySync(false)" style="position:absolute;top:2px;right:18px;font-size:9px;background:#fef2f2;color:#ef4444;border-radius:2px;padding:0 2px;cursor:pointer;">⚠ retry</span>`
+      ? `<span title="Sync error: ${esc(b.sync_error)}" style="position:absolute;top:2px;right:18px;font-size:9px;background:#fef2f2;color:#ef4444;border-radius:2px;padding:0 2px;">⚠</span>`
       : (state.googleCalConnected && !b.gcal_event_id && !b.gcal_linked)
         ? `<span title="Not synced to Google Calendar" style="position:absolute;top:2px;right:18px;font-size:9px;opacity:.85;">⚠</span>` : '';
     const linkedBadge = b.gcal_linked
@@ -6967,9 +6845,7 @@ function renderCalendarDay() {
         <button class="btn btn-sm btn-ghost" onclick="setCalMode('month')">Month</button>
       </div>
       <button class="btn btn-ghost btn-sm" onclick="openDaySettings()" title="Day settings">⚙️</button>
-      ${gcalSyncToolbar()}
-      <button class="btn btn-sm btn-ghost" onclick="showSyncReport()" title="Sync report" style="padding:4px 6px;">📋</button>
-      <button class="btn btn-sm btn-ghost" onclick="verifyBlocksVsGoogle()" title="Verify block times vs Google" style="padding:4px 6px;">✓</button>
+      ${gcalRefreshButton()}
       <button class="btn btn-ghost btn-sm cal-panel-toggle-btn" onclick="toggleCalPanel()">${calPanelCollapsed ? 'Tasks ▶' : 'Tasks ◀'}</button>
     </div>
     ${gcalAllDayHtml}${dueChipsHtml}
@@ -7774,7 +7650,7 @@ function wtgColY(e) {
   return e.clientY - e.currentTarget.getBoundingClientRect().top;
 }
 
-async function loadWeekBlocks(skipSync = false) {
+async function loadWeekBlocks() {
   const days = [];
   for (let i = 0; i < 7; i++) {
     const d = new Date(state.calWeekStart); d.setDate(d.getDate() + i); days.push(d);
@@ -7782,8 +7658,17 @@ async function loadWeekBlocks(skipSync = false) {
   const from = dateStr(days[0]), to = dateStr(days[6]);
   const tMin = encodeURIComponent(new Date(from + 'T00:00:00').toISOString());
   const tMax = encodeURIComponent(new Date(to   + 'T23:59:59').toISOString());
+
+  // When connected, read task blocks directly from Google (server rebuilds DB cache).
+  const blocksPromise = state.googleCalConnected
+    ? api('GET', `/api/time-blocks/from-google?from=${from}&to=${to}`).catch(e => {
+        toast('Calendar load failed: ' + e.message);
+        return api('GET', `/api/time-blocks?from=${from}&to=${to}`);
+      })
+    : api('GET', `/api/time-blocks?from=${from}&to=${to}`);
+
   const [blocks, catBlocks, gcalEvts] = await Promise.all([
-    api('GET', `/api/time-blocks?from=${from}&to=${to}`),
+    blocksPromise,
     api('GET', `/api/category-blocks?from=${from}&to=${to}`).catch(() => []),
     state.googleCalConnected
       ? api('GET', `/api/calendar/google-events?timeMin=${tMin}&timeMax=${tMax}`).catch(() => [])
@@ -7798,10 +7683,6 @@ async function loadWeekBlocks(skipSync = false) {
     const d = e.all_day ? e.start.slice(0,10) : (e.start ? dateStr(new Date(e.start)) : null);
     if (d) (state.googleWeekEvents[d] = state.googleWeekEvents[d] || []).push(e);
   });
-  if (!skipSync) {
-    ensureGcalSyncTimer();
-    runTwoWaySync(true); // background; re-renders if changes found
-  }
 }
 
 function renderCalendarWeekGrid() {
@@ -7874,7 +7755,7 @@ function renderCalendarWeekGrid() {
         title="${esc(b.task_title)} · ${fmt12(b.start_time)} · ${fmtMins(b.duration_minutes)}${overtime?' · Over time':''}">
         <div class="cal-wtg-resize-t" onmousedown="event.stopPropagation();wtgResizeStart(event,${b.id},'top','${ds}',${b.duration_minutes},${y})"></div>
         <div class="cal-wtg-block-title" style="display:flex;align-items:center;gap:2px;">${esc(b.task_title)}${otDot}</div>
-        ${b.sync_error ? `<span onclick="event.stopPropagation();runTwoWaySync(false)" title="Sync error: ${esc(b.sync_error)}" style="position:absolute;top:1px;right:2px;font-size:7px;background:#fef2f2;color:#ef4444;border-radius:2px;padding:0 2px;cursor:pointer;">⚠</span>` : ''}
+        ${b.sync_error ? `<span title="Sync error: ${esc(b.sync_error)}" style="position:absolute;top:1px;right:2px;font-size:7px;background:#fef2f2;color:#ef4444;border-radius:2px;padding:0 2px;">⚠</span>` : ''}
         ${logBtn}
         <div class="cal-wtg-resize-b" onmousedown="event.stopPropagation();wtgResizeStart(event,${b.id},'bottom','${ds}',${b.duration_minutes},${y})"></div>
       </div>`;
@@ -7946,9 +7827,7 @@ function renderCalendarWeekGrid() {
       </div>
       <button class="btn btn-ghost btn-sm" onclick="state.calWeekGridMode=!state.calWeekGridMode;renderCalendar();">${state.calWeekGridMode ? 'Tasks view' : 'Grid view'}</button>
       ${state.googleCalConnected && state.calWeekGridMode ? `<button class="btn btn-ghost btn-sm" onclick="checkMyCalendar()">🗓 Check calendar</button>` : ''}
-      ${gcalSyncToolbar()}
-      <button class="btn btn-sm btn-ghost" onclick="showSyncReport()" title="Sync report" style="padding:4px 6px;">📋</button>
-      <button class="btn btn-sm btn-ghost" onclick="verifyBlocksVsGoogle()" title="Verify block times vs Google" style="padding:4px 6px;">✓</button>
+      ${gcalRefreshButton()}
       <button class="btn btn-ghost btn-sm cal-panel-toggle-btn" onclick="toggleCalPanel()">${calPanelCollapsed ? 'Tasks ▶' : 'Tasks ◀'}</button>
     </div>
     <div class="cal-wtg-wrap">
@@ -8367,13 +8246,7 @@ function renderSettings() {
           </div>
           <div style="flex-shrink:0;"><button class="btn btn-ghost btn-sm" onclick="repairTimezone()">Repair</button></div>
         </div>
-        <div class="settings-row">
-          <div class="settings-row-info">
-            <div class="settings-row-label" style="color:#b91c1c;">Repair Blocks from Google</div>
-            <div class="settings-row-desc">Pull every block's date/time/duration from Google Calendar (Google is the source of truth). Use after a timezone or sync error caused app times to drift. <strong>Does not push anything to Google.</strong></div>
-          </div>
-          <div style="flex-shrink:0;"><button class="btn btn-ghost btn-sm" style="border-color:#ef4444;color:#b91c1c;" onclick="repairBlocksFromGoogle()">Repair from Google</button></div>
-        </div>` : ''}
+` : ''}
         <div class="settings-row">
           <div class="settings-row-info">
             <div class="settings-row-label">Calendar Zone Keywords</div>
@@ -8929,31 +8802,6 @@ async function repairTimezone() {
   }
 }
 
-async function repairBlocksFromGoogle() {
-  const btn = document.querySelector('[onclick="repairBlocksFromGoogle()"]');
-  if (btn) { btn.textContent = 'Repairing…'; btn.disabled = true; }
-  try {
-    const result = await api('POST', '/api/time-blocks/repair-from-google');
-    const changed  = result.changed  || 0;
-    const unchanged = result.unchanged || 0;
-    const errCnt   = result.errors?.length || 0;
-    toast(`Repair complete: ${changed} block${changed!==1?'s':''} updated from Google, ${unchanged} already correct${errCnt?`, ${errCnt} error(s)`:''}`, null, 6000);
-    if (changed > 0 && state.view === 'calendar') {
-      if (state.calMode === 'week' && state.calWeekGridMode) { await loadWeekBlocks(true); renderCalendarWeekGrid(); }
-      else if (state.calMode === 'day') { await loadTimeBlocks(state.calDayStr, true); renderCalendarDay(); }
-    }
-    // Show detail list in console for verification
-    if (result.items?.length) {
-      console.group('Repair from Google — block-by-block');
-      result.items.filter(i => i.changed).forEach(i => console.log(`#${i.blockId} ${i.taskTitle}: ${i.before} → ${i.after}`));
-      console.groupEnd();
-    }
-  } catch(e) {
-    toast('Repair failed: ' + e.message);
-  } finally {
-    if (btn) { btn.textContent = 'Repair from Google'; btn.disabled = false; }
-  }
-}
 
 async function saveThemeMappings() {
   const raw = document.getElementById('theme-mapping-input')?.value?.trim() || '{}';
