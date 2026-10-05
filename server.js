@@ -187,6 +187,7 @@ try { db.prepare('ALTER TABLE tasks ADD COLUMN phase_id INTEGER REFERENCES phase
 try { db.prepare('ALTER TABLE focus_lists ADD COLUMN sprint_week TEXT').run(); } catch(e) {}
 try { db.prepare("ALTER TABLE tasks ADD COLUMN horizon TEXT NOT NULL DEFAULT 'active'").run(); } catch(e) {}
 try { db.prepare("ALTER TABLE projects ADD COLUMN horizon TEXT NOT NULL DEFAULT 'active'").run(); } catch(e) {}
+try { db.prepare('ALTER TABLE time_logs ADD COLUMN gcal_event_id TEXT').run(); } catch(e) {}
 // One-time: backfill source fields from existing Gmail task notes
 if (!db.prepare("SELECT value FROM settings WHERE key='gmail_source_backfill_v1'").get()) {
   try {
@@ -554,15 +555,15 @@ app.post('/api/tasks/:id/time-logs', (req, res) => {
   const task = db.prepare('SELECT id FROM tasks WHERE id = ?').get(req.params.id);
   if (!task) return res.status(404).json({ error: 'Task not found' });
 
-  const { minutes, description } = req.body;
+  const { minutes, description, gcal_event_id } = req.body;
   if (!minutes || Number(minutes) <= 0) {
     return res.status(400).json({ error: 'minutes must be a positive number' });
   }
 
   const log = db.transaction(() => {
     const r = db.prepare(
-      'INSERT INTO time_logs (task_id, minutes, description) VALUES (?, ?, ?)'
-    ).run(req.params.id, Number(minutes), description || null);
+      'INSERT INTO time_logs (task_id, minutes, description, gcal_event_id) VALUES (?, ?, ?, ?)'
+    ).run(req.params.id, Number(minutes), description || null, gcal_event_id || null);
     syncActualMinutes(req.params.id);
     return db.prepare('SELECT * FROM time_logs WHERE id = ?').get(r.lastInsertRowid);
   })();
@@ -1332,6 +1333,57 @@ app.delete('/api/gcal/link/:id', (req, res) => {
   if (!block.gcal_linked) return res.status(400).json({ error: 'Not a linked block' });
   db.prepare('DELETE FROM time_blocks WHERE id=?').run(req.params.id);
   res.status(204).end();
+});
+
+// Returns {[gcal_event_id]: total_minutes} for all events that have logged time
+app.get('/api/gcal/event-logs', (req, res) => {
+  const rows = db.prepare(
+    'SELECT gcal_event_id, SUM(minutes) AS total FROM time_logs WHERE gcal_event_id IS NOT NULL GROUP BY gcal_event_id'
+  ).all();
+  const result = {};
+  rows.forEach(r => { result[r.gcal_event_id] = r.total; });
+  res.json(result);
+});
+
+// Find or create "General – <block_name>" task in the "General" project
+app.post('/api/gcal/ensure-general-task', (req, res) => {
+  const { block_name, category } = req.body;
+  if (!block_name) return res.status(400).json({ error: 'block_name required' });
+  const title = `General – ${block_name}`;
+  db.transaction(() => {
+    if (!db.prepare('SELECT id FROM projects WHERE name=?').get('General')) {
+      db.prepare('INSERT OR IGNORE INTO projects (name) VALUES (?)').run('General');
+    }
+  })();
+  let task = db.prepare(
+    "SELECT * FROM tasks WHERE title=? AND project='General' AND status!='complete' LIMIT 1"
+  ).get(title);
+  if (!task) {
+    const r = db.prepare(
+      "INSERT INTO tasks (title, status, priority, project, category, is_inbox) VALUES (?,?,?,?,?,0)"
+    ).run(title, 'active', 'medium', 'General', category || null);
+    task = db.prepare('SELECT * FROM tasks WHERE id=?').get(r.lastInsertRowid);
+  }
+  res.json(task);
+});
+
+// Batch-log time from a Google Calendar event to one or more tasks
+app.post('/api/gcal/log-batch', (req, res) => {
+  const { gcal_event_id, entries } = req.body;
+  if (!gcal_event_id || !Array.isArray(entries) || !entries.length)
+    return res.status(400).json({ error: 'gcal_event_id and entries[] required' });
+  const logs = db.transaction(() => {
+    return entries.map(({ task_id, minutes, description }) => {
+      if (!task_id || !minutes || Number(minutes) <= 0) return null;
+      if (!db.prepare('SELECT id FROM tasks WHERE id=?').get(Number(task_id))) return null;
+      const r = db.prepare(
+        'INSERT INTO time_logs (task_id, minutes, description, gcal_event_id) VALUES (?,?,?,?)'
+      ).run(Number(task_id), Number(minutes), description || null, gcal_event_id);
+      syncActualMinutes(Number(task_id));
+      return db.prepare('SELECT * FROM time_logs WHERE id=?').get(r.lastInsertRowid);
+    }).filter(Boolean);
+  })();
+  res.status(201).json({ logged: logs, total_minutes: logs.reduce((s, l) => s + l.minutes, 0) });
 });
 
 app.post('/api/time-blocks/backfill', async (req, res) => {

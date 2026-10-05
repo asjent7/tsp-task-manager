@@ -260,6 +260,21 @@
     .cal-overtime-dot { display:inline-flex; align-items:center; justify-content:center; width:13px; height:13px; background:#ef4444; color:white; border-radius:50%; font-size:8px; font-weight:700; line-height:1; flex-shrink:0; margin-left:2px; vertical-align:middle; }
     .cal-day-block.completed-block { opacity:.3; filter:grayscale(.6); }
     .cal-wtg-block.completed-block { opacity:.3; filter:grayscale(.6); }
+    /* GCal block log button and logged badge */
+    .gcal-log-btn { position:absolute; bottom:3px; right:4px; font-size:9px; background:rgba(255,255,255,.22); border:none; border-radius:3px; color:white; cursor:pointer; padding:1px 5px; line-height:1.4; opacity:0; transition:opacity .1s; white-space:nowrap; pointer-events:auto; }
+    .cal-gcal-block:hover .gcal-log-btn { opacity:1; }
+    .gcal-logged-badge { position:absolute; bottom:2px; left:5px; font-size:8px; color:rgba(255,255,255,.9); white-space:nowrap; pointer-events:none; }
+    /* GCal log modal */
+    .gcal-log-entry { display:flex; align-items:flex-start; gap:6px; padding:6px 0; border-bottom:1px solid var(--border); }
+    .gcal-log-entry:last-child { border-bottom:none; }
+    .gcal-log-task-sel { flex:1; min-width:0; }
+    .gcal-log-task-name { font-size:12px; font-weight:500; color:var(--text); padding:3px 0; cursor:pointer; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .gcal-log-task-name:hover { color:var(--primary,#3b82f6); text-decoration:underline; }
+    .gcal-log-task-drop { max-height:160px; overflow-y:auto; border:1px solid var(--border); border-radius:4px; background:var(--bg); margin-top:2px; display:none; }
+    .gcal-log-task-opt { font-size:12px; padding:5px 8px; cursor:pointer; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .gcal-log-task-opt:hover { background:var(--hover,#f1f5f9); }
+    .gcal-log-task-opt.match { font-weight:600; }
+    .gcal-log-mins-input { width:56px; font-size:12px; padding:3px 5px; border:1px solid var(--border); border-radius:4px; background:var(--bg); color:var(--text); }
     /* Due-date countdown badges in panel */
     .cal-panel-due-badge { display:inline-block; font-size:9px; font-weight:600; padding:1px 5px; border-radius:100px; margin-top:2px; }
     /* Due-date chips strip in day view (all-day area) */
@@ -1600,6 +1615,41 @@
   </div>
 </div>
 
+<!-- GCal Log-Time Modal -->
+<div class="overlay" id="gcal-log-modal">
+  <div class="modal" style="max-width:520px;">
+    <h3>Log Time</h3>
+    <div id="gcal-log-evt-info" style="font-size:12px;color:var(--muted);margin-bottom:12px;padding-bottom:10px;border-bottom:1px solid var(--border);"></div>
+    <!-- Quick shortcuts -->
+    <div id="gcal-log-quick" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px;"></div>
+    <!-- Task entries list -->
+    <div id="gcal-log-entries-list"></div>
+    <button class="btn btn-ghost btn-sm" onclick="gcalLogAddEntry()" style="margin-top:6px;">+ Add task</button>
+    <!-- New task inline form -->
+    <div id="gcal-log-new-task-form" style="display:none;background:var(--bg-alt,#f8fafc);border:1px solid var(--border);border-radius:6px;padding:10px;margin-top:8px;">
+      <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin-bottom:8px;">New task</div>
+      <input type="text" id="gcal-log-nt-title" placeholder="Task title" autocomplete="off" style="width:100%;box-sizing:border-box;font-size:13px;padding:5px 8px;border:1px solid var(--border);border-radius:4px;margin-bottom:6px;">
+      <div class="field-row" style="margin:0 0 6px;gap:6px;">
+        <select id="gcal-log-nt-project" style="flex:1;font-size:12px;padding:4px 6px;border:1px solid var(--border);border-radius:4px;background:var(--bg);color:var(--text);"></select>
+        <select id="gcal-log-nt-category" style="flex:1;font-size:12px;padding:4px 6px;border:1px solid var(--border);border-radius:4px;background:var(--bg);color:var(--text);"></select>
+      </div>
+      <label style="display:flex;align-items:center;gap:6px;font-size:12px;margin-bottom:8px;cursor:pointer;">
+        <input type="checkbox" id="gcal-log-nt-done"> Mark as done
+      </label>
+      <div style="display:flex;gap:6px;">
+        <button class="btn btn-ghost btn-sm" onclick="document.getElementById('gcal-log-new-task-form').style.display='none'">Cancel</button>
+        <button class="btn btn-primary btn-sm" onclick="gcalLogCreateTask()">Create & add</button>
+      </div>
+    </div>
+    <!-- Total -->
+    <div id="gcal-log-total" style="font-size:12px;color:var(--muted);margin-top:10px;padding-top:8px;border-top:1px solid var(--border);"></div>
+    <div class="modal-btns">
+      <button class="btn btn-ghost btn-sm" onclick="closeGcalLogModal()">Cancel</button>
+      <button class="btn btn-primary btn-sm" id="gcal-log-submit-btn" onclick="gcalLogSubmit()">Log time</button>
+    </div>
+  </div>
+</div>
+
 <!-- Quick Block Modal (shown after dropping a task onto the day grid) -->
 <div class="overlay" id="quick-block-modal">
   <div class="modal">
@@ -1802,6 +1852,7 @@ let state = {
   weekBlocks: {},          // week grid view: time blocks by date
   calWeekGridMode: true,   // true = compressed time-grid, false = task-card view
   boardMode: false,
+  gcalEventLogs: {},       // {[gcal_event_id]: total_minutes} — refreshed after logging
 };
 
 let draggedTaskId  = null;
@@ -1983,20 +2034,22 @@ function dueDateMatches(dueDate, filter, fromStr, toStr) {
 // ── Load data ─────────────────────────────────────────────────────────────────
 
 async function loadAll() {
-  const [tasks, projects, templates, focusLists, settings, googleStatus, divisions, categories, weekSprint] = await Promise.all([
+  const [tasks, projects, templates, focusLists, settings, googleStatus, divisions, categories, weekSprint, gcalEventLogs] = await Promise.all([
     api('GET', '/api/tasks'), api('GET', '/api/projects'),
     api('GET', '/api/templates'), api('GET', '/api/focus-lists'),
     api('GET', '/api/settings'),
     api('GET', '/api/auth/google/status').catch(() => ({ connected: false, connected_at: null })),
     api('GET', '/api/divisions'),
     api('GET', '/api/categories'),
-    api('GET', '/api/sprint/week').catch(() => null)
+    api('GET', '/api/sprint/week').catch(() => null),
+    api('GET', '/api/gcal/event-logs').catch(() => ({}))
   ]);
   state.tasks = tasks; state.projects = projects;
   state.templates = templates; state.focusLists = focusLists;
   state.divisions = divisions;
   state.categories = categories;
   state.weekSprint = weekSprint;
+  state.gcalEventLogs = gcalEventLogs || {};
   populateDivisionSelects();
   populateCategorySelects();
   state.daySettings = {
@@ -6028,11 +6081,17 @@ function renderCalendarDay() {
     // Use actual event times for the tooltip/subtitle, not the clipped times
     const startLocal = gcalLocalTime(evt.start);
     const endLocal   = gcalLocalTime(evt.end);
-    gcalBlocksHtml += `<div class="cal-gcal-block${isFree ? ' free' : ''}" style="top:${y}px;height:${h}px;"
+    const evtDurMins = Math.round((evtEndMs - evtStartMs) / 60000);
+    const gcalLogged = state.gcalEventLogs[evt.id];
+    const gcalLoggedBadge = gcalLogged ? `<div class="gcal-logged-badge">✓ ${fmtMins(gcalLogged)} logged</div>` : '';
+    const gcalLogBtnHtml = !isFree ? `<button class="gcal-log-btn" onclick="event.stopPropagation();openGcalLogModal('${evt.id}')">⏱ Log time</button>` : '';
+    gcalBlocksHtml += `<div class="cal-gcal-block${isFree ? ' free' : ''}${gcalLogged ? ' gcal-has-log' : ''}" style="top:${y}px;height:${h}px;position:relative;"
       title="${esc(evt.title)} · ${fmt12(startLocal)}${endLocal ? ' – ' + fmt12(endLocal) : ''}${isFree ? ' (free)' : ''}"
       onclick="event.stopPropagation();openGcalPopover('${evt.id}',event)">
       <div class="cal-gcal-block-title"><span class="gcal-g-badge">G</span>${esc(evt.title)}</div>
       ${h >= 36 ? `<div class="cal-gcal-block-sub">${fmt12(startLocal)}${endLocal ? ' – ' + fmt12(endLocal) : ''}${isFree ? ' · free' : ''}</div>` : ''}
+      ${gcalLoggedBadge}
+      ${gcalLogBtnHtml}
     </div>`;
   });
 
@@ -6998,9 +7057,14 @@ function renderCalendarWeekGrid() {
       const y = (Math.max(evtS, gsMs) - gsMs) / 3600000 * PX_PER_HOUR_WEEK;
       const h = Math.max((Math.min(evtE, geMs) - Math.max(evtS, gsMs)) / 3600000 * PX_PER_HOUR_WEEK, 8);
       const isFree = evt.transparency === 'transparent';
-      gcalHtml += `<div class="cal-wtg-gcal${isFree?' free':''}" style="top:${y}px;height:${h}px;" title="${esc(evt.title)}${isFree?' (free)':''}"
-        onclick="event.stopPropagation();openGcalPopover('${evt.id}',event)">
-        <div class="cal-wtg-gcal-title">${esc(evt.title)}</div>
+      const wkGcalLogged = state.gcalEventLogs[evt.id];
+      const wkLogBtn = !isFree ? `<button onclick="event.stopPropagation();openGcalLogModal('${evt.id}')" style="position:absolute;bottom:1px;right:2px;font-size:7px;background:rgba(66,133,244,.25);border:none;border-radius:2px;color:#1e40af;cursor:pointer;padding:1px 3px;opacity:0;transition:opacity .1s;" class="wk-gcal-log-btn">⏱</button>` : '';
+      gcalHtml += `<div class="cal-wtg-gcal${isFree?' free':''}" style="top:${y}px;height:${h}px;position:relative;" title="${esc(evt.title)}${isFree?' (free)':''}${wkGcalLogged?' · ✓ '+fmtMins(wkGcalLogged)+' logged':''}"
+        onclick="event.stopPropagation();openGcalPopover('${evt.id}',event)"
+        onmouseenter="this.querySelector('.wk-gcal-log-btn')&&(this.querySelector('.wk-gcal-log-btn').style.opacity='1')"
+        onmouseleave="this.querySelector('.wk-gcal-log-btn')&&(this.querySelector('.wk-gcal-log-btn').style.opacity='0')">
+        <div class="cal-wtg-gcal-title">${wkGcalLogged?'✓ ':''}<span class="gcal-g-badge" style="background:#4285f4;color:white;">G</span>${esc(evt.title)}</div>
+        ${wkLogBtn}
       </div>`;
     });
 
@@ -8067,10 +8131,16 @@ function openGcalPopover(evtId, clickEvent) {
   }
 
   const p = document.getElementById('gcal-popover');
+  const gcalLogged = state.gcalEventLogs[evtId];
+  const loggedLine = gcalLogged ? `<div style="font-size:11px;color:#16a34a;margin-top:2px;">✓ ${fmtMins(gcalLogged)} logged</div>` : '';
+  const isFreeEvt = evt.transparency === 'transparent';
+  const logTimeBtn = !isFreeEvt ? `<button onclick="closeGcalPopover();openGcalLogModal('${evtId}')" style="margin-top:6px;width:100%;font-size:12px;padding:5px 10px;border:1px solid #bfdbfe;border-radius:5px;background:#eff6ff;color:#3b82f6;cursor:pointer;font-weight:500;">⏱ Log time</button>` : '';
   p.innerHTML = `
     <button onclick="closeGcalPopover()" style="position:absolute;top:5px;right:8px;background:none;border:none;cursor:pointer;font-size:16px;color:#94a3b8;line-height:1;padding:0;">×</button>
     <div style="font-size:13px;font-weight:600;color:#0f172a;padding-right:16px;margin-bottom:2px;">${esc(evt.title)}</div>
     <div style="font-size:11px;color:#64748b;">${timeStr}</div>
+    ${loggedLine}
+    ${logTimeBtn}
     ${openLink}
     ${linkSection}`;
 
@@ -8132,6 +8202,213 @@ async function disconnectGoogle() {
     toast('Google Calendar disconnected');
   } catch(e) { toast(e.message); }
 }
+
+// ── GCal Log-Time Modal ───────────────────────────────────────────────────────
+
+let gcalLogEvtId  = null;
+let gcalLogEvt    = null;
+let gcalLogEntries = []; // [{taskId, taskTitle, minutes, note, isGeneral}]
+
+function closeGcalLogModal() {
+  document.getElementById('gcal-log-modal').classList.remove('open');
+  gcalLogEvtId = null; gcalLogEvt = null; gcalLogEntries = [];
+}
+document.getElementById('gcal-log-modal').addEventListener('click', e => { if (e.target === e.currentTarget) closeGcalLogModal(); });
+
+function gcalLogEventDurMins(evt) {
+  if (!evt || !evt.start || evt.start.length === 10) return 60;
+  const s = new Date(evt.start).getTime(), e2 = evt.end ? new Date(evt.end).getTime() : s + 3600000;
+  return Math.round((e2 - s) / 60000);
+}
+
+function gcalLogMatchCategory(evtTitle) {
+  const m = getThemeMapping(evtTitle);
+  return m ? m.category : null;
+}
+
+function gcalLogTotalEntered() {
+  return gcalLogEntries.reduce((s, e) => s + (parseInt(e.minutes) || 0), 0);
+}
+
+function gcalLogRenderEntries() {
+  const list  = document.getElementById('gcal-log-entries-list');
+  const total = gcalLogTotalEntered();
+  const avail = gcalLogEventDurMins(gcalLogEvt);
+  const over  = total > avail;
+
+  list.innerHTML = gcalLogEntries.map((entry, idx) => {
+    const taskLabel = entry.taskId
+      ? `<span class="gcal-log-task-name" title="${esc(entry.taskTitle)}">${esc(entry.taskTitle)}</span><button onclick="gcalLogClearTask(${idx})" style="font-size:10px;background:none;border:none;cursor:pointer;color:var(--muted);padding:0 2px;" title="Change">✕</button>`
+      : `<input type="text" id="gcal-log-search-${idx}" placeholder="Search tasks…" autocomplete="off"
+           oninput="gcalLogFilterTasks(${idx})"
+           onfocus="gcalLogFilterTasks(${idx})"
+           style="width:100%;font-size:12px;padding:3px 6px;border:1px solid var(--border);border-radius:4px;box-sizing:border-box;">
+         <div id="gcal-log-drop-${idx}" class="gcal-log-task-drop"></div>`;
+    return `<div class="gcal-log-entry" data-idx="${idx}">
+      <div class="gcal-log-task-sel">${taskLabel}</div>
+      <input type="number" class="gcal-log-mins-input" min="1" step="15" value="${entry.minutes || ''}"
+        onchange="gcalLogEntries[${idx}].minutes=parseInt(this.value)||0;gcalLogUpdateTotal()"
+        placeholder="min">
+      <input type="text" style="flex:1;min-width:0;font-size:11px;padding:3px 5px;border:1px solid var(--border);border-radius:4px;background:var(--bg);color:var(--muted);"
+        placeholder="Note (optional)" value="${esc(entry.note || '')}"
+        onchange="gcalLogEntries[${idx}].note=this.value">
+      <button onclick="gcalLogEntries.splice(${idx},1);gcalLogRenderEntries()" style="background:none;border:none;cursor:pointer;color:var(--muted);font-size:14px;padding:0 2px;flex-shrink:0;">×</button>
+    </div>`;
+  }).join('');
+
+  document.getElementById('gcal-log-total').innerHTML =
+    `<strong>${total > 0 ? fmtMins(total) : '0m'}</strong> logged of <strong>${fmtMins(avail)}</strong> available`
+    + (over ? `&nbsp;<span style="color:#ef4444;font-weight:600;">▲ ${fmtMins(total - avail)} over</span>` : '');
+  document.getElementById('gcal-log-submit-btn').disabled = gcalLogEntries.length === 0 || gcalLogEntries.every(e => !e.taskId);
+}
+
+function gcalLogUpdateTotal() { gcalLogRenderEntries(); }
+
+function gcalLogFilterTasks(idx) {
+  const input = document.getElementById(`gcal-log-search-${idx}`);
+  const drop  = document.getElementById(`gcal-log-drop-${idx}`);
+  if (!input || !drop) return;
+  const q  = input.value.toLowerCase();
+  const matchCat = gcalLogMatchCategory(gcalLogEvt?.title || '');
+  const usedIds  = new Set(gcalLogEntries.filter((e, i) => i !== idx && e.taskId).map(e => e.taskId));
+  let tasks = state.tasks.filter(t => t.status !== 'complete' && !usedIds.has(t.id));
+  if (q) tasks = tasks.filter(t => t.title.toLowerCase().includes(q) || (t.project && t.project.toLowerCase().includes(q)));
+  tasks.sort((a, b) => {
+    const aM = matchCat && a.category === matchCat ? 0 : 1;
+    const bM = matchCat && b.category === matchCat ? 0 : 1;
+    if (aM !== bM) return aM - bM;
+    return a.title.localeCompare(b.title);
+  });
+  drop.innerHTML = tasks.slice(0, 30).map(t =>
+    `<div class="gcal-log-task-opt${matchCat && t.category === matchCat ? ' match' : ''}"
+       onclick="gcalLogPickTask(${idx},${t.id},'${esc(t.title).replace(/'/g, "\\'")}')">
+      ${esc(t.title)}${t.project ? `<span style="color:var(--muted);font-size:10px;margin-left:4px;">· ${esc(t.project)}</span>` : ''}
+    </div>`
+  ).join('') || '<div style="padding:6px 8px;font-size:11px;color:var(--muted);">No matching tasks</div>';
+  drop.style.display = 'block';
+}
+
+function gcalLogPickTask(idx, taskId, taskTitle) {
+  gcalLogEntries[idx].taskId    = taskId;
+  gcalLogEntries[idx].taskTitle = taskTitle;
+  gcalLogRenderEntries();
+}
+
+function gcalLogClearTask(idx) {
+  gcalLogEntries[idx].taskId    = null;
+  gcalLogEntries[idx].taskTitle = '';
+  gcalLogRenderEntries();
+}
+
+function gcalLogAddEntry(prefillTaskId, prefillTitle) {
+  const avail = gcalLogEventDurMins(gcalLogEvt);
+  const used  = gcalLogTotalEntered();
+  const suggestMins = Math.max(15, Math.min(avail - used, avail));
+  gcalLogEntries.push({ taskId: prefillTaskId || null, taskTitle: prefillTitle || '', minutes: suggestMins, note: '' });
+  gcalLogRenderEntries();
+  if (!prefillTaskId) {
+    setTimeout(() => { const inp = document.getElementById(`gcal-log-search-${gcalLogEntries.length - 1}`); if (inp) inp.focus(); }, 30);
+  }
+}
+
+async function gcalLogEnsureGeneral() {
+  const blockName = gcalLogEvt?.title || 'Unknown';
+  const category  = gcalLogMatchCategory(blockName);
+  try {
+    const task = await api('POST', '/api/gcal/ensure-general-task', { block_name: blockName, category });
+    const already = gcalLogEntries.find(e => e.taskId === task.id);
+    if (!already) gcalLogAddEntry(task.id, task.title);
+    else toast('Already in the list');
+  } catch(e) { toast(e.message); }
+}
+
+function openGcalLogModal(evtId) {
+  const allEvts = [...(state.googleEvents || [])];
+  Object.values(state.googleWeekEvents || {}).forEach(arr => allEvts.push(...arr));
+  const evt = allEvts.find(e => e.id === evtId);
+  if (!evt) return;
+  gcalLogEvtId  = evtId;
+  gcalLogEvt    = evt;
+  gcalLogEntries = [];
+
+  const startLocal = gcalLocalTime(evt.start);
+  const endLocal   = gcalLocalTime(evt.end);
+  const dur        = gcalLogEventDurMins(evt);
+  document.getElementById('gcal-log-evt-info').innerHTML =
+    `<strong>${esc(evt.title)}</strong> &nbsp;·&nbsp; ${startLocal ? fmt12(startLocal) : ''}${endLocal ? ' – ' + fmt12(endLocal) : ''} &nbsp;·&nbsp; ${fmtMins(dur)}`;
+
+  // Quick button for General catch-all
+  const blockName = evt.title;
+  const matchCat  = gcalLogMatchCategory(blockName);
+  document.getElementById('gcal-log-quick').innerHTML =
+    `<button class="btn btn-ghost btn-sm" onclick="gcalLogEnsureGeneral()" title="Log to a General catch-all task for this block type">General – ${esc(blockName)}</button>`
+    + `<button class="btn btn-ghost btn-sm" onclick="document.getElementById('gcal-log-new-task-form').style.display='';document.getElementById('gcal-log-nt-title').focus()">+ New task</button>`;
+
+  // Populate new-task form selects
+  const projSel = document.getElementById('gcal-log-nt-project');
+  projSel.innerHTML = '<option value="">No project</option>'
+    + state.projects.filter(p => p.horizon === 'active').map(p => `<option value="${esc(p.name)}">${esc(p.name)}</option>`).join('');
+  const catSel = document.getElementById('gcal-log-nt-category');
+  catSel.innerHTML = '<option value="">No category</option>'
+    + state.categories.map(c => `<option value="${c.slug}"${matchCat === c.slug ? ' selected' : ''}>${esc(c.name)}</option>`).join('');
+
+  document.getElementById('gcal-log-new-task-form').style.display = 'none';
+  document.getElementById('gcal-log-nt-title').value = '';
+  document.getElementById('gcal-log-nt-done').checked = false;
+
+  gcalLogRenderEntries();
+  document.getElementById('gcal-log-modal').classList.add('open');
+}
+
+async function gcalLogCreateTask() {
+  const title    = document.getElementById('gcal-log-nt-title').value.trim();
+  const project  = document.getElementById('gcal-log-nt-project').value;
+  const category = document.getElementById('gcal-log-nt-category').value;
+  const done     = document.getElementById('gcal-log-nt-done').checked;
+  if (!title) { toast('Enter a task title'); return; }
+  try {
+    const payload = { title, priority: 'medium', status: done ? 'complete' : 'active' };
+    if (project)  payload.project  = project;
+    if (category) payload.category = category;
+    const task = await api('POST', '/api/tasks', payload);
+    state.tasks.push(task);
+    document.getElementById('gcal-log-new-task-form').style.display = 'none';
+    gcalLogAddEntry(task.id, task.title);
+  } catch(e) { toast(e.message); }
+}
+
+async function gcalLogSubmit() {
+  const entries = gcalLogEntries.filter(e => e.taskId && e.minutes > 0);
+  if (!entries.length) { toast('Pick at least one task with minutes'); return; }
+  const avail = gcalLogEventDurMins(gcalLogEvt);
+  const total = entries.reduce((s, e) => s + e.minutes, 0);
+  if (total > avail && !confirm(`Total (${fmtMins(total)}) exceeds the block duration (${fmtMins(avail)}). Log anyway?`)) return;
+  try {
+    const evtStart = gcalLogEvt.start;
+    const date = evtStart.length === 10 ? evtStart : dateStr(new Date(evtStart));
+    await api('POST', '/api/gcal/log-batch', {
+      gcal_event_id: gcalLogEvtId,
+      date,
+      entries: entries.map(e => ({ task_id: e.taskId, minutes: e.minutes, description: e.note || null }))
+    });
+    // Refresh logged totals
+    state.gcalEventLogs = await api('GET', '/api/gcal/event-logs').catch(() => state.gcalEventLogs);
+    // Refresh task actual_minutes in state
+    for (const e of entries) {
+      const t = state.tasks.find(t2 => t2.id === e.taskId);
+      if (t) t.actual_minutes = (t.actual_minutes || 0) + e.minutes;
+    }
+    closeGcalLogModal(); renderCurrentCal(); renderTaskList();
+    toast(`Logged ${fmtMins(total)} across ${entries.length} task${entries.length > 1 ? 's' : ''}`);
+  } catch(err) { toast(err.message); }
+}
+
+// Dismiss task dropdowns when clicking outside
+document.addEventListener('click', e => {
+  if (!e.target.closest('.gcal-log-entry')) {
+    document.querySelectorAll('.gcal-log-task-drop').forEach(d => { d.style.display = 'none'; });
+  }
+});
 
 // ── Init ──────────────────────────────────────────────────────────────────────
 
