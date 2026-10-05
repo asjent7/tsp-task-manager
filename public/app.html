@@ -4,6 +4,17 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>TSP Task Manager</title>
+  <script>
+    if (location.hostname === 'localhost' || location.hostname === '127.0.0.1') {
+      document.title = '[TEST] TSP Task Manager';
+      document.addEventListener('DOMContentLoaded', function() {
+        var b = document.createElement('div');
+        b.textContent = 'LOCAL TEST COPY — not your real data';
+        b.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:99999;background:#fde047;color:#713f12;text-align:center;font-size:12px;font-weight:700;padding:4px 0;letter-spacing:.04em;pointer-events:none;';
+        document.body.prepend(b);
+      });
+    }
+  </script>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
