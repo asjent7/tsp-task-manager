@@ -178,6 +178,8 @@ try { db.prepare('ALTER TABLE time_blocks ADD COLUMN parent_category_block_id IN
 try { db.prepare('ALTER TABLE category_blocks ADD COLUMN google_event_id TEXT').run(); } catch(e) {}
 try { db.prepare('ALTER TABLE time_blocks ADD COLUMN gcal_event_id TEXT').run(); } catch(e) {}
 try { db.prepare('ALTER TABLE time_blocks ADD COLUMN gcal_linked INTEGER NOT NULL DEFAULT 0').run(); } catch(e) {}
+try { db.prepare('ALTER TABLE time_blocks ADD COLUMN updated_at TEXT').run(); } catch(e) {}
+try { db.prepare('ALTER TABLE time_blocks ADD COLUMN sync_error TEXT').run(); } catch(e) {}
 try { db.prepare('ALTER TABLE tasks ADD COLUMN gmail_message_id TEXT').run(); } catch(e) {}
 try { db.prepare('ALTER TABLE tasks ADD COLUMN gmail_thread_id TEXT').run(); } catch(e) {}
 try { db.prepare('ALTER TABLE tasks ADD COLUMN source_url TEXT').run(); } catch(e) {}
@@ -1692,11 +1694,14 @@ app.post('/api/time-blocks', async (req, res) => {
   if (!db.prepare('SELECT id FROM tasks WHERE id = ?').get(task_id))
     return res.status(404).json({ error: 'Task not found' });
   const r = db.prepare(
-    'INSERT INTO time_blocks (task_id, date, start_time, duration_minutes) VALUES (?,?,?,?)'
+    "INSERT INTO time_blocks (task_id, date, start_time, duration_minutes, updated_at) VALUES (?,?,?,?,datetime('now'))"
   ).run(Number(task_id), date, start_time, Number(duration_minutes));
   let block = blockWithTask(r.lastInsertRowid);
   const eventResult = await syncTaskBlockToGoogle(block, null);
-  if (eventResult && typeof eventResult === 'string') {
+  if (eventResult?.error) {
+    db.prepare('UPDATE time_blocks SET sync_error=? WHERE id=?').run(eventResult.error, block.id);
+    block = { ...blockWithTask(block.id), gcal_sync_error: true };
+  } else if (eventResult && typeof eventResult === 'string') {
     db.prepare('UPDATE time_blocks SET gcal_event_id=? WHERE id=?').run(eventResult, block.id);
     block = blockWithTask(block.id);
   }
@@ -1712,15 +1717,18 @@ app.patch('/api/time-blocks/:id', async (req, res) => {
     ? Number(req.body.duration_minutes) : block.duration_minutes;
   if (new Date(date + 'T00:00:00').getDay() === 0)
     return res.status(400).json({ error: 'No time blocks on Sundays' });
-  db.prepare('UPDATE time_blocks SET date=?, start_time=?, duration_minutes=? WHERE id=?')
+  db.prepare("UPDATE time_blocks SET date=?, start_time=?, duration_minutes=?, updated_at=datetime('now'), sync_error=NULL WHERE id=?")
     .run(date, start_time, duration_minutes, req.params.id);
   const updated = blockWithTask(req.params.id);
   const eventResult = await syncTaskBlockToGoogle(updated, updated.gcal_event_id);
+  if (eventResult?.error) {
+    db.prepare('UPDATE time_blocks SET sync_error=? WHERE id=?').run(eventResult.error, updated.id);
+    return res.json({ ...blockWithTask(req.params.id), gcal_sync_error: true });
+  }
   if (eventResult && typeof eventResult === 'string' && eventResult !== updated.gcal_event_id) {
     db.prepare('UPDATE time_blocks SET gcal_event_id=? WHERE id=?').run(eventResult, updated.id);
-    return res.json(blockWithTask(req.params.id));
   }
-  res.json(updated);
+  res.json(blockWithTask(req.params.id));
 });
 
 app.delete('/api/time-blocks/:id', (req, res) => {
@@ -1729,6 +1737,129 @@ app.delete('/api/time-blocks/:id', (req, res) => {
   db.prepare('DELETE FROM time_blocks WHERE id=?').run(req.params.id);
   if (block.gcal_event_id && !block.gcal_linked) deleteGoogleTaskBlockEvent(block.gcal_event_id);
   res.status(204).end();
+});
+
+app.get('/api/time-blocks/sync-status', (req, res) => {
+  const lastSync = db.prepare("SELECT value FROM settings WHERE key='gcal_last_sync'").get();
+  const errBlocks = db.prepare(
+    `SELECT tb.id, tb.task_id, tb.date, tb.start_time, tb.sync_error, t.title AS task_title
+     FROM time_blocks tb JOIN tasks t ON tb.task_id = t.id
+     WHERE tb.sync_error IS NOT NULL`
+  ).all();
+  res.json({ last_sync: lastSync?.value || null, error_blocks: errBlocks });
+});
+
+app.post('/api/time-blocks/two-way-sync', async (req, res) => {
+  const auth = db.prepare('SELECT refresh_token FROM google_auth WHERE id = 1').get();
+  if (!auth) return res.json({ ok: false, reason: 'not_connected', updated_from_google: 0, pushed_to_google: 0, unlinked: [], deleted: [], errors: [] });
+
+  const today       = new Date().toISOString().slice(0, 10);
+  const twoWeeksOut = new Date(Date.now() + 14 * 86400000).toISOString().slice(0, 10);
+  const from = req.body.from || today;
+  const to   = req.body.to   || twoWeeksOut;
+  const report = { ok: true, updated_from_google: 0, pushed_to_google: 0, unlinked: [], deleted: [], errors: [], synced_at: new Date().toISOString() };
+
+  try {
+    const token  = await googleAccessToken(auth.refresh_token);
+    const calId  = await getTaskCalendarId(token);
+    const calEnc = encodeURIComponent(calId);
+    const params = new URLSearchParams({
+      timeMin: new Date(from + 'T00:00:00').toISOString(),
+      timeMax: new Date(to   + 'T23:59:59').toISOString(),
+      singleEvents: 'true', orderBy: 'startTime', maxResults: '500'
+    });
+    const data = await httpsReq({
+      hostname: 'www.googleapis.com',
+      path: `/calendar/v3/calendars/${calEnc}/events?${params}`,
+      method: 'GET',
+      headers: { Authorization: 'Bearer ' + token }
+    });
+    if (data?.error) throw new Error(data.error.message);
+
+    const googleEvents = (data.items || []).filter(e => e.status !== 'cancelled');
+    const googleEvtMap = {};
+    googleEvents.forEach(e => { googleEvtMap[e.id] = e; });
+
+    const blocks = db.prepare(
+      'SELECT * FROM time_blocks WHERE date >= ? AND date <= ? AND gcal_event_id IS NOT NULL AND gcal_linked = 0'
+    ).all(from, to);
+    const processedEvtIds = new Set();
+
+    for (const block of blocks) {
+      const gevt = googleEvtMap[block.gcal_event_id];
+      processedEvtIds.add(block.gcal_event_id);
+
+      if (!gevt) {
+        db.prepare('DELETE FROM time_blocks WHERE id=?').run(block.id);
+        report.deleted.push({ id: block.id, task_id: block.task_id, date: block.date, start_time: block.start_time });
+        continue;
+      }
+      if (!gevt.start?.dateTime) continue;
+
+      const evtStart = new Date(gevt.start.dateTime);
+      const evtEnd   = gevt.end?.dateTime ? new Date(gevt.end.dateTime) : new Date(evtStart.getTime() + 3600000);
+      const gDate    = `${evtStart.getFullYear()}-${String(evtStart.getMonth()+1).padStart(2,'0')}-${String(evtStart.getDate()).padStart(2,'0')}`;
+      const gTime    = `${String(evtStart.getHours()).padStart(2,'0')}:${String(evtStart.getMinutes()).padStart(2,'0')}`;
+      const gDur     = Math.round((evtEnd - evtStart) / 60000);
+      const changed  = gDate !== block.date || gTime !== block.start_time || gDur !== block.duration_minutes;
+
+      if (!changed) {
+        if (block.sync_error) db.prepare('UPDATE time_blocks SET sync_error=NULL WHERE id=?').run(block.id);
+        continue;
+      }
+
+      const googleUpdatedMs = new Date(gevt.updated).getTime();
+      const blockUpdatedMs  = block.updated_at ? new Date(block.updated_at).getTime() : 0;
+
+      if (googleUpdatedMs >= blockUpdatedMs) {
+        db.prepare("UPDATE time_blocks SET date=?, start_time=?, duration_minutes=?, updated_at=?, sync_error=NULL WHERE id=?")
+          .run(gDate, gTime, gDur, new Date(gevt.updated).toISOString().replace('T',' ').slice(0,19), block.id);
+        report.updated_from_google++;
+      } else {
+        const result = await syncTaskBlockToGoogle(block, block.gcal_event_id);
+        if (result && typeof result === 'string') {
+          db.prepare('UPDATE time_blocks SET sync_error=NULL WHERE id=?').run(block.id);
+          report.pushed_to_google++;
+        } else {
+          const errMsg = result?.error || 'Push failed';
+          db.prepare('UPDATE time_blocks SET sync_error=? WHERE id=?').run(errMsg, block.id);
+          report.errors.push({ blockId: block.id, message: errMsg });
+        }
+      }
+    }
+
+    // Google events in TSP calendar that have no matching block → re-link if description has task URL
+    for (const gevt of googleEvents) {
+      if (processedEvtIds.has(gevt.id) || !gevt.start?.dateTime) continue;
+      const anyBlock = db.prepare('SELECT id FROM time_blocks WHERE gcal_event_id=?').get(gevt.id);
+      if (anyBlock) continue;
+      const desc = gevt.description || '';
+      const m    = desc.match(/\/app\.html\?task=(\d+)/);
+      const evtStart = new Date(gevt.start.dateTime);
+      const evtEnd   = gevt.end?.dateTime ? new Date(gevt.end.dateTime) : new Date(evtStart.getTime() + 3600000);
+      const gDate    = `${evtStart.getFullYear()}-${String(evtStart.getMonth()+1).padStart(2,'0')}-${String(evtStart.getDate()).padStart(2,'0')}`;
+      const gTime    = `${String(evtStart.getHours()).padStart(2,'0')}:${String(evtStart.getMinutes()).padStart(2,'0')}`;
+      const gDur     = Math.round((evtEnd - evtStart) / 60000);
+      if (m) {
+        const taskId = Number(m[1]);
+        const task   = db.prepare('SELECT id FROM tasks WHERE id=?').get(taskId);
+        if (task) {
+          const r = db.prepare(
+            "INSERT INTO time_blocks (task_id, date, start_time, duration_minutes, gcal_event_id, gcal_linked, updated_at) VALUES (?,?,?,?,?,0,datetime('now'))"
+          ).run(taskId, gDate, gTime, gDur, gevt.id);
+          report.unlinked.push({ blockId: r.lastInsertRowid, taskId, date: gDate, start_time: gTime, title: gevt.summary || '' });
+        }
+      } else {
+        report.unlinked.push({ eventId: gevt.id, title: gevt.summary || '', start: gevt.start.dateTime, noTask: true });
+      }
+    }
+
+    db.prepare("INSERT OR REPLACE INTO settings (key,value) VALUES ('gcal_last_sync',?)").run(new Date().toISOString());
+    res.json(report);
+  } catch(e) {
+    console.error('two-way-sync error:', e.message);
+    res.json({ ...report, ok: false, error: e.message });
+  }
 });
 
 app.post('/api/time-blocks/:id/log', (req, res) => {
@@ -1985,7 +2116,7 @@ async function syncTaskBlockToGoogle(block, existingEventId) {
     return data?.id || null;
   } catch(e) {
     console.error('Google task-block sync error:', e.message);
-    return null;
+    return { error: e.message };
   }
 }
 
@@ -2088,7 +2219,7 @@ app.post('/api/repair/timezone', async (req, res) => {
     let fixed = 0, skipped = 0;
     for (const block of blocks) {
       const result = await syncTaskBlockToGoogle(block, block.gcal_event_id);
-      if (result && !result.scopeError) fixed++;
+      if (result && typeof result === 'string') fixed++;
       else skipped++;
     }
     res.json({ fixed, skipped, total: blocks.length });
