@@ -293,8 +293,13 @@
     .cal-wtg-col-hdr .today-num { background:#ef4444; color:white; border-radius:50%; display:inline-block; width:16px; height:16px; line-height:16px; font-size:9px; }
     .cal-wtg-hour-line { position:absolute; left:0; right:0; border-top:1px solid var(--border); pointer-events:none; }
     .cal-wtg-half-line { position:absolute; left:0; right:0; border-top:1px dashed rgba(0,0,0,.06); pointer-events:none; }
-    .cal-wtg-block { position:absolute; left:1px; right:1px; border-radius:3px; overflow:hidden; font-size:9px; cursor:pointer; z-index:10; }
+    .cal-wtg-block { position:absolute; left:1px; right:1px; border-radius:3px; overflow:hidden; font-size:9px; cursor:pointer; z-index:10; user-select:none; }
     .cal-wtg-block-title { padding:1px 3px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; color:white; font-weight:600; }
+    .cal-wtg-resize-b { position:absolute; bottom:0; left:0; right:0; height:8px; cursor:ns-resize; }
+    .cal-wtg-resize-b::after { content:''; display:block; width:16px; height:2px; background:rgba(255,255,255,.4); border-radius:1px; margin:0 auto; }
+    .cal-wtg-resize-t { position:absolute; top:0; left:0; right:0; height:8px; cursor:ns-resize; }
+    .cal-wtg-resize-t::after { content:''; display:block; width:16px; height:2px; background:rgba(255,255,255,.4); border-radius:1px; margin:3px auto 0; }
+    .cal-wtg-block-log { position:absolute; bottom:2px; left:2px; font-size:7px; background:rgba(0,0,0,.25); border:none; border-radius:2px; color:#fff; cursor:pointer; padding:1px 3px; line-height:1.2; }
     .cal-wtg-gcal { position:absolute; left:1px; right:1px; border-radius:3px; overflow:hidden; font-size:9px; z-index:9; pointer-events:auto; cursor:pointer; background-color:#4285f4; background-image:repeating-linear-gradient(45deg,rgba(255,255,255,.2) 0,rgba(255,255,255,.2) 2px,transparent 2px,transparent 6px); }
     .cal-wtg-gcal.free { background-color:rgba(66,133,244,.12); background-image:none; border:1px dashed #93c5fd; }
     .cal-wtg-gcal-title { padding:1px 3px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; color:white; }
@@ -1573,11 +1578,22 @@
         <label style="display:block;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin-bottom:4px;">Start</label>
         <input type="time" id="block-edit-start">
       </div>
+      <div>
+        <label style="display:block;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin-bottom:4px;">End</label>
+        <input type="time" id="block-edit-end" readonly style="background:var(--bg-alt,#f8fafc);color:var(--muted);cursor:default;">
+      </div>
     </div>
     <label style="display:block;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin:8px 0 4px;">Duration (minutes)</label>
-    <input type="number" id="block-edit-duration" min="15" step="15" placeholder="60">
+    <input type="number" id="block-edit-duration" min="15" step="15" placeholder="60" oninput="blockEditUpdateEnd()">
+    <div style="display:flex;gap:6px;margin:6px 0 2px;">
+      <button class="btn btn-ghost btn-sm" style="flex:1;" onclick="document.getElementById('block-edit-duration').value=60;blockEditUpdateEnd()">1h</button>
+      <button class="btn btn-ghost btn-sm" style="flex:1;" onclick="document.getElementById('block-edit-duration').value=90;blockEditUpdateEnd()">90m</button>
+      <button class="btn btn-ghost btn-sm" style="flex:1;" onclick="document.getElementById('block-edit-duration').value=120;blockEditUpdateEnd()">2h</button>
+      <button class="btn btn-ghost btn-sm" style="flex:1;" onclick="document.getElementById('block-edit-duration').value=180;blockEditUpdateEnd()">3h</button>
+    </div>
     <div class="modal-btns">
       <button class="btn btn-danger btn-sm" id="block-edit-delete-btn">Delete</button>
+      <button class="btn btn-ghost btn-sm" id="block-edit-open-task-btn" onclick="closeBlockEdit()" style="display:none;">Open task</button>
       <button class="btn btn-ghost btn-sm" onclick="closeBlockEdit()">Cancel</button>
       <button class="btn btn-primary btn-sm" onclick="saveBlockEdit()">Save</button>
     </div>
@@ -1621,6 +1637,14 @@
       <input type="checkbox" id="show-completed-toggle"
         onchange="calShowCompleted=this.checked;localStorage.setItem('calShowCompleted',this.checked?'1':'0');if(state.calMode==='day')renderCalendarDay();else if(state.calWeekGridMode)renderCalendarWeekGrid();">
       Show completed task blocks on grid
+    </label>
+    <label style="display:flex;align-items:center;gap:8px;margin-top:10px;font-size:13px;">
+      Week starts on
+      <select id="week-start-select" style="font-size:12px;border:1px solid var(--border);border-radius:4px;padding:2px 6px;background:var(--bg);color:var(--text);"
+        onchange="weekStartDay=parseInt(this.value);localStorage.setItem('weekStartDay',this.value);api('PATCH','/api/settings',{week_start_day:this.value}).catch(()=>{});state.calWeekStart=getWeekStart();if(state.calMode==='week'&&state.calWeekGridMode){loadWeekBlocks().then(()=>renderCalendarWeekGrid());}">
+        <option value="0">Sunday</option>
+        <option value="1">Monday</option>
+      </select>
     </label>
     <!-- Google Calendar task-block sync section -->
     <div id="gcal-sync-section" style="display:none;margin-top:16px;border-top:1px solid var(--border);padding-top:12px;">
@@ -1737,11 +1761,17 @@ function toggleDuePill(id) {
 
 // ── State ─────────────────────────────────────────────────────────────────────
 
+let weekStartDay = parseInt(localStorage.getItem('weekStartDay') || '0'); // 0=Sun, 1=Mon
+
 function getWeekStart(date) {
   const d = new Date(date || new Date());
   d.setHours(0, 0, 0, 0);
   const day = d.getDay(); // 0=Sun
-  d.setDate(d.getDate() - (day === 0 ? 6 : day - 1));
+  if (weekStartDay === 0) {
+    d.setDate(d.getDate() - day);
+  } else {
+    d.setDate(d.getDate() - (day === 0 ? 6 : day - 1));
+  }
   return d;
 }
 
@@ -1803,6 +1833,13 @@ let pendingDropTime   = null;
 let pendingDropTaskId = null;
 // Week time-grid drag
 let wtgHoverDate = null;   // date string of column currently hovered
+// Week time-grid resize
+let wtgResizeBlockId  = null;
+let wtgResizeStartY   = null;
+let wtgResizeStartDur = null;
+let wtgResizeEdge     = null; // 'top' | 'bottom'
+let wtgResizeStartTop = null; // original block top px (for top-edge resize)
+let wtgResizeDate     = null;
 // Category block edit
 let catBlockEditId = null;
 let calPanelHideScheduled = false;
@@ -1967,6 +2004,11 @@ async function loadAll() {
     startHour:       parseInt(settings.day_start_hour || 5),
     endHour:         parseInt(settings.day_end_hour || 21),
   };
+  if (settings.week_start_day !== undefined) {
+    weekStartDay = parseInt(settings.week_start_day);
+    localStorage.setItem('weekStartDay', weekStartDay);
+    state.calWeekStart = getWeekStart();
+  }
   state.userTimezone = settings.user_timezone || 'America/New_York';
   try {
     state.gcalThemeMappings = settings.gcal_theme_mappings ? JSON.parse(settings.gcal_theme_mappings) : {};
@@ -6356,7 +6398,7 @@ async function calDayDrop(e) {
 
 // Drag: block → move within day
 function calDayBlockMouseDown(e, blockId, blockTop) {
-  if (e.target.classList.contains('cal-day-resize')) return;
+  if (e.target.classList.contains('cal-day-resize') || e.target.classList.contains('cal-wtg-resize-b') || e.target.classList.contains('cal-wtg-resize-t')) return;
   e.preventDefault();
   closeSlotPicker();
   calMoveBlockId = blockId; calMoveStartY = e.clientY;
@@ -6383,9 +6425,9 @@ document.addEventListener('mousemove', e => {
   if (calResizeBlockId) {
     const delta = e.clientY - calResizeStartY;
     const deltaMins = Math.round(delta / PX_PER_HOUR * 60 / 15) * 15;
-    const newDur = Math.max(60, calResizeStartDur + deltaMins);
+    const newDur = Math.max(15, calResizeStartDur + deltaMins);
     const el = document.querySelector(`[data-block-id="${calResizeBlockId}"]`);
-    if (el) el.style.height = Math.max(newDur / 60 * PX_PER_HOUR, 24) + 'px';
+    if (el) el.style.height = Math.max(newDur / 60 * PX_PER_HOUR, 16) + 'px';
   }
   if (calMoveBlockId) {
     const delta = e.clientY - calMoveStartY;
@@ -6395,16 +6437,61 @@ document.addEventListener('mousemove', e => {
       if (el) { el.style.top = Math.max(0, calMoveStartTop + delta) + 'px'; el.classList.add('dragging'); }
     }
   }
+  if (wtgResizeBlockId) {
+    const delta = e.clientY - wtgResizeStartY;
+    const snap  = Math.round(delta / PX_PER_HOUR_WEEK * 60 / 15) * 15;
+    const el    = document.querySelector(`[data-block-id="${wtgResizeBlockId}"]`);
+    if (el) {
+      if (wtgResizeEdge === 'bottom') {
+        const newH = Math.max(15 / 60 * PX_PER_HOUR_WEEK, wtgResizeStartDur / 60 * PX_PER_HOUR_WEEK + delta);
+        const newDur = Math.max(15, Math.round(newH / PX_PER_HOUR_WEEK * 60 / 15) * 15);
+        el.style.height = newDur / 60 * PX_PER_HOUR_WEEK + 'px';
+        el.querySelector('.cal-wtg-block-title').textContent = `${fmt12(wtgYToTime(wtgResizeStartTop, state.daySettings.startHour))} – ${fmt12(wtgYToTime(wtgResizeStartTop + newDur / 60 * PX_PER_HOUR_WEEK, state.daySettings.startHour))} · ${fmtMins(newDur)}`;
+      } else {
+        const newTopPx  = wtgResizeStartTop + delta;
+        const newH      = Math.max(15 / 60 * PX_PER_HOUR_WEEK, (wtgResizeStartDur / 60 * PX_PER_HOUR_WEEK) - delta);
+        const newDur    = Math.max(15, Math.round(newH / PX_PER_HOUR_WEEK * 60 / 15) * 15);
+        const newStartY = Math.max(0, wtgResizeStartTop + (wtgResizeStartDur - newDur) / 60 * PX_PER_HOUR_WEEK);
+        el.style.top    = newStartY + 'px';
+        el.style.height = newDur / 60 * PX_PER_HOUR_WEEK + 'px';
+        el.querySelector('.cal-wtg-block-title').textContent = `${fmt12(wtgYToTime(newStartY, state.daySettings.startHour))} – ${fmt12(wtgYToTime(newStartY + newDur / 60 * PX_PER_HOUR_WEEK, state.daySettings.startHour))} · ${fmtMins(newDur)}`;
+      }
+    }
+  }
 });
 
 document.addEventListener('mouseup', e => {
   if (calResizeBlockId) {
     const delta = e.clientY - calResizeStartY;
     const deltaMins = Math.round(delta / PX_PER_HOUR * 60 / 15) * 15;
-    const newDur = Math.max(60, calResizeStartDur + deltaMins);
+    const newDur = Math.max(15, calResizeStartDur + deltaMins);
     const bid = calResizeBlockId;
     calResizeBlockId = null; calResizeStartY = null; calResizeStartDur = null;
     if (deltaMins !== 0) calDayResizeBlock(bid, newDur);
+  }
+  if (wtgResizeBlockId) {
+    const delta    = e.clientY - wtgResizeStartY;
+    const snap     = Math.round(delta / PX_PER_HOUR_WEEK * 60 / 15) * 15;
+    const bid      = wtgResizeBlockId;
+    const edge     = wtgResizeEdge;
+    const origDur  = wtgResizeStartDur;
+    const origTopY = wtgResizeStartTop;
+    const date     = wtgResizeDate;
+    wtgResizeBlockId = null; wtgResizeStartY = null; wtgResizeStartDur = null;
+    wtgResizeEdge = null; wtgResizeStartTop = null; wtgResizeDate = null;
+    if (snap !== 0) {
+      if (edge === 'bottom') {
+        const newDur = Math.max(15, origDur + snap);
+        calWtgResizeBlock(bid, date, null, newDur);
+      } else {
+        const newDur     = Math.max(15, origDur - snap);
+        const newStartY  = Math.max(0, origTopY + (origDur - newDur) / 60 * PX_PER_HOUR_WEEK);
+        const newStart   = wtgYToTime(wtgSnapY(newStartY, state.daySettings.startHour, state.daySettings.endHour), state.daySettings.startHour);
+        calWtgResizeBlock(bid, date, newStart, newDur);
+      }
+    } else {
+      renderCalendarWeekGrid();
+    }
   }
   if (calMoveBlockId) {
     const bid = calMoveBlockId; const moved = calMoveMoved;
@@ -6430,6 +6517,26 @@ function calDayResizeStart(e, blockId, dur) {
   e.preventDefault(); e.stopPropagation();
   closeSlotPicker();
   calResizeBlockId = blockId; calResizeStartY = e.clientY; calResizeStartDur = dur;
+}
+
+// ── Block CRUD helpers ────────────────────────────────────────────────────────
+
+function findBlock(blockId) {
+  return state.timeBlocks.find(b => b.id === blockId)
+    || Object.values(state.weekBlocks).flat().find(b => b.id === blockId)
+    || null;
+}
+
+function removeBlockLocal(blockId) {
+  state.timeBlocks = state.timeBlocks.filter(b => b.id !== blockId);
+  Object.keys(state.weekBlocks).forEach(d => {
+    state.weekBlocks[d] = (state.weekBlocks[d] || []).filter(b => b.id !== blockId);
+  });
+}
+
+function renderCurrentCal() {
+  if (state.calMode === 'day') renderCalendarDay();
+  else if (state.calMode === 'week' && state.calWeekGridMode) renderCalendarWeekGrid();
 }
 
 // Block CRUD
@@ -6484,14 +6591,14 @@ async function calDayResizeBlock(blockId, durMins) {
   } catch(err) { toast(err.message); renderCalendarDay(); }
 }
 async function calDayDeleteBlock(blockId) {
-  const b = state.timeBlocks.find(x => x.id === blockId);
+  const b = findBlock(blockId);
   await api('DELETE', `/api/time-blocks/${blockId}`);
-  state.timeBlocks = state.timeBlocks.filter(x => x.id !== blockId);
+  removeBlockLocal(blockId);
   if (b) {
     const task = state.tasks.find(t => t.id === b.task_id);
     if (task) task.scheduled_minutes = Math.max(0, (task.scheduled_minutes || 0) - b.duration_minutes);
   }
-  closeBlockEdit(); renderCalendarDay(); toast('Block deleted');
+  closeBlockEdit(); renderCurrentCal(); toast('Block deleted');
 }
 async function autoUpdateEstimate(taskId, newScheduledMins) {
   const task = state.tasks.find(t => t.id === taskId);
@@ -6525,30 +6632,45 @@ async function autoUpdateEstimate(taskId, newScheduledMins) {
   }
 }
 async function calDayLogBlock(blockId) {
-  const b = state.timeBlocks.find(x => x.id === blockId);
+  const b = findBlock(blockId);
   if (!b) return;
   if (!confirm(`Log ${fmtMins(b.duration_minutes)} to "${b.task_title}"?`)) return;
   try {
     await api('POST', `/api/time-blocks/${blockId}/log`);
-    state.timeBlocks = state.timeBlocks.map(x => x.id === blockId ? {...x, logged: 1} : x);
+    const upd = x => x.id === blockId ? {...x, logged: 1} : x;
+    state.timeBlocks = state.timeBlocks.map(upd);
+    Object.keys(state.weekBlocks).forEach(d => { state.weekBlocks[d] = (state.weekBlocks[d] || []).map(upd); });
     const task = state.tasks.find(t => t.id === b.task_id);
     if (task) task.actual_minutes = (task.actual_minutes || 0) + b.duration_minutes;
-    renderCalendarDay(); renderTaskList();
+    renderCurrentCal(); renderTaskList();
     toast(`Logged ${fmtMins(b.duration_minutes)} to "${b.task_title}"`);
   } catch(err) { toast(err.message); }
 }
 
 // Block edit modal
 let blockEditId = null;
+function blockEditUpdateEnd() {
+  const start = document.getElementById('block-edit-start').value;
+  const dur   = parseInt(document.getElementById('block-edit-duration').value) || 0;
+  if (!start || !dur) return;
+  const [h, m] = start.split(':').map(Number);
+  const endMins = h * 60 + m + dur;
+  const eh = Math.floor(endMins / 60) % 24, em = endMins % 60;
+  document.getElementById('block-edit-end').value = `${String(eh).padStart(2,'0')}:${String(em).padStart(2,'0')}`;
+}
 function openBlockEdit(blockId) {
-  const b = state.timeBlocks.find(x => x.id === blockId);
+  const b = findBlock(blockId);
   if (!b) return;
   blockEditId = blockId;
   document.getElementById('block-edit-title').textContent = b.task_title;
   document.getElementById('block-edit-date').value     = b.date;
   document.getElementById('block-edit-start').value    = b.start_time;
   document.getElementById('block-edit-duration').value = b.duration_minutes;
+  blockEditUpdateEnd();
   document.getElementById('block-edit-delete-btn').onclick = () => calDayDeleteBlock(blockId);
+  const openBtn = document.getElementById('block-edit-open-task-btn');
+  openBtn.style.display = '';
+  openBtn.onclick = () => { closeBlockEdit(); openDetail(b.task_id); };
   document.getElementById('block-edit-modal').classList.add('open');
 }
 function closeBlockEdit() { document.getElementById('block-edit-modal').classList.remove('open'); blockEditId = null; }
@@ -6633,19 +6755,22 @@ document.getElementById('quick-block-modal').addEventListener('click', e => { if
 document.getElementById('quick-block-duration').addEventListener('keydown', e => { if (e.key === 'Enter') confirmQuickBlock(); });
 
 async function saveBlockEdit() {
-  const date     = document.getElementById('block-edit-date').value;
-  const start    = document.getElementById('block-edit-start').value;
-  const dur      = parseInt(document.getElementById('block-edit-duration').value);
+  const date  = document.getElementById('block-edit-date').value;
+  const start = document.getElementById('block-edit-start').value;
+  const dur   = parseInt(document.getElementById('block-edit-duration').value);
   if (!date || !start || !dur) { toast('Fill all fields'); return; }
   try {
     const updated = await api('PATCH', `/api/time-blocks/${blockEditId}`, { date, start_time: start, duration_minutes: dur });
-    if (updated.date !== state.calDayStr) {
-      state.timeBlocks = state.timeBlocks.filter(b => b.id !== blockEditId);
-    } else {
-      state.timeBlocks = state.timeBlocks.map(b => b.id === blockEditId ? updated : b);
+    removeBlockLocal(blockEditId);
+    if (updated.date === state.calDayStr) {
+      state.timeBlocks.push(updated);
       state.timeBlocks.sort((a,b) => a.start_time.localeCompare(b.start_time));
+    } else if (state.weekBlocks[updated.date] !== undefined || state.calMode === 'week') {
+      state.weekBlocks[updated.date] = state.weekBlocks[updated.date] || [];
+      state.weekBlocks[updated.date].push(updated);
+      state.weekBlocks[updated.date].sort((a,b) => a.start_time.localeCompare(b.start_time));
     }
-    closeBlockEdit(); renderCalendarDay(); toast('Block updated');
+    closeBlockEdit(); renderCurrentCal(); toast('Block updated');
   } catch(err) { toast(err.message); }
 }
 
@@ -6831,6 +6956,7 @@ function renderCalendarWeekGrid() {
 
 
     // Task blocks
+    const nowMs = Date.now();
     let blocksHtml = '';
     (state.weekBlocks[ds] || []).forEach(b => {
       const isComplete = b.task_status === 'complete';
@@ -6842,12 +6968,21 @@ function renderCalendarWeekGrid() {
       const overtime = !isComplete && task && isOverTime(task);
       const otDot = overtime ? `<span style="display:inline-block;width:8px;height:8px;background:#ef4444;border-radius:50%;flex-shrink:0;" title="Over time"></span>` : '';
       const completedCls = isComplete ? ' completed-block' : '';
+      const [bh, bm] = b.start_time.split(':').map(Number);
+      const blockEndMs = new Date(`${ds}T${b.start_time}`).getTime() + b.duration_minutes * 60000;
+      const isPast = blockEndMs < nowMs;
+      const logBtn = !b.logged && isPast && !isComplete
+        ? `<button class="cal-wtg-block-log" onclick="event.stopPropagation();calDayLogBlock(${b.id})" title="Log ${fmtMins(b.duration_minutes)}">⏱</button>`
+        : (b.logged ? `<span style="position:absolute;bottom:1px;right:2px;font-size:7px;color:rgba(255,255,255,.6);">✓</span>` : '');
       blocksHtml += `<div class="cal-wtg-block${completedCls}" draggable="true"
         data-block-id="${b.id}" style="top:${y}px;height:${h}px;background:${col};"
         ondragstart="wtgBlockDragStart(event,${b.id})"
-        onclick="setCalMode('day');state.calDayStr='${ds}';loadTimeBlocks('${ds}').then(()=>renderCalendarDay());"
+        onclick="event.stopPropagation();openDetail(${b.task_id})"
         title="${esc(b.task_title)} · ${fmt12(b.start_time)} · ${fmtMins(b.duration_minutes)}${overtime?' · Over time':''}">
+        <div class="cal-wtg-resize-t" onmousedown="event.stopPropagation();wtgResizeStart(event,${b.id},'top','${ds}',${b.duration_minutes},${y})"></div>
         <div class="cal-wtg-block-title" style="display:flex;align-items:center;gap:2px;">${esc(b.task_title)}${otDot}</div>
+        ${logBtn}
+        <div class="cal-wtg-resize-b" onmousedown="event.stopPropagation();wtgResizeStart(event,${b.id},'bottom','${ds}',${b.duration_minutes},${y})"></div>
       </div>`;
     });
 
@@ -6921,8 +7056,9 @@ function wtgDragOver(e, date) {
   if (!calDragTaskId && !calDragBlockId) return;
   e.preventDefault();
   const { startHour, endHour } = state.daySettings;
+  const hdrH  = e.currentTarget.querySelector('.cal-wtg-col-hdr')?.offsetHeight || WTG_HDR_H;
   const rawY  = wtgColY(e);
-  const y     = wtgSnapY(rawY - WTG_HDR_H, startHour, endHour);
+  const y     = wtgSnapY(rawY - hdrH, startHour, endHour);
   const time  = wtgYToTime(y, startHour);
   const task  = state.tasks.find(t => t.id === calDragTaskId);
   const dur   = calDragType === 'block'
@@ -6939,7 +7075,7 @@ function wtgDragOver(e, date) {
   const endTime   = `${String(Math.floor(endMins/60)).padStart(2,'0')}:${String(endMins%60).padStart(2,'0')}`;
   const ind = document.getElementById(`wtg-ind-${date}`);
   if (ind) {
-    ind.style.top     = y + WTG_HDR_H + 'px';
+    ind.style.top     = y + hdrH + 'px';
     ind.style.height  = Math.max(dur / 60 * PX_PER_HOUR_WEEK, 8) + 'px';
     ind.style.display = 'block';
     ind.style.borderColor = busy ? '#ef4444' : '#3b82f6';
@@ -6961,8 +7097,9 @@ async function wtgDrop(e, date) {
   const ind = document.getElementById(`wtg-ind-${date}`);
   if (ind) { ind.style.display = 'none'; ind.innerHTML = ''; }
   const { startHour, endHour } = state.daySettings;
+  const hdrH = e.currentTarget.querySelector('.cal-wtg-col-hdr')?.offsetHeight || WTG_HDR_H;
   const rawY = wtgColY(e);
-  const y    = wtgSnapY(rawY - WTG_HDR_H, startHour, endHour);
+  const y    = wtgSnapY(rawY - hdrH, startHour, endHour);
   const time = wtgYToTime(y, startHour);
   if (calDragType === 'task' && calDragTaskId) {
     await calDropInstant(calDragTaskId, date, time);
@@ -6992,12 +7129,43 @@ function wtgBlockDragStart(e, blockId) {
   e.stopPropagation();
 }
 
+function wtgResizeStart(e, blockId, edge, date, dur, topPx) {
+  e.preventDefault();
+  wtgResizeBlockId  = blockId;
+  wtgResizeStartY   = e.clientY;
+  wtgResizeStartDur = dur;
+  wtgResizeEdge     = edge;
+  wtgResizeDate     = date;
+  wtgResizeStartTop = topPx;
+}
+
+async function calWtgResizeBlock(blockId, date, newStartTime, newDur) {
+  try {
+    const oldBlock = findBlock(blockId);
+    const oldDur   = oldBlock?.duration_minutes || 0;
+    const payload  = { duration_minutes: newDur };
+    if (newStartTime) payload.start_time = newStartTime;
+    const updated = await api('PATCH', `/api/time-blocks/${blockId}`, payload);
+    removeBlockLocal(blockId);
+    state.weekBlocks[updated.date] = state.weekBlocks[updated.date] || [];
+    state.weekBlocks[updated.date].push(updated);
+    state.weekBlocks[updated.date].sort((a,b) => a.start_time.localeCompare(b.start_time));
+    const task = state.tasks.find(t => t.id === updated.task_id);
+    if (task) {
+      task.scheduled_minutes = Math.max(0, (task.scheduled_minutes || 0) - oldDur + newDur);
+      await autoUpdateEstimate(updated.task_id, task.scheduled_minutes);
+    }
+    renderCalendarWeekGrid();
+  } catch(err) { toast(err.message); renderCalendarWeekGrid(); }
+}
+
 // Day settings modal
 async function openDaySettings() {
   document.getElementById('day-cap-input').value   = state.daySettings.capacityMinutes / 60;
   document.getElementById('day-start-input').value = state.daySettings.startHour;
   document.getElementById('day-end-input').value   = state.daySettings.endHour;
   document.getElementById('show-completed-toggle').checked = calShowCompleted;
+  document.getElementById('week-start-select').value = weekStartDay;
   document.getElementById('day-settings-modal').classList.add('open');
   setTimeout(() => document.getElementById('day-cap-input').focus(), 50);
   // GCal section

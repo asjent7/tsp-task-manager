@@ -1289,7 +1289,7 @@ app.get('/api/settings', (req, res) => {
 });
 
 app.patch('/api/settings', (req, res) => {
-  const allowed = ['daily_capacity_minutes','day_start_hour','day_end_hour','gcal_task_calendar_id','user_timezone','gcal_theme_mappings'];
+  const allowed = ['daily_capacity_minutes','day_start_hour','day_end_hour','gcal_task_calendar_id','user_timezone','gcal_theme_mappings','week_start_day'];
   const stmt = db.prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?,?)');
   Object.entries(req.body).filter(([k]) => allowed.includes(k)).forEach(([k,v]) => stmt.run(k, String(v)));
   const s = {};
