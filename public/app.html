@@ -2219,7 +2219,18 @@ async function loadAll() {
   }
   state.userTimezone = settings.user_timezone || 'America/New_York';
   try {
-    state.gcalThemeMappings = settings.gcal_theme_mappings ? JSON.parse(settings.gcal_theme_mappings) : {};
+    const parsed = settings.gcal_theme_mappings ? JSON.parse(settings.gcal_theme_mappings) : null;
+    state.gcalThemeMappings = (parsed && Object.keys(parsed).length) ? parsed : {
+      "Systems":           "systems",
+      "Operations":        "ops",
+      "Finance":           "ops",
+      "Sales & Marketing": "sales",
+      "S&M":               "sales",
+      "Client Work":       "sales",
+      "Client Services":   "sales",
+      "Client Svs":        "sales",
+      "Personal Projects": "personal"
+    };
   } catch(e) { state.gcalThemeMappings = {}; }
   state.googleCalConnected   = googleStatus.connected;
   state.googleCalConnectedAt = googleStatus.connected_at;
@@ -6508,6 +6519,50 @@ function getThemeMapping(title) {
   return null;
 }
 
+function checkMyCalendar() {
+  const allEvts = Object.values(state.googleWeekEvents || {}).flat();
+  if (!allEvts.length) { toast('No Google Calendar events found for this week.'); return; }
+  const rows = allEvts
+    .filter(e => !e.all_day && e.start && e.start.length > 10)
+    .sort((a, b) => new Date(a.start) - new Date(b.start))
+    .map(evt => {
+      const mapping = getThemeMapping(evt.title);
+      const label = mapping
+        ? `<span style="background:#dcfce7;color:#166534;border:1px solid #86efac;border-radius:3px;padding:1px 6px;font-size:11px;">${esc(mapping.category)}</span>`
+        : `<span style="background:#f1f5f9;color:#64748b;border:1px solid #cbd5e1;border-radius:3px;padding:1px 6px;font-size:11px;">busy – not a zone</span>`;
+      const d = new Date(evt.start);
+      const day = d.toLocaleDateString('en-US', {weekday:'short', month:'numeric', day:'numeric'});
+      const startT = fmt12(`${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`);
+      const isFree = evt.transparency === 'transparent';
+      return `<tr style="border-bottom:1px solid #f1f5f9;">
+        <td style="padding:6px 8px;font-size:12px;white-space:nowrap;color:#475569;">${day}</td>
+        <td style="padding:6px 8px;font-size:12px;white-space:nowrap;color:#475569;">${startT}</td>
+        <td style="padding:6px 8px;font-size:13px;color:#0f172a;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${esc(evt.title)}">${esc(evt.title)}${isFree?' <span style="color:#94a3b8;font-size:10px;">(free)</span>':''}</td>
+        <td style="padding:6px 8px;">${label}</td>
+      </tr>`;
+    }).join('');
+  const m = document.createElement('div');
+  m.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:10000;display:flex;align-items:center;justify-content:center;';
+  m.innerHTML = `<div style="background:#fff;border-radius:10px;padding:24px;max-width:600px;width:90%;max-height:80vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,.3);">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
+      <span style="font-size:15px;font-weight:700;">This week's calendar events</span>
+      <button onclick="this.closest('[style*=fixed]').remove()" style="background:none;border:none;font-size:18px;cursor:pointer;color:#64748b;">×</button>
+    </div>
+    <table style="width:100%;border-collapse:collapse;">
+      <thead><tr style="border-bottom:2px solid #e2e8f0;">
+        <th style="padding:4px 8px;font-size:11px;text-align:left;color:#64748b;font-weight:600;">Day</th>
+        <th style="padding:4px 8px;font-size:11px;text-align:left;color:#64748b;font-weight:600;">Time</th>
+        <th style="padding:4px 8px;font-size:11px;text-align:left;color:#64748b;font-weight:600;">Event</th>
+        <th style="padding:4px 8px;font-size:11px;text-align:left;color:#64748b;font-weight:600;">Zone</th>
+      </tr></thead>
+      <tbody>${rows || '<tr><td colspan="4" style="padding:16px;text-align:center;color:#94a3b8;">No timed events this week</td></tr>'}</tbody>
+    </table>
+    <div style="margin-top:12px;font-size:11px;color:#94a3b8;">Green = matched zone; grey = busy, not a zone. Edit keywords in Settings → Calendar.</div>
+  </div>`;
+  m.addEventListener('click', e => { if (e.target === m) m.remove(); });
+  document.body.appendChild(m);
+}
+
 function gcalAnalyzeConflict(date, startTimeStr, durationMins, eventsOverride) {
   const events = eventsOverride ?? state.googleEvents;
   const none = { busyEvt: null, themeEvt: null, mapping: null };
@@ -6696,7 +6751,7 @@ function renderCalendarDay() {
     const gcalLogged = state.gcalEventLogs[evt.id];
     const gcalLoggedBadge = gcalLogged ? `<div class="gcal-logged-badge">✓ ${fmtMins(gcalLogged)} logged</div>` : '';
     const gcalLogBtnHtml = !isFree ? `<button class="gcal-log-btn" onclick="event.stopPropagation();openGcalLogModal('${evt.id}')">⏱ Log time</button>` : '';
-    gcalBlocksHtml += `<div class="cal-gcal-block${isFree ? ' free' : ''}${gcalLogged ? ' gcal-has-log' : ''}" style="top:${y}px;height:${h}px;position:relative;"
+    gcalBlocksHtml += `<div class="cal-gcal-block${isFree ? ' free' : ''}${gcalLogged ? ' gcal-has-log' : ''}" style="top:${y}px;height:${h}px;"
       title="${esc(evt.title)} · ${fmt12(startLocal)}${endLocal ? ' – ' + fmt12(endLocal) : ''}${isFree ? ' (free)' : ''}"
       onclick="event.stopPropagation();openGcalPopover('${evt.id}',event)">
       <div class="cal-gcal-block-title"><span class="gcal-g-badge">G</span>${esc(evt.title)}</div>
@@ -7056,7 +7111,7 @@ async function calDayDrop(e) {
     const block = state.timeBlocks.find(b => b.id === calDragBlockId);
     const dur = block?.duration_minutes || 60;
     const { busyEvt: dropBusy } = gcalAnalyzeConflict(state.calDayStr, time, dur);
-    if (dropBusy && !confirm(`"${dropBusy.title}" is on your Google Calendar at that time. Schedule anyway?`)) {
+    if (dropBusy && !confirm(`Overlaps "${dropBusy.title}". Place anyway?`)) {
       renderCalendarDay();
     } else {
       await calDayMoveBlock(calDragBlockId, state.calDayStr, time);
@@ -7172,7 +7227,7 @@ document.addEventListener('mouseup', e => {
       const block   = state.timeBlocks.find(b => b.id === bid);
       const dur     = block?.duration_minutes || 60;
       const { busyEvt: moveBusy } = gcalAnalyzeConflict(state.calDayStr, newTime, dur);
-      if (moveBusy && !confirm(`"${moveBusy.title}" is on your Google Calendar at that time. Schedule anyway?`)) {
+      if (moveBusy && !confirm(`Overlaps "${moveBusy.title}". Place anyway?`)) {
         renderCalendarDay();
       } else {
         calDayMoveBlock(bid, state.calDayStr, newTime).then(() => refreshGoogleEventsDay(state.calDayStr));
@@ -7381,7 +7436,7 @@ async function calDropInstant(taskId, date, time) {
   const dayEvts = date === state.calDayStr ? undefined : (state.googleWeekEvents[date] || []);
   const { busyEvt, themeEvt, mapping } = gcalAnalyzeConflict(date, time, dur, dayEvts);
   if (busyEvt) {
-    if (!confirm(`"${busyEvt.title}" is on your Google Calendar at that time. Schedule anyway?`)) return;
+    if (!confirm(`Overlaps "${busyEvt.title}". Place anyway?`)) return;
   } else if (themeEvt) {
     const taskCat = task?.category;
     if (taskCat && mapping && taskCat !== mapping.category) {
@@ -7405,7 +7460,7 @@ async function confirmQuickBlock() {
   // Check Google Calendar conflict
   const { busyEvt: qBusy, themeEvt: qTheme, mapping: qMap } = gcalAnalyzeConflict(date, time, dur);
   if (qBusy) {
-    if (!confirm(`"${qBusy.title}" is on your Google Calendar at that time. Schedule anyway?`)) return;
+    if (!confirm(`Overlaps "${qBusy.title}". Place anyway?`)) return;
   } else if (qTheme) {
     const task = state.tasks.find(t => t.id === taskId);
     const taskCat = task?.category;
@@ -7670,7 +7725,7 @@ function renderCalendarWeekGrid() {
       const isFree = evt.transparency === 'transparent';
       const wkGcalLogged = state.gcalEventLogs[evt.id];
       const wkLogBtn = !isFree ? `<button onclick="event.stopPropagation();openGcalLogModal('${evt.id}')" style="position:absolute;bottom:1px;right:2px;font-size:7px;background:rgba(66,133,244,.25);border:none;border-radius:2px;color:#1e40af;cursor:pointer;padding:1px 3px;opacity:0;transition:opacity .1s;" class="wk-gcal-log-btn">⏱</button>` : '';
-      gcalHtml += `<div class="cal-wtg-gcal${isFree?' free':''}" style="top:${y}px;height:${h}px;position:relative;" title="${esc(evt.title)}${isFree?' (free)':''}${wkGcalLogged?' · ✓ '+fmtMins(wkGcalLogged)+' logged':''}"
+      gcalHtml += `<div class="cal-wtg-gcal${isFree?' free':''}" style="top:${y}px;height:${h}px;" title="${esc(evt.title)}${isFree?' (free)':''}${wkGcalLogged?' · ✓ '+fmtMins(wkGcalLogged)+' logged':''}"
         onclick="event.stopPropagation();openGcalPopover('${evt.id}',event)"
         onmouseenter="this.querySelector('.wk-gcal-log-btn')&&(this.querySelector('.wk-gcal-log-btn').style.opacity='1')"
         onmouseleave="this.querySelector('.wk-gcal-log-btn')&&(this.querySelector('.wk-gcal-log-btn').style.opacity='0')">
@@ -7685,12 +7740,20 @@ function renderCalendarWeekGrid() {
       ? state.tasks.filter(t => isActiveTask(t) && t.status !== 'complete' && t.due_date && t.due_date < ds)
       : [];
     const wkAllDue = [...wkOverdueTasks, ...wkDueTasks];
-    const wkDueHtml = wkAllDue.length
-      ? `<div style="display:flex;flex-wrap:wrap;gap:2px;padding:2px 2px 3px;justify-content:center;">${wkAllDue.map(t => {
-          const isOvd = t.due_date < ds;
-          const PDOT = {urgent:'#ef4444',high:'#f97316',medium:'#eab308',low:'#94a3b8'};
-          return `<span onclick="openDetail(${t.id})" style="cursor:pointer;font-size:8px;background:${isOvd?'#fef2f2':'#f0fdf4'};border:1px solid ${isOvd?'#ef4444':'#86efac'};border-radius:3px;padding:0 3px;line-height:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:55px;display:inline-block;" title="${esc(t.title)}${isOvd?' (overdue)':' (due)'}"><span style="display:inline-block;width:5px;height:5px;border-radius:50%;background:${PDOT[t.priority]||'#94a3b8'};vertical-align:middle;margin-right:2px;"></span>${esc(t.title.length>5?t.title.slice(0,5)+'…':t.title)}</span>`;
-        }).join('')}</div>` : '';
+    const WK_CHIP_MAX = 3;
+    const wkDueHtml = wkAllDue.length ? (() => {
+      const PDOT = {urgent:'#ef4444',high:'#f97316',medium:'#eab308',low:'#94a3b8'};
+      const visible = wkAllDue.slice(0, WK_CHIP_MAX);
+      const extra   = wkAllDue.length - WK_CHIP_MAX;
+      const chips   = visible.map(t => {
+        const isOvd = t.due_date < ds;
+        return `<span onclick="openDetail(${t.id})" style="cursor:pointer;font-size:8px;background:${isOvd?'#fef2f2':'#f0fdf4'};border:1px solid ${isOvd?'#ef4444':'#86efac'};border-radius:3px;padding:0 3px;line-height:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:55px;display:inline-block;" title="${esc(t.title)}${isOvd?' (overdue)':' (due)'}"><span style="display:inline-block;width:5px;height:5px;border-radius:50%;background:${PDOT[t.priority]||'#94a3b8'};vertical-align:middle;margin-right:2px;"></span>${esc(t.title.length>5?t.title.slice(0,5)+'…':t.title)}</span>`;
+      }).join('');
+      const moreBtn = extra > 0
+        ? `<span onclick="event.stopPropagation();wtgExpandChips(this,'${ds}')" style="cursor:pointer;font-size:8px;background:#f1f5f9;border:1px solid #cbd5e1;border-radius:3px;padding:0 3px;line-height:14px;display:inline-block;">+${extra}</span>`
+        : '';
+      return `<div style="display:flex;flex-wrap:wrap;gap:2px;padding:2px 2px 3px;justify-content:center;">${chips}${moreBtn}</div>`;
+    })() : '';
     colsHtml += `<div class="${colCls}" data-date="${ds}" ${drop} style="height:${totalPx}px;">
       <div class="cal-wtg-col-hdr">${d.toLocaleDateString('en-US',{weekday:'short'})} <span class="${isTday?'today-num':''}">${d.getDate()}</span>${wkDueHtml}</div>
       ${linesHtml}${nowHtml}${blocksHtml}${gcalHtml}
@@ -7713,6 +7776,7 @@ function renderCalendarWeekGrid() {
         <button class="btn btn-sm ${state.calMode==='month'?'btn-primary':'btn-ghost'}" onclick="setCalMode('month')">Month</button>
       </div>
       <button class="btn btn-ghost btn-sm" onclick="state.calWeekGridMode=!state.calWeekGridMode;renderCalendar();">${state.calWeekGridMode ? 'Tasks view' : 'Grid view'}</button>
+      ${state.googleCalConnected && state.calWeekGridMode ? `<button class="btn btn-ghost btn-sm" onclick="checkMyCalendar()">🗓 Check calendar</button>` : ''}
       <button class="btn btn-ghost btn-sm cal-panel-toggle-btn" onclick="toggleCalPanel()">${calPanelCollapsed ? 'Tasks ▶' : 'Tasks ◀'}</button>
     </div>
     <div class="cal-wtg-wrap">
@@ -7724,6 +7788,18 @@ function renderCalendarWeekGrid() {
     </div>`;
   document.getElementById('task-list').innerHTML = html;
   renderDayPanel();
+}
+
+function wtgExpandChips(btn, ds) {
+  const PDOT = {urgent:'#ef4444',high:'#f97316',medium:'#eab308',low:'#94a3b8'};
+  const todayStr = dateStr(new Date());
+  const allDue = [...state.tasks.filter(t => isActiveTask(t) && t.status !== 'complete' && t.due_date && t.due_date < ds && ds === todayStr),
+                  ...state.tasks.filter(t => isActiveTask(t) && t.status !== 'complete' && t.due_date === ds)];
+  const container = btn.parentElement;
+  container.innerHTML = allDue.map(t => {
+    const isOvd = t.due_date < ds;
+    return `<span onclick="openDetail(${t.id})" style="cursor:pointer;font-size:8px;background:${isOvd?'#fef2f2':'#f0fdf4'};border:1px solid ${isOvd?'#ef4444':'#86efac'};border-radius:3px;padding:0 3px;line-height:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:55px;display:inline-block;" title="${esc(t.title)}${isOvd?' (overdue)':' (due)'}"><span style="display:inline-block;width:5px;height:5px;border-radius:50%;background:${PDOT[t.priority]||'#94a3b8'};vertical-align:middle;margin-right:2px;"></span>${esc(t.title.length>5?t.title.slice(0,5)+'…':t.title)}</span>`;
+  }).join('');
 }
 
 // Week grid drag handlers
@@ -8121,12 +8197,15 @@ function renderSettings() {
         </div>` : ''}
         <div class="settings-row">
           <div class="settings-row-info">
-            <div class="settings-row-label">Google Event Theme Mappings</div>
-            <div class="settings-row-desc">JSON map of Google Calendar event title keywords → task categories. When dropping a task onto a matching event, no conflict error is shown.<br>Example: <code>{"SALES":  "sales", "ACCT": "accounting"}</code></div>
+            <div class="settings-row-label">Calendar Zone Keywords</div>
+            <div class="settings-row-desc">JSON map of Google Calendar event title keywords → task categories. Case-insensitive contains match; order matters (first match wins). Dropping a task onto a matched event skips the conflict warning. "Check calendar" in Week view shows which zone each event falls into.<br>Example: <code>{"Deep Work": "systems", "Finance": "ops"}</code></div>
           </div>
           <div style="flex-shrink:0;min-width:220px;">
-            <textarea id="theme-mapping-input" rows="4" style="width:100%;font-size:11px;padding:4px 6px;border:1px solid var(--border);border-radius:6px;background:var(--bg);color:var(--text);font-family:monospace;resize:vertical;">${themeMappingVal}</textarea>
-            <button class="btn btn-ghost btn-sm" style="margin-top:4px;" onclick="saveThemeMappings()">Save Mappings</button>
+            <textarea id="theme-mapping-input" rows="6" style="width:100%;font-size:11px;padding:4px 6px;border:1px solid var(--border);border-radius:6px;background:var(--bg);color:var(--text);font-family:monospace;resize:vertical;">${themeMappingVal}</textarea>
+            <div style="display:flex;gap:6px;margin-top:4px;">
+              <button class="btn btn-ghost btn-sm" onclick="saveThemeMappings()">Save</button>
+              <button class="btn btn-ghost btn-sm" onclick="resetThemeMappings()">Reset to defaults</button>
+            </div>
           </div>
         </div>
         <div class="settings-row">
@@ -8677,10 +8756,29 @@ async function saveThemeMappings() {
     const parsed = JSON.parse(raw);
     await api('PATCH', '/api/settings', { gcal_theme_mappings: JSON.stringify(parsed) });
     state.gcalThemeMappings = parsed;
-    toast('Theme mappings saved');
+    toast('Zone keywords saved');
   } catch(e) {
     toast('Invalid JSON: ' + e.message);
   }
+}
+
+async function resetThemeMappings() {
+  const defaults = {
+    "Systems":           "systems",
+    "Operations":        "ops",
+    "Finance":           "ops",
+    "Sales & Marketing": "sales",
+    "S&M":               "sales",
+    "Client Work":       "sales",
+    "Client Services":   "sales",
+    "Client Svs":        "sales",
+    "Personal Projects": "personal"
+  };
+  const el = document.getElementById('theme-mapping-input');
+  if (el) el.value = JSON.stringify(defaults, null, 2);
+  await api('PATCH', '/api/settings', { gcal_theme_mappings: JSON.stringify(defaults) });
+  state.gcalThemeMappings = defaults;
+  toast('Zone keywords reset to defaults');
 }
 
 // ── Gmail capture ─────────────────────────────────────────────────────────────
