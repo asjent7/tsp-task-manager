@@ -345,7 +345,8 @@ if (!db.prepare("SELECT value FROM settings WHERE key='weekly_sprint_v1'").get()
 
 // Default settings
 [['daily_capacity_minutes','480'],['day_start_hour','5'],['day_end_hour','21'],
- ['gmail_capture_enabled','0']]
+ ['gmail_capture_enabled','0'],
+ ['category_capacity_hours','{"sales-marketing":7.5,"operations":10,"systems":10,"client-services":12.5,"personal":5}']]
   .forEach(([k,v]) => db.prepare('INSERT OR IGNORE INTO settings (key,value) VALUES (?,?)').run(k,v));
 
 // Editable categories
@@ -356,18 +357,115 @@ db.exec(`CREATE TABLE IF NOT EXISTS categories (
   color      TEXT NOT NULL DEFAULT '#6366f1',
   sort_order INTEGER NOT NULL DEFAULT 0
 )`);
-[
-  ['admin',      'Admin',              '🗂',  '#6366f1', 1],
-  ['ops',        'Ops',                '⚙️', '#0ea5e9', 2],
-  ['accounting', 'Accounting',         '💰', '#10b981', 3],
-  ['marketing',  'Marketing',          '📣', '#ec4899', 4],
-  ['sales',      'Sales',              '💼', '#14b8a6', 5],
-  ['pm',         'Project Management', '📐', '#8b5cf6', 6],
-  ['hr',         'HR',                 '👥', '#f59e0b', 7],
-  ['personal',   'Personal',           '🏠', '#ef4444', 8],
-].forEach(([slug,name,icon,color,sort_order]) => {
-  try { db.prepare('INSERT OR IGNORE INTO categories (slug,name,icon,color,sort_order) VALUES (?,?,?,?,?)').run(slug,name,icon,color,sort_order); } catch(e) {}
-});
+try { db.prepare('ALTER TABLE categories ADD COLUMN test_question TEXT').run(); } catch(e) {}
+// Only seed legacy categories if the v2 merge hasn't run yet
+if (!db.prepare("SELECT value FROM settings WHERE key='category_merge_v2'").get()) {
+  [
+    ['admin',      'Admin',              '🗂',  '#6366f1', 1],
+    ['ops',        'Ops',                '⚙️', '#0ea5e9', 2],
+    ['accounting', 'Accounting',         '💰', '#10b981', 3],
+    ['marketing',  'Marketing',          '📣', '#ec4899', 4],
+    ['sales',      'Sales',              '💼', '#14b8a6', 5],
+    ['pm',         'Project Management', '📐', '#8b5cf6', 6],
+    ['hr',         'HR',                 '👥', '#f59e0b', 7],
+    ['personal',   'Personal',           '🏠', '#ef4444', 8],
+  ].forEach(([slug,name,icon,color,sort_order]) => {
+    try { db.prepare('INSERT OR IGNORE INTO categories (slug,name,icon,color,sort_order) VALUES (?,?,?,?,?)').run(slug,name,icon,color,sort_order); } catch(e) {}
+  });
+}
+
+// ── Category merge v2 (idempotent, single transaction, persistent backup) ──────
+const CATEGORY_MERGE_MAP = {
+  'sales':      'sales-marketing',
+  'marketing':  'sales-marketing',
+  'admin':      'operations',
+  'ops':        'operations',
+  'accounting': 'operations',
+  'hr':         'operations',
+  'pm':         'client-services',
+  'personal':   'personal',
+};
+const NEW_CATEGORIES = [
+  ['sales-marketing', 'Sales & Marketing', '💼', '#14b8a6', 1, 'Will this bring in NEW business?'],
+  ['operations',      'Operations',        '⚙️', '#0ea5e9', 2, 'Is this RECURRING upkeep that keeps things running?'],
+  ['systems',         'Systems',           '🔧', '#8b5cf6', 3, 'Am I BUILDING or IMPROVING how the business works?'],
+  ['client-services', 'Client Services',   '🤝', '#f59e0b', 4, 'Is a SPECIFIC client or partner waiting on this?'],
+  ['personal',        'Personal',          '🏠', '#ef4444', 5, 'Is this for my life outside the business?'],
+];
+
+function runCategoryMergeV2() {
+  if (db.prepare("SELECT value FROM settings WHERE key='category_merge_v2'").get()) return;
+
+  // Write backup to persistent volume (same dir as DB)
+  const backupDir = path.join(path.dirname(DB_PATH), 'backups');
+  try { fs.mkdirSync(backupDir, { recursive: true }); } catch(e) {}
+  const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+  const backupPath = path.join(backupDir, `categories_backup_${timestamp}.json`);
+  const backup = {
+    timestamp,
+    categories: db.prepare('SELECT * FROM categories').all(),
+    task_categories: db.prepare('SELECT id, title, category FROM tasks WHERE category IS NOT NULL').all(),
+    template_task_categories: db.prepare('SELECT id, title, category FROM template_tasks WHERE category IS NOT NULL').all(),
+    category_block_categories: db.prepare('SELECT id, label, category FROM category_blocks WHERE category IS NOT NULL').all(),
+    project_link_categories: db.prepare('SELECT id, label, category FROM project_links WHERE category IS NOT NULL').all(),
+    note_categories: db.prepare('SELECT id, title, category FROM notes WHERE category IS NOT NULL').all(),
+  };
+  try { fs.writeFileSync(backupPath, JSON.stringify(backup, null, 2)); } catch(e) { console.error('[category_merge_v2] backup write failed:', e.message); }
+
+  // Count before
+  const beforeCounts = {};
+  db.prepare('SELECT category, COUNT(*) AS n FROM tasks WHERE category IS NOT NULL GROUP BY category').all()
+    .forEach(r => { beforeCounts[r.category] = r.n; });
+
+  try {
+    db.transaction(() => {
+      // Upsert new categories
+      for (const [slug,name,icon,color,sort_order,test_question] of NEW_CATEGORIES) {
+        db.prepare(`INSERT INTO categories (slug,name,icon,color,sort_order,test_question)
+          VALUES (?,?,?,?,?,?) ON CONFLICT(slug) DO UPDATE SET name=excluded.name,icon=excluded.icon,color=excluded.color,sort_order=excluded.sort_order,test_question=excluded.test_question`
+        ).run(slug, name, icon, color, sort_order, test_question);
+      }
+
+      // Remap all references
+      for (const [oldSlug, newSlug] of Object.entries(CATEGORY_MERGE_MAP)) {
+        if (oldSlug === newSlug) continue;
+        db.prepare('UPDATE tasks SET category=? WHERE category=?').run(newSlug, oldSlug);
+        db.prepare('UPDATE template_tasks SET category=? WHERE category=?').run(newSlug, oldSlug);
+        db.prepare('UPDATE category_blocks SET category=? WHERE category=?').run(newSlug, oldSlug);
+        db.prepare('UPDATE project_links SET category=? WHERE category=?').run(newSlug, oldSlug);
+        db.prepare('UPDATE notes SET category=? WHERE category=?').run(newSlug, oldSlug);
+      }
+
+      // Delete old categories that were fully merged away
+      const oldSlugs = Object.keys(CATEGORY_MERGE_MAP).filter(s => CATEGORY_MERGE_MAP[s] !== s && !NEW_CATEGORIES.find(nc => nc[0] === s));
+      for (const s of oldSlugs) {
+        db.prepare('DELETE FROM categories WHERE slug=?').run(s);
+      }
+
+      db.prepare("INSERT INTO settings (key,value) VALUES ('category_merge_v2','1')").run();
+    })();
+
+    // Count after and log
+    const afterCounts = {};
+    db.prepare('SELECT category, COUNT(*) AS n FROM tasks WHERE category IS NOT NULL GROUP BY category').all()
+      .forEach(r => { afterCounts[r.category] = r.n; });
+    console.log('[category_merge_v2] Before counts:', JSON.stringify(beforeCounts));
+    console.log('[category_merge_v2] After counts:', JSON.stringify(afterCounts));
+    console.log('[category_merge_v2] Backup written to:', backupPath);
+
+    // Log tasks whose category was NOT in the merge map (left unchanged, non-null)
+    const knownOld = new Set(Object.keys(CATEGORY_MERGE_MAP));
+    const knownNew = new Set(NEW_CATEGORIES.map(nc => nc[0]));
+    const allCats = db.prepare('SELECT DISTINCT category FROM tasks WHERE category IS NOT NULL').all().map(r => r.category);
+    const unmapped = allCats.filter(c => !knownOld.has(c) && !knownNew.has(c));
+    if (unmapped.length) console.log('[category_merge_v2] Unmapped categories left unchanged:', unmapped.join(', '));
+
+    console.log('[category_merge_v2] complete');
+  } catch(e) {
+    console.error('[category_merge_v2] FAILED, rolled back:', e.message);
+  }
+}
+runCategoryMergeV2();
 
 app.use(express.json());
 app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'public', 'app.html')));
@@ -890,10 +988,30 @@ app.patch('/api/categories/reorder', (req, res) => {
 app.put('/api/categories/:slug', (req, res) => {
   const cat = db.prepare('SELECT * FROM categories WHERE slug=?').get(req.params.slug);
   if (!cat) return res.status(404).json({ error: 'Category not found' });
-  const { name, icon, color } = req.body;
-  db.prepare('UPDATE categories SET name=?,icon=?,color=? WHERE slug=?')
-    .run(name?.trim() ?? cat.name, icon ?? cat.icon, color ?? cat.color, cat.slug);
+  const { name, icon, color, test_question } = req.body;
+  db.prepare('UPDATE categories SET name=?,icon=?,color=?,test_question=? WHERE slug=?')
+    .run(name?.trim() ?? cat.name, icon ?? cat.icon, color ?? cat.color,
+         test_question !== undefined ? (test_question || null) : cat.test_question, cat.slug);
   res.json(db.prepare('SELECT * FROM categories WHERE slug=?').get(cat.slug));
+});
+
+app.post('/api/categories/:slug/merge', (req, res) => {
+  const src = db.prepare('SELECT * FROM categories WHERE slug=?').get(req.params.slug);
+  if (!src) return res.status(404).json({ error: 'Source category not found' });
+  const { into } = req.body;
+  if (!into) return res.status(400).json({ error: 'into is required' });
+  const dst = db.prepare('SELECT * FROM categories WHERE slug=?').get(into);
+  if (!dst) return res.status(404).json({ error: 'Target category not found' });
+  if (src.slug === dst.slug) return res.status(400).json({ error: 'Cannot merge into itself' });
+  db.transaction(() => {
+    db.prepare('UPDATE tasks SET category=? WHERE category=?').run(dst.slug, src.slug);
+    db.prepare('UPDATE template_tasks SET category=? WHERE category=?').run(dst.slug, src.slug);
+    db.prepare('UPDATE category_blocks SET category=? WHERE category=?').run(dst.slug, src.slug);
+    db.prepare('UPDATE project_links SET category=? WHERE category=?').run(dst.slug, src.slug);
+    db.prepare('UPDATE notes SET category=? WHERE category=?').run(dst.slug, src.slug);
+    db.prepare('DELETE FROM categories WHERE slug=?').run(src.slug);
+  })();
+  res.json({ ok: true, merged_into: dst });
 });
 
 app.delete('/api/categories/:slug', (req, res) => {
@@ -1290,7 +1408,7 @@ app.get('/api/settings', (req, res) => {
 });
 
 app.patch('/api/settings', (req, res) => {
-  const allowed = ['daily_capacity_minutes','day_start_hour','day_end_hour','gcal_task_calendar_id','user_timezone','gcal_theme_mappings','week_start_day'];
+  const allowed = ['daily_capacity_minutes','day_start_hour','day_end_hour','gcal_task_calendar_id','user_timezone','gcal_theme_mappings','week_start_day','category_capacity_hours'];
   const stmt = db.prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?,?)');
   Object.entries(req.body).filter(([k]) => allowed.includes(k)).forEach(([k,v]) => stmt.run(k, String(v)));
   const s = {};
@@ -2235,6 +2353,29 @@ setInterval(async () => {
   if (enabled !== '1') return;
   await gmailCheckInbox();
 }, 2 * 60 * 1000);
+
+// ── Reports ───────────────────────────────────────────────────────────────────
+
+app.get('/api/reports/time-by-category', (req, res) => {
+  const { week } = req.query; // ISO week start date YYYY-MM-DD (Monday or Sunday)
+  let dateFilter = '';
+  const params = [];
+  if (week) {
+    dateFilter = 'AND tl.logged_at >= ? AND tl.logged_at < datetime(?, \'+7 days\')';
+    params.push(week, week);
+  }
+  const rows = db.prepare(`
+    SELECT t.category, SUM(tl.minutes) AS total_minutes
+    FROM time_logs tl
+    JOIN tasks t ON t.id = tl.task_id
+    WHERE t.category IS NOT NULL ${dateFilter}
+    GROUP BY t.category
+    ORDER BY total_minutes DESC
+  `).all(...params);
+  const cap = db.prepare("SELECT value FROM settings WHERE key='category_capacity_hours'").get()?.value;
+  const capacity = cap ? JSON.parse(cap) : {};
+  res.json({ rows, capacity });
+});
 
 // ── Start ─────────────────────────────────────────────────────────────────────
 
