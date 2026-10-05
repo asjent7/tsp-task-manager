@@ -957,6 +957,7 @@
         <option value="low">⚪ Low</option>
       </select>
       <input type="date" id="quick-due" title="Due date">
+      <select id="quick-project" title="Project"><option value="">No project</option></select>
       <button type="button" class="btn btn-primary" onclick="quickAdd()">Add</button>
       <button type="button" class="btn btn-ghost" onclick="openBulkImport('tasks')" style="font-size:13px;">Import / Paste tasks</button>
     </div>
@@ -1200,6 +1201,32 @@
     <div class="modal-btns">
       <button class="btn btn-ghost btn-sm" onclick="closeMergeProject()">Cancel</button>
       <button class="btn btn-danger btn-sm" onclick="confirmMergeProject()">Merge</button>
+    </div>
+  </div>
+</div>
+
+<!-- Quick New Project Modal (triggered from any project dropdown) -->
+<div class="overlay" id="new-proj-quick-modal">
+  <div class="modal" style="max-width:380px">
+    <h3>New Project</h3>
+    <input type="text" id="npq-name" placeholder="Project name" autocomplete="off">
+    <div id="npq-dup" style="display:none;font-size:12px;color:#ef4444;margin:-4px 0 8px;line-height:1.45;"></div>
+    <div class="field-row" style="margin:0 0 6px;gap:8px">
+      <div class="field" style="flex:1;margin:0">
+        <label style="font-size:11px">Type</label>
+        <select id="npq-type" onchange="npqTypeChange()">
+          <option value="professional">Professional</option>
+          <option value="personal">Personal</option>
+        </select>
+      </div>
+      <div class="field" style="flex:1;margin:0">
+        <label style="font-size:11px">Division</label>
+        <select id="npq-division"><option value="">No division</option></select>
+      </div>
+    </div>
+    <div class="modal-btns">
+      <button class="btn btn-ghost btn-sm" onclick="npqCancel()">Cancel</button>
+      <button class="btn btn-primary btn-sm" onclick="npqSave()">Create &amp; assign</button>
     </div>
   </div>
 </div>
@@ -4180,13 +4207,11 @@ function renderDashboard() {
 // ── Dashboard quick-task modal ──────────────────────────────────────────────
 
 function openDashboardQuickTask() {
-  // populate project select
-  const sel = document.getElementById('dbt-project');
-  sel.innerHTML = '<option value="">No project (inbox)</option>' +
-    state.projects.filter(isActiveProject).map(p => `<option value="${esc(p.name)}">${esc(p.name)}</option>`).join('');
+  populateProjectSelect();
   document.getElementById('dbt-title').value    = '';
   document.getElementById('dbt-priority').value = 'medium';
   document.getElementById('dbt-due').value      = '';
+  document.getElementById('dbt-project').value  = '';
   document.getElementById('db-quick-task-modal').classList.add('open');
   setTimeout(() => document.getElementById('dbt-title').focus(), 50);
 }
@@ -4619,9 +4644,13 @@ async function quickAdd() {
   if (!title) return;
   const priority = document.getElementById('quick-priority').value;
   const due_date = document.getElementById('quick-due').value || null;
+  const quickProj = document.getElementById('quick-project')?.value || null;
   const body = { title, priority, due_date };
-  if (state.view.startsWith('category:')) body.category = state.view.slice(9);
-  if (state.view.startsWith('project:')) {
+  if (quickProj) {
+    body.project = quickProj;
+  } else if (state.view.startsWith('category:')) {
+    body.category = state.view.slice(9);
+  } else if (state.view.startsWith('project:')) {
     const pid = state.view.slice(8);
     body.project = state.projects.find(p => p.id == pid)?.name;
   }
@@ -4641,11 +4670,106 @@ document.getElementById('search').addEventListener('input', applyFilters);
 // ── Detail Panel ──────────────────────────────────────────────────────────────
 
 function populateProjectSelect() {
-  const sel = document.getElementById('d-project');
-  const cur = sel.value;
-  sel.innerHTML = `<option value="">None</option>` +
-    state.projects.filter(isActiveProject).map(p => `<option value="${esc(p.name)}">${esc(p.name)}</option>`).join('');
-  sel.value = cur;
+  const activeProjs = state.projects.filter(isActiveProject);
+  const projOpts = activeProjs.map(p => `<option value="${esc(p.name)}">${esc(p.name)}</option>`).join('');
+  const newOpt   = `<option value="__new__">+ New project…</option>`;
+  [
+    ['d-project',    'None'],
+    ['dbt-project',  'No project (inbox)'],
+    ['quick-project','No project'],
+    ['bulk-proj-sel','No project (inbox)'],
+  ].forEach(([id, blank]) => {
+    const sel = document.getElementById(id);
+    if (!sel) return;
+    const cur = sel.value;
+    sel.innerHTML = `<option value="">${blank}</option>${projOpts}${newOpt}`;
+    if (cur && cur !== '__new__') sel.value = cur;
+  });
+}
+
+// ── Inline New Project (+ New project… in any dropdown) ──────────────────────
+
+let _npqSourceEl  = null; // the <select> that triggered it
+let _npqPrevVal   = '';
+let _npqOnSave    = null; // async function(proj) called after project created
+
+function openNewProjQuick(sourceEl, prevVal, onSave) {
+  _npqSourceEl = sourceEl;
+  _npqPrevVal  = prevVal;
+  _npqOnSave   = onSave;
+  document.getElementById('npq-name').value = '';
+  document.getElementById('npq-dup').style.display = 'none';
+  document.getElementById('npq-type').value = 'professional';
+  npqTypeChange();
+  document.getElementById('new-proj-quick-modal').classList.add('open');
+  setTimeout(() => document.getElementById('npq-name').focus(), 50);
+}
+
+function npqCancel() {
+  document.getElementById('new-proj-quick-modal').classList.remove('open');
+  if (_npqSourceEl) { _npqSourceEl.value = _npqPrevVal; _npqSourceEl = null; }
+}
+
+function npqTypeChange() {
+  const type = document.getElementById('npq-type').value;
+  const sel = document.getElementById('npq-division');
+  sel.innerHTML = '<option value="">No division</option>' +
+    state.divisions.filter(d => (d.type||'professional') === type)
+      .map(d => `<option value="${d.id}">${esc(d.name)}</option>`).join('');
+}
+
+async function npqSave() {
+  const name = document.getElementById('npq-name').value.trim();
+  if (!name) { document.getElementById('npq-name').focus(); return; }
+  const dupEl   = document.getElementById('npq-dup');
+  const dupProj = state.projects.find(p => p.name.toLowerCase() === name.toLowerCase());
+  if (dupProj) {
+    dupEl.innerHTML = `"${esc(dupProj.name)}" already exists. <a href="#" style="color:#3b82f6;" onclick="event.preventDefault();npqUseExisting(${dupProj.id})">Use existing</a>`;
+    dupEl.style.display = '';
+    return;
+  }
+  const type        = document.getElementById('npq-type').value;
+  const division_id = parseInt(document.getElementById('npq-division').value) || null;
+  try {
+    const proj = await api('POST', '/api/projects', { name, type, division_id });
+    state.projects.push(proj);
+    state.projects.sort((a,b) => a.name.localeCompare(b.name));
+    populateProjectSelect();
+    renderSidebar();
+    document.getElementById('new-proj-quick-modal').classList.remove('open');
+    toast(`Project "${name}" created`);
+    if (_npqOnSave) await _npqOnSave(proj);
+    _npqSourceEl = null; _npqOnSave = null;
+  } catch(e) {
+    if (e.message.includes('already exists') || e.message.includes('UNIQUE')) {
+      const existing = state.projects.find(p => p.name.toLowerCase() === name.toLowerCase());
+      if (existing) {
+        dupEl.innerHTML = `"${esc(existing.name)}" already exists. <a href="#" style="color:#3b82f6;" onclick="event.preventDefault();npqUseExisting(${existing.id})">Use existing</a>`;
+      } else {
+        dupEl.textContent = 'That project name is already taken.';
+      }
+      dupEl.style.display = '';
+    } else { toast(e.message); }
+  }
+}
+
+function npqUseExisting(projId) {
+  document.getElementById('new-proj-quick-modal').classList.remove('open');
+  const proj = state.projects.find(p => p.id === projId);
+  if (proj && _npqOnSave) { _npqOnSave(proj); }
+  _npqSourceEl = null; _npqOnSave = null;
+}
+
+// Wire up "change" handler for every project select — detects __new__ selection
+function wireNewProjOption(selId, onSaveFn) {
+  const sel = document.getElementById(selId);
+  if (!sel) return;
+  let _prev = '';
+  sel.addEventListener('focus', () => { if (sel.value !== '__new__') _prev = sel.value; });
+  sel.addEventListener('change', () => {
+    if (sel.value !== '__new__') return;
+    openNewProjQuick(sel, _prev, onSaveFn);
+  });
 }
 
 async function openDetail(id) {
@@ -4931,19 +5055,34 @@ function groupImportLines(flat) {
 let _bulkImportMode = 'tasks';     // 'tasks' | 'subtasks'
 let _bulkImportProjectId = null;   // null = inbox, or project name string
 
+let _bulkProjWired = false;
 function openBulkImport(mode, projectName) {
   _bulkImportMode = mode;
   _bulkImportProjectId = projectName || null;
   const modal = document.getElementById('bulk-import-modal');
+  if (!_bulkProjWired) {
+    _bulkProjWired = true;
+    wireNewProjOption('bulk-proj-sel', (proj) => {
+      const sel = document.getElementById('bulk-proj-sel');
+      if (sel) sel.value = proj.name;
+      _bulkImportProjectId = proj.name;
+    });
+  }
   const title = document.getElementById('bulk-import-title');
   const desc  = document.getElementById('bulk-import-desc');
   const ta    = document.getElementById('bulk-import-ta');
+  const projRow = document.getElementById('bulk-proj-sel')?.parentElement;
   if (mode === 'subtasks') {
     title.textContent = 'Import Subtasks';
     desc.textContent  = 'One subtask per line. Bullets, numbers, and checkboxes are stripped. Indented lines still become subtasks.';
+    if (projRow) projRow.style.display = 'none';
   } else {
-    title.textContent = 'Import Tasks' + (_bulkImportProjectId ? ` → ${_bulkImportProjectId}` : ' → Inbox');
+    title.textContent = 'Import Tasks';
     desc.textContent  = 'One task per line. Indent 2+ spaces to make a line a subtask of the task above. Bullets and numbers are stripped.';
+    if (projRow) projRow.style.display = '';
+    populateProjectSelect();
+    const bps = document.getElementById('bulk-proj-sel');
+    if (bps) bps.value = _bulkImportProjectId || '';
   }
   ta.value = '';
   document.getElementById('bulk-import-preview').textContent = '';
@@ -5006,11 +5145,12 @@ async function submitBulkImport() {
   // Task mode
   const grouped = groupImportLines(parseImportLines(text));
   if (!grouped.length) { closeBulkImport(); return; }
+  const bulkProjVal = document.getElementById('bulk-proj-sel')?.value || _bulkImportProjectId || null;
   closeBulkImport();
   const newTasks = [];
   for (const t of grouped) {
     const payload = { title: t.title, priority: 'medium', status: 'new' };
-    if (_bulkImportProjectId) payload.project = _bulkImportProjectId;
+    if (bulkProjVal) payload.project = bulkProjVal;
     const created = await api('POST', '/api/tasks', payload);
     state.tasks.push(created);
     newTasks.push(created);
@@ -7676,6 +7816,42 @@ document.addEventListener('click', e => {
 
 document.addEventListener('keydown', e => {
   if (e.key === 'Escape' && document.getElementById('bulk-import-modal').classList.contains('open')) closeBulkImport();
+  if (e.key === 'Escape' && document.getElementById('new-proj-quick-modal').classList.contains('open')) npqCancel();
+  if (e.key === 'Enter'  && document.getElementById('new-proj-quick-modal').classList.contains('open') && e.target.id === 'npq-name') { e.preventDefault(); npqSave(); }
+});
+document.getElementById('new-proj-quick-modal').addEventListener('click', e => { if (e.target === e.currentTarget) npqCancel(); });
+
+// Wire "+ New project…" detection for each project select
+wireNewProjOption('d-project', async (proj) => {
+  // Task detail: update field + phase + auto-save
+  const sel = document.getElementById('d-project');
+  if (sel) sel.value = proj.name;
+  const phaseSel = document.getElementById('d-phase');
+  const phases = await api('GET', `/api/projects/${proj.id}/phases`).catch(() => []);
+  state.phases[proj.id] = phases;
+  const activePhase = phases.find(ph => ph.status === 'active');
+  if (phaseSel) {
+    phaseSel.innerHTML = '<option value="">None</option>' +
+      phases.map(ph => `<option value="${ph.id}">${esc(ph.name)}</option>`).join('');
+    phaseSel.value = activePhase?.id || '';
+  }
+  if (state.selectedId) {
+    const updated = await api('PUT', `/api/tasks/${state.selectedId}`, {
+      project: proj.name, phase_id: activePhase?.id || null
+    });
+    state.tasks = state.tasks.map(t => t.id === updated.id ? { ...t, ...updated } : t);
+    renderSidebar(); renderTaskList();
+  }
+});
+
+wireNewProjOption('dbt-project', (proj) => {
+  const sel = document.getElementById('dbt-project');
+  if (sel) sel.value = proj.name;
+});
+
+wireNewProjOption('quick-project', (proj) => {
+  const sel = document.getElementById('quick-project');
+  if (sel) sel.value = proj.name;
 });
 
 loadAll();
@@ -7685,6 +7861,11 @@ loadAll();
   <div class="bulk-import-box">
     <h3 id="bulk-import-title">Import Tasks</h3>
     <p id="bulk-import-desc">One item per line. Indent lines 2+ spaces to make them subtasks of the line above. Bullets, numbers, and checkboxes are stripped automatically.</p>
+    <div style="margin-bottom:8px;">
+      <select id="bulk-proj-sel" style="width:100%;font-size:13px;padding:6px 8px;border:1px solid var(--border);border-radius:6px;background:var(--bg);color:var(--text);">
+        <option value="">No project (inbox)</option>
+      </select>
+    </div>
     <textarea id="bulk-import-ta" placeholder="Task one&#10;  Subtask of task one&#10;Task two&#10;- Bulleted task&#10;1. Numbered task" oninput="previewBulkImport()"></textarea>
     <div class="bulk-import-preview" id="bulk-import-preview"></div>
     <div class="bulk-import-actions">
