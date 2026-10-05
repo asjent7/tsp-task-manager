@@ -206,6 +206,17 @@ if (!db.prepare("SELECT value FROM settings WHERE key='gmail_source_backfill_v1'
 }
 try { db.prepare("ALTER TABLE projects ADD COLUMN type TEXT NOT NULL DEFAULT 'professional'").run(); } catch(e) {}
 try { db.prepare('ALTER TABLE projects ADD COLUMN division TEXT').run(); } catch(e) {}
+// One-time: clear app-managed category blocks (replaced by Google Calendar theme mappings)
+if (!db.prepare("SELECT value FROM settings WHERE key='cat_blocks_cleared_v1'").get()) {
+  try {
+    db.prepare('DELETE FROM category_blocks').run();
+    db.prepare("INSERT OR REPLACE INTO settings (key,value) VALUES ('cat_blocks_cleared_v1','1')").run();
+  } catch(e) { console.error('[migration] cat_blocks_cleared_v1 failed:', e.message); }
+}
+// Seed user_timezone default if not set
+if (!db.prepare("SELECT value FROM settings WHERE key='user_timezone'").get()) {
+  db.prepare("INSERT INTO settings (key,value) VALUES ('user_timezone','America/New_York')").run();
+}
 
 // project_links extra columns
 try { db.prepare("ALTER TABLE project_links ADD COLUMN type TEXT NOT NULL DEFAULT 'web-link'").run(); } catch(e) {}
@@ -1278,7 +1289,7 @@ app.get('/api/settings', (req, res) => {
 });
 
 app.patch('/api/settings', (req, res) => {
-  const allowed = ['daily_capacity_minutes','day_start_hour','day_end_hour','gcal_task_calendar_id'];
+  const allowed = ['daily_capacity_minutes','day_start_hour','day_end_hour','gcal_task_calendar_id','user_timezone','gcal_theme_mappings'];
   const stmt = db.prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?,?)');
   Object.entries(req.body).filter(([k]) => allowed.includes(k)).forEach(([k,v]) => stmt.run(k, String(v)));
   const s = {};
@@ -1633,8 +1644,13 @@ async function syncTaskBlockToGoogle(block, existingEventId) {
     const calId  = await getTaskCalendarId(token);
     const task   = db.prepare('SELECT title, category, project, due_date FROM tasks WHERE id=?').get(block.task_id);
     if (!task) return null;
-    const startD = new Date(`${block.date}T${block.start_time}:00`);
-    const endD   = new Date(startD.getTime() + Number(block.duration_minutes) * 60000);
+    const tz = (db.prepare("SELECT value FROM settings WHERE key='user_timezone'").get())?.value || 'America/New_York';
+    const startDtStr = `${block.date}T${block.start_time}:00`;
+    const startMs    = new Date(startDtStr).getTime();
+    const endMs      = startMs + Number(block.duration_minutes) * 60000;
+    const endD       = new Date(endMs);
+    const endDateStr = `${endD.getFullYear()}-${String(endD.getMonth()+1).padStart(2,'0')}-${String(endD.getDate()).padStart(2,'0')}`;
+    const endTimeStr = `${String(endD.getHours()).padStart(2,'0')}:${String(endD.getMinutes()).padStart(2,'0')}:00`;
     const descParts = [];
     if (task.project)  descParts.push(`Project: ${task.project}`);
     if (task.category) descParts.push(`Category: ${task.category}`);
@@ -1643,8 +1659,8 @@ async function syncTaskBlockToGoogle(block, existingEventId) {
     const body = JSON.stringify({
       summary:      `🎯 ${task.title}`,
       description:  descParts.join('\n'),
-      start:        { dateTime: toRFC3339Local(startD) },
-      end:          { dateTime: toRFC3339Local(endD) },
+      start:        { dateTime: startDtStr, timeZone: tz },
+      end:          { dateTime: `${endDateStr}T${endTimeStr}`, timeZone: tz },
       transparency: 'opaque'
     });
     const headers = { Authorization:'Bearer '+token, 'Content-Type':'application/json', 'Content-Length':Buffer.byteLength(body) };
@@ -1754,6 +1770,24 @@ app.delete('/api/auth/google', (req, res) => {
   ['gmail_label_to_task_id','gmail_label_tasked_id'].forEach(k =>
     db.prepare('DELETE FROM settings WHERE key=?').run(k));
   res.status(204).end();
+});
+
+app.post('/api/repair/timezone', async (req, res) => {
+  const auth = db.prepare('SELECT refresh_token FROM google_auth WHERE id = 1').get();
+  if (!auth) return res.json({ fixed: 0, skipped: 0, error: 'not_connected' });
+  try {
+    const today  = new Date().toISOString().slice(0, 10);
+    const blocks = db.prepare('SELECT * FROM time_blocks WHERE gcal_event_id IS NOT NULL AND date >= ?').all(today);
+    let fixed = 0, skipped = 0;
+    for (const block of blocks) {
+      const result = await syncTaskBlockToGoogle(block, block.gcal_event_id);
+      if (result && !result.scopeError) fixed++;
+      else skipped++;
+    }
+    res.json({ fixed, skipped, total: blocks.length });
+  } catch(e) {
+    res.status(500).json({ error: e.message });
+  }
 });
 
 app.get('/api/calendar/google-events', async (req, res) => {

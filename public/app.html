@@ -191,6 +191,11 @@
     .cal-day-block-sub { font-size: 10px; color: rgba(255,255,255,.8); margin-top: 1px; }
     .cal-day-block-log { font-size: 9px; background: rgba(255,255,255,.22); color: white; border: none; border-radius: 3px; padding: 1px 5px; cursor: pointer; margin-top: 3px; display: inline-block; }
     .cal-day-block-log:hover { background: rgba(255,255,255,.38); }
+    .cal-day-block-chips { display: none; gap: 3px; margin-top: 3px; }
+    .cal-day-block:hover .cal-day-block-chips { display: flex; }
+    .cal-dur-chip { font-size: 9px; background: rgba(255,255,255,.2); color: white; border: none; border-radius: 3px; padding: 1px 5px; cursor: pointer; }
+    .cal-dur-chip:hover { background: rgba(255,255,255,.4); }
+    .cal-dur-chip.active { background: rgba(255,255,255,.5); font-weight: 700; }
     .cal-day-resize { position: absolute; bottom: 0; left: 0; right: 0; height: 9px; cursor: ns-resize; display: flex; align-items: flex-end; justify-content: center; padding-bottom: 2px; }
     .cal-day-resize::after { content: ''; display: block; width: 22px; height: 2px; background: rgba(255,255,255,.45); border-radius: 1px; }
     .cal-day-panel { width: 300px; flex-shrink: 0; border-left: 1px solid var(--border); padding: 0 10px; overflow-y: auto; background: var(--surface); border-radius: 0 8px 8px 0; }
@@ -1550,44 +1555,6 @@
 </div>
 
 <!-- Category Block Modal -->
-<div class="overlay" id="cat-block-modal">
-  <div class="modal">
-    <h3 id="cat-block-modal-title">Add Theme Block</h3>
-    <div class="modal-sub">Reserve a time range for a specific category of work.</div>
-    <div class="field-row" style="margin-top:8px;">
-      <div style="flex:2;">
-        <label style="display:block;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin-bottom:4px;">Label</label>
-        <input type="text" id="cat-block-label" placeholder="e.g. Accounting Time">
-      </div>
-      <div>
-        <label style="display:block;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin-bottom:4px;">Category</label>
-        <select id="cat-block-category" style="width:100%;font-size:12px;padding:5px;border:1px solid var(--border);border-radius:6px;background:var(--bg);color:var(--text);">
-          <option value="">Pick…</option>
-        </select>
-      </div>
-    </div>
-    <div class="field-row" style="margin-top:6px;">
-      <div>
-        <label style="display:block;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin-bottom:4px;">Date</label>
-        <input type="date" id="cat-block-date">
-      </div>
-      <div>
-        <label style="display:block;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin-bottom:4px;">Start</label>
-        <input type="time" id="cat-block-start">
-      </div>
-      <div>
-        <label style="display:block;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin-bottom:4px;">Duration (min)</label>
-        <input type="number" id="cat-block-duration" min="15" step="15" placeholder="60" style="width:70px;">
-      </div>
-    </div>
-    <div class="modal-btns">
-      <button class="btn btn-danger btn-sm" id="cat-block-delete-btn" style="display:none;" onclick="deleteCatBlockFromModal()">Delete</button>
-      <button class="btn btn-ghost btn-sm" onclick="closeCatBlockModal()">Cancel</button>
-      <button class="btn btn-primary btn-sm" onclick="saveCatBlock()">Save</button>
-    </div>
-  </div>
-</div>
-
 <!-- Day Settings Modal -->
 <div class="overlay" id="day-settings-modal">
   <div class="modal" style="max-width:460px;">
@@ -1904,6 +1871,10 @@ async function loadAll() {
     startHour:       parseInt(settings.day_start_hour || 5),
     endHour:         parseInt(settings.day_end_hour || 21),
   };
+  state.userTimezone = settings.user_timezone || 'America/New_York';
+  try {
+    state.gcalThemeMappings = settings.gcal_theme_mappings ? JSON.parse(settings.gcal_theme_mappings) : {};
+  } catch(e) { state.gcalThemeMappings = {}; }
   state.googleCalConnected   = googleStatus.connected;
   state.googleCalConnectedAt = googleStatus.connected_at;
   state.googleCalEmail       = googleStatus.email || null;
@@ -5613,21 +5584,38 @@ function startGcalRefresh() {
   }, 60000);
 }
 
-function gcalBusyConflict(date, startTimeStr, durationMins, eventsOverride) {
+function getThemeMapping(title) {
+  if (!title) return null;
+  const mappings = state.gcalThemeMappings || {};
+  for (const [pattern, category] of Object.entries(mappings)) {
+    if (title.toUpperCase().includes(pattern.toUpperCase())) return { pattern, category };
+  }
+  return null;
+}
+
+function gcalAnalyzeConflict(date, startTimeStr, durationMins, eventsOverride) {
   const events = eventsOverride ?? state.googleEvents;
-  if (!state.googleCalConnected || !events?.length) return false;
+  const none = { busyEvt: null, themeEvt: null, mapping: null };
+  if (!state.googleCalConnected || !events?.length) return none;
   const startMs     = new Date(`${date}T${startTimeStr}:00`).getTime();
   const endMs       = startMs + durationMins * 60000;
   const gridStartMs = new Date(`${date}T${String(state.daySettings.startHour).padStart(2,'0')}:00:00`).getTime();
   const gridEndMs   = new Date(`${date}T${String(state.daySettings.endHour).padStart(2,'0')}:00:00`).getTime();
-  return events.some(evt => {
-    if (evt.all_day || evt.transparency === 'transparent' || !evt.start || evt.start.length === 10) return false;
+  for (const evt of events) {
+    if (evt.all_day || evt.transparency === 'transparent' || !evt.start || evt.start.length === 10) continue;
     const evtStartMs = new Date(evt.start).getTime();
     const evtEndMs   = evt.end ? new Date(evt.end).getTime() : evtStartMs + 3600000;
-    // Skip events entirely outside the visible grid
-    if (evtStartMs >= gridEndMs || evtEndMs <= gridStartMs) return false;
-    return startMs < evtEndMs && endMs > evtStartMs;
-  });
+    if (evtStartMs >= gridEndMs || evtEndMs <= gridStartMs) continue;
+    if (!(startMs < evtEndMs && endMs > evtStartMs)) continue;
+    const mapping = getThemeMapping(evt.title);
+    if (mapping) return { busyEvt: null, themeEvt: evt, mapping };
+    return { busyEvt: evt, themeEvt: null, mapping: null };
+  }
+  return none;
+}
+
+function gcalBusyConflict(date, startTimeStr, durationMins, eventsOverride) {
+  return !!gcalAnalyzeConflict(date, startTimeStr, durationMins, eventsOverride).busyEvt;
 }
 
 // Load/render
@@ -5741,6 +5729,9 @@ function renderCalendarDay() {
       ? `<span title="Not synced to Google Calendar" style="position:absolute;top:2px;right:18px;font-size:9px;opacity:.85;">⚠</span>` : '';
     const linkedBadge = b.gcal_linked
       ? `<span class="gcal-linked-badge" title="Linked from Google Calendar">G</span>` : '';
+    const durChips = h >= 44 ? `<div class="cal-day-block-chips" onmousedown="event.stopPropagation()">
+      ${[60,90,120].map(m => `<button class="cal-dur-chip${b.duration_minutes===m?' active':''}" onclick="event.stopPropagation();calDayResizeBlock(${b.id},${m})">${m===60?'1h':m===90?'90m':'2h'}</button>`).join('')}
+    </div>` : '';
     blocksHtml += `<div class="cal-day-block${b.logged?' logged':''}"
       data-block-id="${b.id}" data-task-id="${b.task_id}"
       style="top:${y}px;height:${h}px;background:${col};"
@@ -5749,6 +5740,7 @@ function renderCalendarDay() {
       ${syncIcon}
       <div class="cal-day-block-title">${linkedBadge}${esc(b.task_title)}</div>
       ${h >= 36 ? `<div class="cal-day-block-sub">${fmt12(b.start_time)} · ${fmtMins(b.duration_minutes)}</div>` : ''}
+      ${durChips}
       ${h >= 50 ? logBtn : ''}
       <div class="cal-day-resize" onmousedown="calDayResizeStart(event,${b.id},${b.duration_minutes})"></div>
     </div>`;
@@ -5786,21 +5778,6 @@ function renderCalendarDay() {
     </div>`;
   });
 
-  // Category (theme) block overlays
-  let catBlocksHtml = '';
-  (state.categoryBlocks || []).forEach(cb => {
-    const cbStartMs = new Date(`${cb.date}T${cb.start_time}:00`).getTime();
-    const cbEndMs   = cbStartMs + cb.duration_minutes * 60000;
-    if (cbStartMs >= gridEndMs || cbEndMs <= gridStartMs) return;
-    const y  = Math.max((cbStartMs - gridStartMs) / 3600000 * PX_PER_HOUR, 0);
-    const h  = Math.max((Math.min(cbEndMs, gridEndMs) - Math.max(cbStartMs, gridStartMs)) / 3600000 * PX_PER_HOUR, 24);
-    const col = catColor(cb.category);
-    catBlocksHtml += `<div class="cal-cat-block" style="top:${y}px;height:${h}px;background:${col}22;border-color:${col}88;"
-      onclick="openCatBlockModal(${cb.id},'${cb.date}')">
-      <div class="cal-cat-block-label" style="background:${col}33;color:${col};">${esc(cb.label)} <span style="opacity:.6;font-weight:400;text-transform:none;">(${cb.category})</span></div>
-      ${h >= 48 ? `<div class="cal-cat-block-inner" style="color:${col};">${fmt12(cb.start_time)} – ${fmt12(yToTimeStr((Math.min(cbEndMs, gridEndMs) - gridStartMs) / 3600000 * PX_PER_HOUR))} · ${fmtMins(cb.duration_minutes)}</div>` : ''}
-    </div>`;
-  });
 
   let gcalAllDayHtml = '';
   if (gcalAllDay.length) {
@@ -5827,7 +5804,6 @@ function renderCalendarDay() {
         <button class="btn btn-sm btn-ghost" onclick="setCalMode('week')">Week</button>
         <button class="btn btn-sm btn-ghost" onclick="setCalMode('month')">Month</button>
       </div>
-      <button class="btn btn-ghost btn-sm" onclick="openCatBlockModal(null,state.calDayStr)">+ Theme Block</button>
       <button class="btn btn-ghost btn-sm" onclick="openDaySettings()" title="Day settings">⚙️</button>
       <button class="btn btn-ghost btn-sm cal-panel-toggle-btn" onclick="toggleCalPanel()">${calPanelCollapsed ? 'Tasks ▶' : 'Tasks ◀'}</button>
     </div>
@@ -5849,7 +5825,7 @@ function renderCalendarDay() {
             ${linesHtml}
             ${nowHtml}
             <div class="cal-drop-indicator" id="cal-drop-indicator"></div>
-            ${isSun ? `<div style="display:flex;align-items:center;justify-content:center;height:100%;font-size:13px;color:#94a3b8;font-style:italic;">Sundays are blocked — no time blocks.</div>` : catBlocksHtml + blocksHtml + gcalBlocksHtml}
+            ${isSun ? `<div style="display:flex;align-items:center;justify-content:center;height:100%;font-size:13px;color:#94a3b8;font-style:italic;">Sundays are blocked — no time blocks.</div>` : blocksHtml + gcalBlocksHtml}
           </div>
         </div>
       </div>
@@ -6089,8 +6065,8 @@ async function calDayDrop(e) {
   } else if (calDragType === 'block') {
     const block = state.timeBlocks.find(b => b.id === calDragBlockId);
     const dur = block?.duration_minutes || 60;
-    if (gcalBusyConflict(state.calDayStr, time, dur)) {
-      toast("That time is busy on your Google Calendar");
+    const { busyEvt: dropBusy } = gcalAnalyzeConflict(state.calDayStr, time, dur);
+    if (dropBusy && !confirm(`"${dropBusy.title}" is on your Google Calendar at that time. Schedule anyway?`)) {
       renderCalendarDay();
     } else {
       await calDayMoveBlock(calDragBlockId, state.calDayStr, time);
@@ -6129,7 +6105,7 @@ document.addEventListener('mousemove', e => {
   if (calResizeBlockId) {
     const delta = e.clientY - calResizeStartY;
     const deltaMins = Math.round(delta / PX_PER_HOUR * 60 / 15) * 15;
-    const newDur = Math.max(15, calResizeStartDur + deltaMins);
+    const newDur = Math.max(60, calResizeStartDur + deltaMins);
     const el = document.querySelector(`[data-block-id="${calResizeBlockId}"]`);
     if (el) el.style.height = Math.max(newDur / 60 * PX_PER_HOUR, 24) + 'px';
   }
@@ -6147,7 +6123,7 @@ document.addEventListener('mouseup', e => {
   if (calResizeBlockId) {
     const delta = e.clientY - calResizeStartY;
     const deltaMins = Math.round(delta / PX_PER_HOUR * 60 / 15) * 15;
-    const newDur = Math.max(15, calResizeStartDur + deltaMins);
+    const newDur = Math.max(60, calResizeStartDur + deltaMins);
     const bid = calResizeBlockId;
     calResizeBlockId = null; calResizeStartY = null; calResizeStartDur = null;
     if (deltaMins !== 0) calDayResizeBlock(bid, newDur);
@@ -6160,8 +6136,8 @@ document.addEventListener('mouseup', e => {
       const newTime = yToTimeStr(snapY(rawY));
       const block   = state.timeBlocks.find(b => b.id === bid);
       const dur     = block?.duration_minutes || 60;
-      if (gcalBusyConflict(state.calDayStr, newTime, dur)) {
-        toast("That time is busy on your Google Calendar");
+      const { busyEvt: moveBusy } = gcalAnalyzeConflict(state.calDayStr, newTime, dur);
+      if (moveBusy && !confirm(`"${moveBusy.title}" is on your Google Calendar at that time. Schedule anyway?`)) {
         renderCalendarDay();
       } else {
         calDayMoveBlock(bid, state.calDayStr, newTime).then(() => refreshGoogleEventsDay(state.calDayStr));
@@ -6303,7 +6279,8 @@ document.getElementById('block-edit-modal').addEventListener('click', e => { if 
 // Quick-block modal: shown after dropping a task onto the day grid
 function defaultBlockDur(task) {
   const remaining = Math.max(0, (task?.estimated_minutes || 0) - (task?.scheduled_minutes || 0));
-  return remaining > 0 ? Math.min(remaining, 120) : 30;
+  if (remaining > 0 && remaining < 60) return remaining;
+  return 60;
 }
 function openQuickBlock(taskId, date, time) {
   pendingDropDate = date; pendingDropTime = time; pendingDropTaskId = taskId;
@@ -6332,15 +6309,18 @@ async function calDropInstant(taskId, date, time) {
   const task = state.tasks.find(t => t.id === taskId);
   const dur = defaultBlockDur(task);
   const dayEvts = date === state.calDayStr ? undefined : (state.googleWeekEvents[date] || []);
-  if (gcalBusyConflict(date, time, dur, dayEvts)) { toast('That time is busy on your Google Calendar'); return; }
-  const catConflict = catBlockConflict(date, time, dur, taskId);
-  if (catConflict) { toast(`That slot is reserved for ${catConflict.category} tasks`); return; }
-  const parentCb = catBlockContaining(date, time, dur, taskId);
-  await calDayCreateBlock(taskId, date, time, dur, parentCb?.id || null);
+  const { busyEvt, themeEvt, mapping } = gcalAnalyzeConflict(date, time, dur, dayEvts);
+  if (busyEvt) {
+    if (!confirm(`"${busyEvt.title}" is on your Google Calendar at that time. Schedule anyway?`)) return;
+  } else if (themeEvt) {
+    const taskCat = task?.category;
+    if (taskCat && mapping && taskCat !== mapping.category) {
+      toast(`⚠ Dropping into "${themeEvt.title}" (${mapping.category}) but task is ${taskCat}`);
+    }
+  }
+  await calDayCreateBlock(taskId, date, time, dur, null);
   if (date !== state.calDayStr) {
-    api('GET', `/api/category-blocks?date=${date}`).then(cbs => {
-      state.weekCategoryBlocks[date] = cbs; renderCalendarWeekGrid();
-    }).catch(() => {});
+    renderCalendarWeekGrid();
   } else {
     refreshGoogleEventsDay(date);
   }
@@ -6353,27 +6333,20 @@ async function confirmQuickBlock() {
   pendingDropDate = pendingDropTime = pendingDropTaskId = null;
 
   // Check Google Calendar conflict
-  if (gcalBusyConflict(date, time, dur)) {
-    toast('That time is busy on your Google Calendar');
-    return;
+  const { busyEvt: qBusy, themeEvt: qTheme, mapping: qMap } = gcalAnalyzeConflict(date, time, dur);
+  if (qBusy) {
+    if (!confirm(`"${qBusy.title}" is on your Google Calendar at that time. Schedule anyway?`)) return;
+  } else if (qTheme) {
+    const task = state.tasks.find(t => t.id === taskId);
+    const taskCat = task?.category;
+    if (taskCat && qMap && taskCat !== qMap.category) {
+      toast(`⚠ Dropping into "${qTheme.title}" (${qMap.category}) but task is ${taskCat}`);
+    }
   }
 
-  // Check category block conflict: non-matching task cannot drop into a theme block
-  const catConflict = catBlockConflict(date, time, dur, taskId);
-  if (catConflict) {
-    toast(`That time is in a "${catConflict.label}" (${catConflict.category}) block — only ${catConflict.category} tasks can be scheduled there`);
-    return;
-  }
-
-  // If landing inside a matching category block, link the time block to it
-  const parentCb = catBlockContaining(date, time, dur, taskId);
-  await calDayCreateBlock(taskId, date, time, dur, parentCb?.id || null);
-  // Reload category blocks for the date in case we're in week grid view
+  await calDayCreateBlock(taskId, date, time, dur, null);
   if (date !== state.calDayStr) {
-    api('GET', `/api/category-blocks?date=${date}`).then(cbs => {
-      state.weekCategoryBlocks[date] = cbs;
-      renderCalendarWeekGrid();
-    }).catch(() => {});
+    renderCalendarWeekGrid();
   } else {
     refreshGoogleEventsDay(date);
   }
@@ -6486,11 +6459,10 @@ async function deleteCatBlockFromModal() {
   else renderCalendarWeekGrid();
   toast('Theme block deleted');
 }
-document.getElementById('cat-block-modal').addEventListener('click', e => { if (e.target===e.currentTarget) closeCatBlockModal(); });
-
 // ── Week time-grid (Feature 2) ────────────────────────────────────────────────
 
 let PX_PER_HOUR_WEEK = 40; // compressed — full day visible without scrolling
+const WTG_HDR_H = 22; // height of the day-column header row in px
 
 function wtgTimeToY(timeStr, startHour) {
   const [h, m] = timeStr.split(':').map(Number);
@@ -6579,21 +6551,6 @@ function renderCalendarWeekGrid() {
       if (ny >= 0 && ny <= totalPx) nowHtml = `<div class="cal-wtg-now-line" style="top:${ny}px;"></div>`;
     }
 
-    // Category blocks
-    let catHtml = '';
-    (state.weekCategoryBlocks[ds] || []).forEach(cb => {
-      const cbStartMs = new Date(`${cb.date}T${cb.start_time}:00`).getTime();
-      const cbEndMs   = cbStartMs + cb.duration_minutes * 60000;
-      const gsMs = new Date(`${ds}T${String(startHour).padStart(2,'0')}:00:00`).getTime();
-      const geMs = new Date(`${ds}T${String(endHour).padStart(2,'0')}:00:00`).getTime();
-      if (cbStartMs >= geMs || cbEndMs <= gsMs) return;
-      const y = (Math.max(cbStartMs, gsMs) - gsMs) / 3600000 * PX_PER_HOUR_WEEK;
-      const h = Math.max((Math.min(cbEndMs, geMs) - Math.max(cbStartMs, gsMs)) / 3600000 * PX_PER_HOUR_WEEK, 8);
-      const col = catColor(cb.category);
-      catHtml += `<div class="cal-wtg-cat-block" style="top:${y}px;height:${h}px;background:${col}22;border-color:${col}88;" onclick="openCatBlockModal(${cb.id},'${ds}')">
-        <div class="cal-wtg-cat-label" style="color:${col};">${esc(cb.label)}</div>
-      </div>`;
-    });
 
     // Task blocks
     let blocksHtml = '';
@@ -6630,7 +6587,7 @@ function renderCalendarWeekGrid() {
 
     colsHtml += `<div class="${colCls}" data-date="${ds}" ${drop} style="height:${totalPx}px;">
       <div class="cal-wtg-col-hdr">${d.toLocaleDateString('en-US',{weekday:'short'})} <span class="${isTday?'today-num':''}">${d.getDate()}</span></div>
-      ${linesHtml}${nowHtml}${catHtml}${blocksHtml}${gcalHtml}
+      ${linesHtml}${nowHtml}${blocksHtml}${gcalHtml}
       <div class="cal-wtg-drop-ind" id="wtg-ind-${ds}"></div>
     </div>`;
   });
@@ -6650,7 +6607,6 @@ function renderCalendarWeekGrid() {
         <button class="btn btn-sm ${state.calMode==='month'?'btn-primary':'btn-ghost'}" onclick="setCalMode('month')">Month</button>
       </div>
       <button class="btn btn-ghost btn-sm" onclick="state.calWeekGridMode=!state.calWeekGridMode;renderCalendar();">${state.calWeekGridMode ? 'Tasks view' : 'Grid view'}</button>
-      <button class="btn btn-ghost btn-sm" onclick="openCatBlockModal(null,state.calDayStr)">+ Theme Block</button>
       <button class="btn btn-ghost btn-sm cal-panel-toggle-btn" onclick="toggleCalPanel()">${calPanelCollapsed ? 'Tasks ▶' : 'Tasks ◀'}</button>
     </div>
     <div class="cal-wtg-wrap">
@@ -6670,7 +6626,7 @@ function wtgDragOver(e, date) {
   e.preventDefault();
   const { startHour, endHour } = state.daySettings;
   const rawY  = wtgColY(e);
-  const y     = wtgSnapY(rawY, startHour, endHour);
+  const y     = wtgSnapY(rawY - WTG_HDR_H, startHour, endHour);
   const time  = wtgYToTime(y, startHour);
   const task  = state.tasks.find(t => t.id === calDragTaskId);
   const dur   = calDragType === 'block'
@@ -6679,16 +6635,15 @@ function wtgDragOver(e, date) {
 
   // Determine busy status using week google events for this date
   const dayEvts = state.googleWeekEvents[date] || [];
-  const gcalBusy = gcalBusyConflict(date, time, dur, dayEvts);
-  const catConflict = catBlockConflict(date, time, dur, calDragTaskId);
-  const busy = gcalBusy || !!catConflict;
+  const { busyEvt } = gcalAnalyzeConflict(date, time, dur, dayEvts);
+  const busy = !!busyEvt;
 
   const startMins = startHour * 60 + y / PX_PER_HOUR_WEEK * 60;
   const endMins   = startMins + dur;
   const endTime   = `${String(Math.floor(endMins/60)).padStart(2,'0')}:${String(endMins%60).padStart(2,'0')}`;
   const ind = document.getElementById(`wtg-ind-${date}`);
   if (ind) {
-    ind.style.top     = y + 22 + 'px'; // +22 for header height
+    ind.style.top     = y + WTG_HDR_H + 'px';
     ind.style.height  = Math.max(dur / 60 * PX_PER_HOUR_WEEK, 8) + 'px';
     ind.style.display = 'block';
     ind.style.borderColor = busy ? '#ef4444' : '#3b82f6';
@@ -6711,15 +6666,17 @@ async function wtgDrop(e, date) {
   if (ind) { ind.style.display = 'none'; ind.innerHTML = ''; }
   const { startHour, endHour } = state.daySettings;
   const rawY = wtgColY(e);
-  const y    = wtgSnapY(rawY, startHour, endHour);
+  const y    = wtgSnapY(rawY - WTG_HDR_H, startHour, endHour);
   const time = wtgYToTime(y, startHour);
   if (calDragType === 'task' && calDragTaskId) {
     await calDropInstant(calDragTaskId, date, time);
   } else if (calDragType === 'block' && calDragBlockId) {
     const block = Object.values(state.weekBlocks).flat().find(b => b.id === calDragBlockId);
     const dur = block?.duration_minutes || 60;
-    if (gcalBusyConflict(date, time, dur, state.googleWeekEvents[date] || [])) {
-      toast('That time is busy on your Google Calendar');
+    const _wkEvts = state.googleWeekEvents[date] || [];
+    const { busyEvt: _wkBusy } = gcalAnalyzeConflict(date, time, dur, _wkEvts);
+    if (_wkBusy && !confirm(`"${_wkBusy.title}" is on your Google Calendar at that time. Schedule anyway?`)) {
+      renderCalendarWeekGrid(); return;
     } else {
       try {
         const updated = await api('PATCH', `/api/time-blocks/${calDragBlockId}`, { date, start_time: time });
@@ -6992,6 +6949,11 @@ function renderSettings() {
        <button class="btn btn-ghost btn-sm" style="margin-top:6px;" onclick="disconnectGoogle()">Disconnect</button>`
     : `<button class="btn btn-primary btn-sm" onclick="connectGoogle()">Connect Google Calendar</button>`;
 
+  const tzOptions = ['America/New_York','America/Chicago','America/Denver','America/Los_Angeles','America/Phoenix','America/Anchorage','Pacific/Honolulu','Europe/London','Europe/Paris','Europe/Berlin','Asia/Tokyo','Asia/Shanghai','Australia/Sydney'];
+  const tzSelect = `<select id="tz-select" onchange="saveTimezoneSetting(this.value)" style="font-size:12px;padding:4px 6px;border:1px solid var(--border);border-radius:6px;background:var(--bg);color:var(--text);">
+    ${tzOptions.map(tz => `<option value="${tz}" ${state.userTimezone===tz?'selected':''}>${tz}</option>`).join('')}
+  </select>`;
+  const themeMappingVal = esc(JSON.stringify(state.gcalThemeMappings || {}, null, 2));
   document.getElementById('task-list').innerHTML = `
     <div class="settings-wrap">
       <div class="settings-section">
@@ -7002,6 +6964,30 @@ function renderSettings() {
             <div class="settings-row-desc">Shows your Google Calendar events in Day and Week views, and pushes task time blocks to a dedicated <strong>TSP Time Blocks</strong> calendar so your schedule stays in sync.</div>
           </div>
           <div style="display:flex;flex-direction:column;align-items:flex-end;gap:6px;flex-shrink:0;">${statusHtml}</div>
+        </div>
+        <div class="settings-row">
+          <div class="settings-row-info">
+            <div class="settings-row-label">Time Zone</div>
+            <div class="settings-row-desc">Used when pushing task blocks to Google Calendar. Must match your Google account's time zone.</div>
+          </div>
+          <div style="flex-shrink:0;">${tzSelect}</div>
+        </div>
+        ${state.googleCalConnected ? `<div class="settings-row">
+          <div class="settings-row-info">
+            <div class="settings-row-label">Repair Time Zone</div>
+            <div class="settings-row-desc">Re-push all future task blocks to Google Calendar with the correct time zone. Use after changing the time zone setting or if blocks appear at wrong times.</div>
+          </div>
+          <div style="flex-shrink:0;"><button class="btn btn-ghost btn-sm" onclick="repairTimezone()">Repair</button></div>
+        </div>` : ''}
+        <div class="settings-row">
+          <div class="settings-row-info">
+            <div class="settings-row-label">Google Event Theme Mappings</div>
+            <div class="settings-row-desc">JSON map of Google Calendar event title keywords → task categories. When dropping a task onto a matching event, no conflict error is shown.<br>Example: <code>{"SALES":  "sales", "ACCT": "accounting"}</code></div>
+          </div>
+          <div style="flex-shrink:0;min-width:220px;">
+            <textarea id="theme-mapping-input" rows="4" style="width:100%;font-size:11px;padding:4px 6px;border:1px solid var(--border);border-radius:6px;background:var(--bg);color:var(--text);font-family:monospace;resize:vertical;">${themeMappingVal}</textarea>
+            <button class="btn btn-ghost btn-sm" style="margin-top:4px;" onclick="saveThemeMappings()">Save Mappings</button>
+          </div>
         </div>
         <div class="settings-row">
           <div class="settings-row-info">
@@ -7467,6 +7453,37 @@ function setupCatDrag() {
 
 function connectGoogle() {
   window.location.href = '/api/auth/google';
+}
+
+async function saveTimezoneSetting(tz) {
+  await api('PATCH', '/api/settings', { user_timezone: tz });
+  state.userTimezone = tz;
+  toast('Time zone saved');
+}
+
+async function repairTimezone() {
+  const btn = document.querySelector('[onclick="repairTimezone()"]');
+  if (btn) { btn.textContent = 'Repairing…'; btn.disabled = true; }
+  try {
+    const result = await api('POST', '/api/repair/timezone');
+    toast(`Timezone repair: ${result.fixed} block${result.fixed !== 1 ? 's' : ''} updated (${result.skipped} skipped, ${result.total} total future blocks)`);
+  } catch(e) {
+    toast('Repair failed: ' + e.message);
+  } finally {
+    if (btn) { btn.textContent = 'Repair'; btn.disabled = false; }
+  }
+}
+
+async function saveThemeMappings() {
+  const raw = document.getElementById('theme-mapping-input')?.value?.trim() || '{}';
+  try {
+    const parsed = JSON.parse(raw);
+    await api('PATCH', '/api/settings', { gcal_theme_mappings: JSON.stringify(parsed) });
+    state.gcalThemeMappings = parsed;
+    toast('Theme mappings saved');
+  } catch(e) {
+    toast('Invalid JSON: ' + e.message);
+  }
 }
 
 // ── Gmail capture ─────────────────────────────────────────────────────────────
