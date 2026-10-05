@@ -269,6 +269,11 @@
     .cal-due-chip.overdue { background:#fef2f2; border-color:#ef4444; color:#b91c1c; }
     /* Panel group headers */
     .cal-panel-group-hdr { font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:.06em; color:var(--muted); padding:8px 0 4px; }
+    /* Due-date filter pills */
+    .cal-due-pills { display:flex; flex-wrap:wrap; gap:3px; }
+    .cal-due-pill { display:inline-flex; align-items:center; gap:3px; font-size:10px; font-weight:600; padding:2px 7px; border-radius:100px; border:1.5px solid var(--border); cursor:pointer; background:transparent; color:var(--muted); font-family:inherit; white-space:nowrap; line-height:1.4; }
+    .cal-due-pill:hover { background:var(--bg); }
+    .cal-due-pill .pill-ct { font-weight:400; }
 
     /* ── Category blocks (theme blocks) ── */
     .cal-cat-block { position:absolute; left:2px; right:2px; border-radius:6px; overflow:hidden; z-index:6; cursor:pointer; border:2px solid; }
@@ -1707,6 +1712,29 @@ function dueBadgeInfo(dueStr, todayStr) {
   return { text: 'Due ' + fmtDate(dueStr), color: '#94a3b8', bg: '#f8fafc', diffDays };
 }
 
+function duePillBucket(t, todayStr) {
+  if (!t.due_date) return 'nodate';
+  const diff = Math.round((new Date(t.due_date + 'T00:00:00') - new Date(todayStr + 'T00:00:00')) / 86400000);
+  if (diff < 0)  return 'overdue';
+  if (diff === 0) return 'today';
+  if (diff <= 3) return 'duesoon';
+  const daysToSun = (7 - new Date(todayStr + 'T00:00:00').getDay()) % 7;
+  if (daysToSun > 3 && diff <= daysToSun) return 'thisweek';
+  return 'comingsoon';
+}
+
+function toggleDuePill(id) {
+  if (id === 'all') {
+    calPanelDuePills = new Set();
+  } else if (calPanelDuePills.has(id)) {
+    calPanelDuePills.delete(id);
+  } else {
+    calPanelDuePills.add(id);
+  }
+  localStorage.setItem('calPanelDuePills', JSON.stringify([...calPanelDuePills]));
+  renderDayPanel();
+}
+
 // ── State ─────────────────────────────────────────────────────────────────────
 
 function getWeekStart(date) {
@@ -1780,6 +1808,10 @@ let catBlockEditId = null;
 let calPanelHideScheduled = false;
 let calPanelCollapsed = localStorage.getItem('calPanelCollapsed') === '1';
 let calShowCompleted = localStorage.getItem('calShowCompleted') === '1';
+let calPanelDuePills = (() => {
+  try { return new Set(JSON.parse(localStorage.getItem('calPanelDuePills') || '["overdue","today","duesoon"]')); }
+  catch(e) { return new Set(['overdue','today','duesoon']); }
+})();
 let slotPickerDate = null, slotPickerTime = null;
 let taskSchedBlocks = [];
 let toastUndoFn = null;
@@ -6047,17 +6079,30 @@ function renderDayPanel() {
 
   const PRIORITY_ORDER = { urgent: 0, high: 1, medium: 2, low: 3 };
 
-  let tasks = state.tasks.filter(t => isActiveTask(t) && t.status !== 'complete');
-  if (calPanelHideScheduled) tasks = tasks.filter(t => {
+  // Apply all filters except due-pill first, so counts reflect other active filters
+  let baseTasks = state.tasks.filter(t => isActiveTask(t) && t.status !== 'complete');
+  if (calPanelHideScheduled) baseTasks = baseTasks.filter(t => {
     const sched = t.scheduled_minutes || 0;
     const est = t.estimated_minutes || 0;
     return !(est > 0 && sched >= est);
   });
-  if (calPanelFocusList) tasks = tasks.filter(t => (t.focus_list_ids||[]).includes(Number(calPanelFocusList)));
-  if (calPanelPriority)  tasks = tasks.filter(t => t.priority === calPanelPriority);
-  if (calPanelProject)   tasks = tasks.filter(t => t.project === calPanelProject);
-  if (calPanelCategory)  tasks = tasks.filter(t => t.category === calPanelCategory);
-  if (calPanelSearch)    tasks = tasks.filter(t => t.title.toLowerCase().includes(calPanelSearch));
+  if (calPanelFocusList) baseTasks = baseTasks.filter(t => (t.focus_list_ids||[]).includes(Number(calPanelFocusList)));
+  if (calPanelPriority)  baseTasks = baseTasks.filter(t => t.priority === calPanelPriority);
+  if (calPanelProject)   baseTasks = baseTasks.filter(t => t.project === calPanelProject);
+  if (calPanelCategory)  baseTasks = baseTasks.filter(t => t.category === calPanelCategory);
+  if (calPanelSearch)    baseTasks = baseTasks.filter(t => t.title.toLowerCase().includes(calPanelSearch));
+
+  // Count per bucket for live pill counts
+  const bucketCounts = {};
+  baseTasks.forEach(t => {
+    const b = duePillBucket(t, today);
+    bucketCounts[b] = (bucketCounts[b] || 0) + 1;
+  });
+
+  // Apply due-pill filter
+  let tasks = calPanelDuePills.size > 0
+    ? baseTasks.filter(t => calPanelDuePills.has(duePillBucket(t, today)))
+    : baseTasks;
 
   // Group tasks: Do now → Upcoming → No due date
   function isDoNow(t) {
@@ -6069,6 +6114,28 @@ function renderDayPanel() {
   const doNow    = tasks.filter(t => isDoNow(t)).sort((a,b) => (a.due_date||'').localeCompare(b.due_date||''));
   const upcoming = tasks.filter(t => !isDoNow(t) && t.due_date).sort((a,b) => a.due_date.localeCompare(b.due_date));
   const noDate   = tasks.filter(t => !isDoNow(t) && !t.due_date).sort((a,b) => (PRIORITY_ORDER[a.priority]||3)-(PRIORITY_ORDER[b.priority]||3));
+
+  // Build pill bar HTML
+  const PILL_DEFS = [
+    { id: 'overdue',    label: 'Overdue',    c: '#ef4444', bg: '#fef2f2' },
+    { id: 'today',      label: 'Today',      c: '#f97316', bg: '#fff7ed' },
+    { id: 'duesoon',    label: 'Due soon',   c: '#f97316', bg: '#fff7ed' },
+    { id: 'thisweek',   label: 'This week',  c: '#ca8a04', bg: '#fefce8' },
+    { id: 'comingsoon', label: 'Coming soon',c: '#64748b', bg: '#f1f5f9' },
+    { id: 'nodate',     label: 'No date',    c: '#64748b', bg: '#f1f5f9' },
+  ];
+  const isAll = calPanelDuePills.size === 0;
+  const allStyle = isAll ? 'border-color:var(--accent);background:#eff6ff;color:var(--accent);' : '';
+  let pillsHtml = `<div class="cal-due-pills">
+    <button class="cal-due-pill" onclick="toggleDuePill('all')" style="${allStyle}">All <span class="pill-ct">${baseTasks.length}</span></button>
+    ${PILL_DEFS.map(p => {
+      const cnt = bucketCounts[p.id] || 0;
+      const on = calPanelDuePills.has(p.id);
+      const st = on ? `border-color:${p.c};background:${p.bg};color:${p.c};`
+                    : cnt === 0 ? 'opacity:.35;' : '';
+      return `<button class="cal-due-pill" onclick="toggleDuePill('${p.id}')" style="${st}">${p.label} <span class="pill-ct">${cnt}</span></button>`;
+    }).join('')}
+  </div>`;
 
   const projects = [...new Set(state.tasks.filter(t => isActiveTask(t) && t.project).map(t => t.project))].sort();
   const SEL = 'flex:1;min-width:0;font-size:11px;padding:3px 4px;border:1px solid var(--border);border-radius:4px;background:var(--bg);color:var(--text);';
@@ -6082,6 +6149,7 @@ function renderDayPanel() {
   </div>
   <div style="display:flex;flex-direction:column;gap:4px;margin-bottom:8px;position:sticky;top:28px;background:var(--surface);padding-bottom:4px;">
     <input type="text" id="cal-panel-search-input" placeholder="Search tasks…" value="${esc(calPanelSearch)}" oninput="setDayPanelFilter('search',this.value)" style="width:100%;font-size:11px;padding:3px 5px;border:1px solid var(--border);border-radius:4px;background:var(--bg);color:var(--text);box-sizing:border-box;">
+    ${pillsHtml}
     <div style="display:flex;gap:4px;">
       <select onchange="setDayPanelFilter('priority',this.value)" style="${SEL}">
         <option value="" ${!calPanelPriority?'selected':''}>All priority</option>
