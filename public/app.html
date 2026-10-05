@@ -256,6 +256,19 @@
     .cal-reconnect-banner a { color:#b91c1c; font-weight:600; margin-left:4px; }
     /* Linked GCal block badge on task blocks */
     .gcal-linked-badge { display:inline-flex; align-items:center; justify-content:center; width:11px; height:11px; background:rgba(255,255,255,.9); color:#4285f4; border-radius:50%; font-size:7px; font-weight:700; margin-left:2px; vertical-align:middle; flex-shrink:0; }
+    /* Over-time indicator */
+    .cal-overtime-dot { display:inline-flex; align-items:center; justify-content:center; width:13px; height:13px; background:#ef4444; color:white; border-radius:50%; font-size:8px; font-weight:700; line-height:1; flex-shrink:0; margin-left:2px; vertical-align:middle; }
+    .cal-day-block.completed-block { opacity:.3; filter:grayscale(.6); }
+    .cal-wtg-block.completed-block { opacity:.3; filter:grayscale(.6); }
+    /* Due-date countdown badges in panel */
+    .cal-panel-due-badge { display:inline-block; font-size:9px; font-weight:600; padding:1px 5px; border-radius:100px; margin-top:2px; }
+    /* Due-date chips strip in day view (all-day area) */
+    .cal-due-chips-row { display:flex; flex-wrap:wrap; gap:4px; padding:4px 8px 5px; border-bottom:1px solid #e2e8f0; }
+    .cal-due-chip { font-size:10px; border-radius:100px; padding:2px 8px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:180px; cursor:pointer; border:1px solid #cbd5e1; background:#f8fafc; color:#1e293b; font-family:inherit; }
+    .cal-due-chip:hover { background:#f1f5f9; }
+    .cal-due-chip.overdue { background:#fef2f2; border-color:#ef4444; color:#b91c1c; }
+    /* Panel group headers */
+    .cal-panel-group-hdr { font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:.06em; color:var(--muted); padding:8px 0 4px; }
 
     /* ── Category blocks (theme blocks) ── */
     .cal-cat-block { position:absolute; left:2px; right:2px; border-radius:6px; overflow:hidden; z-index:6; cursor:pointer; border:2px solid; }
@@ -1599,6 +1612,11 @@
         <input type="number" id="day-end-input" min="1" max="24">
       </div>
     </div>
+    <label style="display:flex;align-items:center;gap:6px;margin-top:12px;font-size:13px;cursor:pointer;" title="Show completed-task blocks on the grid (muted)">
+      <input type="checkbox" id="show-completed-toggle"
+        onchange="calShowCompleted=this.checked;localStorage.setItem('calShowCompleted',this.checked?'1':'0');if(state.calMode==='day')renderCalendarDay();else if(state.calWeekGridMode)renderCalendarWeekGrid();">
+      Show completed task blocks on grid
+    </label>
     <!-- Google Calendar task-block sync section -->
     <div id="gcal-sync-section" style="display:none;margin-top:16px;border-top:1px solid var(--border);padding-top:12px;">
       <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin-bottom:8px;">Google Calendar — Task Blocks</div>
@@ -1669,6 +1687,24 @@ function isActiveTask(t) {
     if (proj && (proj.horizon || 'active') !== 'active') return false;
   }
   return true;
+}
+
+function isOverTime(t) {
+  if (!t.estimated_minutes || t.estimated_minutes <= 0 || t.status === 'complete') return false;
+  const logged = t.actual_minutes || 0;
+  if (logged >= t.estimated_minutes) return true;
+  if (logged === 0 && (t.scheduled_minutes || 0) >= t.estimated_minutes) return true;
+  return false;
+}
+
+function dueBadgeInfo(dueStr, todayStr) {
+  if (!dueStr) return null;
+  const diffDays = Math.round((new Date(dueStr + 'T00:00:00') - new Date(todayStr + 'T00:00:00')) / 86400000);
+  if (diffDays < 0)  return { text: Math.abs(diffDays) + 'd overdue', color: '#ef4444', bg: '#fef2f2', diffDays };
+  if (diffDays === 0) return { text: 'Due today',    color: '#f97316', bg: '#fff7ed', diffDays };
+  if (diffDays === 1) return { text: 'Due tomorrow', color: '#f97316', bg: '#fff7ed', diffDays };
+  if (diffDays <= 7)  return { text: 'Due in ' + diffDays + 'd', color: '#ca8a04', bg: '#fefce8', diffDays };
+  return { text: 'Due ' + fmtDate(dueStr), color: '#94a3b8', bg: '#f8fafc', diffDays };
 }
 
 // ── State ─────────────────────────────────────────────────────────────────────
@@ -1743,6 +1779,7 @@ let wtgHoverDate = null;   // date string of column currently hovered
 let catBlockEditId = null;
 let calPanelHideScheduled = false;
 let calPanelCollapsed = localStorage.getItem('calPanelCollapsed') === '1';
+let calShowCompleted = localStorage.getItem('calShowCompleted') === '1';
 let slotPickerDate = null, slotPickerTime = null;
 let taskSchedBlocks = [];
 let toastUndoFn = null;
@@ -5855,6 +5892,8 @@ function renderCalendarDay() {
   let blocksHtml = '';
   const now = new Date();
   state.timeBlocks.forEach(b => {
+    const isComplete = b.task_status === 'complete';
+    if (!calShowCompleted && isComplete) return;
     const y    = timeToY(b.start_time);
     const h    = Math.max(b.duration_minutes / 60 * PX_PER_HOUR, 24);
     const col  = catColor(b.task_category);
@@ -5872,12 +5911,17 @@ function renderCalendarDay() {
     const durChips = h >= 44 ? `<div class="cal-day-block-chips" onmousedown="event.stopPropagation()">
       ${[60,90,120].map(m => `<button class="cal-dur-chip${b.duration_minutes===m?' active':''}" onclick="event.stopPropagation();calDayResizeBlock(${b.id},${m})">${m===60?'1h':m===90?'90m':'2h'}</button>`).join('')}
     </div>` : '';
-    blocksHtml += `<div class="cal-day-block${b.logged?' logged':''}"
+    const task = state.tasks.find(t => t.id === b.task_id);
+    const overtime = !isComplete && task && isOverTime(task);
+    const otBadge = overtime
+      ? `<span class="cal-overtime-dot" style="position:absolute;top:3px;right:${(state.googleCalConnected && !b.gcal_event_id && !b.gcal_linked)?'28':'4'}px;" title="Over time: ${fmtMins(task.actual_minutes||task.scheduled_minutes||0)} used of ${fmtMins(task.estimated_minutes)} estimate">!</span>` : '';
+    const completedCls = isComplete ? ' completed-block' : '';
+    blocksHtml += `<div class="cal-day-block${b.logged?' logged':''}${completedCls}"
       data-block-id="${b.id}" data-task-id="${b.task_id}"
       style="top:${y}px;height:${h}px;background:${col};"
       onmousedown="calDayBlockMouseDown(event,${b.id},${y})">
       <button class="cal-day-block-remove" onmousedown="event.stopPropagation()" onclick="event.stopPropagation();calDayDeleteBlock(${b.id})" title="Remove block">×</button>
-      ${syncIcon}
+      ${syncIcon}${otBadge}
       <div class="cal-day-block-title">${linkedBadge}${esc(b.task_title)}</div>
       ${h >= 36 ? `<div class="cal-day-block-sub">${fmt12(b.start_time)} · ${fmtMins(b.duration_minutes)}</div>` : ''}
       ${durChips}
@@ -5926,6 +5970,24 @@ function renderCalendarDay() {
       `</div>`;
   }
 
+  // Due-date chips: tasks due today + overdue tasks (shown only on today)
+  const todayStr = dateStr(new Date());
+  const dueDayTasks = state.tasks.filter(t => isActiveTask(t) && t.status !== 'complete' && t.due_date === state.calDayStr);
+  const overdueChipTasks = (state.calDayStr === todayStr)
+    ? state.tasks.filter(t => isActiveTask(t) && t.status !== 'complete' && t.due_date && t.due_date < todayStr)
+    : [];
+  const allDueChipTasks = [...overdueChipTasks, ...dueDayTasks];
+  let dueChipsHtml = '';
+  if (allDueChipTasks.length) {
+    const PDOT = { urgent:'#ef4444', high:'#f97316', medium:'#eab308', low:'#94a3b8' };
+    const chips = allDueChipTasks.map(t => {
+      const isOvd = t.due_date < todayStr;
+      const dot = `<span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:${PDOT[t.priority]||'#94a3b8'};margin-right:4px;vertical-align:middle;flex-shrink:0;"></span>`;
+      const label = t.title.length > 22 ? t.title.slice(0,22)+'…' : t.title;
+      return `<button class="cal-due-chip${isOvd?' overdue':''}" onclick="openDetail(${t.id})" title="${esc(t.title)} · ${isOvd?Math.abs(Math.round((new Date(t.due_date+'T00:00:00')-new Date(todayStr+'T00:00:00'))/86400000))+'d overdue':'Due today'}">${dot}${esc(label)}</button>`;
+    }).join('');
+    dueChipsHtml = `<div class="cal-due-chips-row">${chips}</div>`;
+  }
 
   const dropAttrs = isSun ? '' :
     `ondragover="calDayDragOver(event)" ondragleave="calDayDragLeave(event)" ondrop="calDayDrop(event)"`;
@@ -5947,7 +6009,7 @@ function renderCalendarDay() {
       <button class="btn btn-ghost btn-sm" onclick="openDaySettings()" title="Day settings">⚙️</button>
       <button class="btn btn-ghost btn-sm cal-panel-toggle-btn" onclick="toggleCalPanel()">${calPanelCollapsed ? 'Tasks ▶' : 'Tasks ◀'}</button>
     </div>
-    ${gcalAllDayHtml}
+    ${gcalAllDayHtml}${dueChipsHtml}
     <div class="cal-day-cap-bar">
       <div class="cal-day-cap-label">
         <span>Daily Capacity</span>
@@ -5981,18 +6043,9 @@ function renderDayPanel() {
   const searchWasFocused = document.activeElement?.id === 'cal-panel-search-input';
   const searchSelStart   = document.activeElement?.selectionStart;
   const searchSelEnd     = document.activeElement?.selectionEnd;
-  const today = state.calDayStr;
-  const eowDate = new Date(today + 'T00:00:00');
-  eowDate.setDate(eowDate.getDate() + 6);
-  const eow = eowDate.toISOString().slice(0, 10);
+  const today = dateStr(new Date());
 
-  function bucket(t) {
-    if (!t.due_date) return 3;
-    if (t.due_date < today) return 0;
-    if (t.due_date === today) return 1;
-    if (t.due_date <= eow) return 2;
-    return 3;
-  }
+  const PRIORITY_ORDER = { urgent: 0, high: 1, medium: 2, low: 3 };
 
   let tasks = state.tasks.filter(t => isActiveTask(t) && t.status !== 'complete');
   if (calPanelHideScheduled) tasks = tasks.filter(t => {
@@ -6005,14 +6058,18 @@ function renderDayPanel() {
   if (calPanelProject)   tasks = tasks.filter(t => t.project === calPanelProject);
   if (calPanelCategory)  tasks = tasks.filter(t => t.category === calPanelCategory);
   if (calPanelSearch)    tasks = tasks.filter(t => t.title.toLowerCase().includes(calPanelSearch));
-  tasks = [...tasks].sort((a, b) => {
-    const db = bucket(a) - bucket(b);
-    if (db !== 0) return db;
-    if (a.due_date && b.due_date) return a.due_date.localeCompare(b.due_date);
-    return a.due_date ? -1 : b.due_date ? 1 : 0;
-  });
 
-  const BUCKET_LABELS = ['Overdue', 'Today', 'This Week', 'Later'];
+  // Group tasks: Do now → Upcoming → No due date
+  function isDoNow(t) {
+    if (!['urgent','high'].includes(t.priority)) return false;
+    if (!t.due_date) return false;
+    const diff = Math.round((new Date(t.due_date+'T00:00:00') - new Date(today+'T00:00:00')) / 86400000);
+    return diff <= 3;
+  }
+  const doNow    = tasks.filter(t => isDoNow(t)).sort((a,b) => (a.due_date||'').localeCompare(b.due_date||''));
+  const upcoming = tasks.filter(t => !isDoNow(t) && t.due_date).sort((a,b) => a.due_date.localeCompare(b.due_date));
+  const noDate   = tasks.filter(t => !isDoNow(t) && !t.due_date).sort((a,b) => (PRIORITY_ORDER[a.priority]||3)-(PRIORITY_ORDER[b.priority]||3));
+
   const projects = [...new Set(state.tasks.filter(t => isActiveTask(t) && t.project).map(t => t.project))].sort();
   const SEL = 'flex:1;min-width:0;font-size:11px;padding:3px 4px;border:1px solid var(--border);border-radius:4px;background:var(--bg);color:var(--text);';
 
@@ -6048,34 +6105,47 @@ function renderDayPanel() {
     </select>` : ''}
   </div>`;
 
+  function renderTaskCard(t) {
+    const badge = dueBadgeInfo(t.due_date, today);
+    const dueLine = badge
+      ? `<div><span class="cal-panel-due-badge" style="background:${badge.bg};color:${badge.color};">${badge.text}</span></div>`
+      : '';
+    const sched = t.scheduled_minutes || 0;
+    const est   = t.estimated_minutes || 0;
+    const fullySched = est > 0 && sched >= est;
+    const left  = est > 0 ? Math.max(0, est - sched) : null;
+    const schedLine = fullySched
+      ? `<div style="font-size:10px;color:#10b981;margin-top:2px;font-weight:600;">✓ Fully scheduled</div>`
+      : left !== null
+        ? `<div style="font-size:10px;color:var(--muted);margin-top:2px;">${fmtMins(left)} left to schedule</div>`
+        : (sched > 0 ? `<div style="font-size:10px;color:var(--muted);margin-top:2px;">${fmtMins(sched)} scheduled</div>` : '');
+    const usedMins = t.actual_minutes || t.scheduled_minutes || 0;
+    const otTitle = `Over time: ${fmtMins(usedMins)} used of ${fmtMins(t.estimated_minutes)} estimate`;
+    const otDot = isOverTime(t)
+      ? `<span class="cal-overtime-dot" title="${esc(otTitle)}">!</span>` : '';
+    return `<div class="cal-day-panel-task" data-priority="${t.priority}" draggable="true" ondragstart="calDayTaskDragStart(event,${t.id})" style="${fullySched?'opacity:.5;':''}">
+      <div style="font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:flex;align-items:center;gap:2px;">
+        <span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;">${esc(t.title)}</span>${otDot}
+      </div>
+      ${dueLine}${schedLine}
+    </div>`;
+  }
+
   if (!tasks.length) {
     html += '<div class="cal-day-panel-empty">No tasks to schedule</div>';
   } else {
-    let lastBucket = -1;
-    tasks.forEach(t => {
-      const b = bucket(t);
-      if (b !== lastBucket) {
-        html += `<div style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);padding:${lastBucket===-1?'0':'8px'} 0 4px;">${BUCKET_LABELS[b]}</div>`;
-        lastBucket = b;
-      }
-      const overdue = t.due_date && t.due_date < today;
-      const dueLine = t.due_date
-        ? `<div style="font-size:10px;color:${overdue?'var(--urgent)':'var(--muted)'};margin-top:2px;">${t.due_date===today?'Due today':'Due '+fmtDate(t.due_date)}</div>`
-        : '';
-      const sched = t.scheduled_minutes || 0;
-      const est   = t.estimated_minutes || 0;
-      const fullySched = est > 0 && sched >= est;
-      const left  = est > 0 ? Math.max(0, est - sched) : null;
-      const schedLine = fullySched
-        ? `<div style="font-size:10px;color:#10b981;margin-top:2px;font-weight:600;">✓ Fully scheduled</div>`
-        : left !== null
-          ? `<div style="font-size:10px;color:var(--muted);margin-top:2px;">${fmtMins(left)} left to schedule</div>`
-          : (sched > 0 ? `<div style="font-size:10px;color:var(--muted);margin-top:2px;">${fmtMins(sched)} scheduled</div>` : '');
-      html += `<div class="cal-day-panel-task" data-priority="${t.priority}" draggable="true" ondragstart="calDayTaskDragStart(event,${t.id})" style="${fullySched?'opacity:.5;':''}">
-        <div style="font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${esc(t.title)}</div>
-        ${dueLine}${schedLine}
-      </div>`;
-    });
+    if (doNow.length) {
+      html += `<div class="cal-panel-group-hdr" style="color:#ef4444;padding-top:0;">🔥 Do now <span style="font-weight:400;color:#ef4444;opacity:.7;">(${doNow.length})</span></div>`;
+      doNow.forEach(t => { html += renderTaskCard(t); });
+    }
+    if (upcoming.length) {
+      html += `<div class="cal-panel-group-hdr" ${doNow.length?'':'style="padding-top:0;"'}>Upcoming</div>`;
+      upcoming.forEach(t => { html += renderTaskCard(t); });
+    }
+    if (noDate.length) {
+      html += `<div class="cal-panel-group-hdr" ${(!doNow.length&&!upcoming.length)?'style="padding-top:0;"':''}>No due date</div>`;
+      noDate.forEach(t => { html += renderTaskCard(t); });
+    }
   }
 
   el.innerHTML = html;
@@ -6695,15 +6765,21 @@ function renderCalendarWeekGrid() {
     // Task blocks
     let blocksHtml = '';
     (state.weekBlocks[ds] || []).forEach(b => {
+      const isComplete = b.task_status === 'complete';
+      if (!calShowCompleted && isComplete) return;
       const y = wtgTimeToY(b.start_time, startHour);
       const h = Math.max(b.duration_minutes / 60 * PX_PER_HOUR_WEEK, 8);
       const col = catColor(b.task_category);
-      blocksHtml += `<div class="cal-wtg-block" draggable="true"
+      const task = state.tasks.find(t => t.id === b.task_id);
+      const overtime = !isComplete && task && isOverTime(task);
+      const otDot = overtime ? `<span style="display:inline-block;width:8px;height:8px;background:#ef4444;border-radius:50%;flex-shrink:0;" title="Over time"></span>` : '';
+      const completedCls = isComplete ? ' completed-block' : '';
+      blocksHtml += `<div class="cal-wtg-block${completedCls}" draggable="true"
         data-block-id="${b.id}" style="top:${y}px;height:${h}px;background:${col};"
         ondragstart="wtgBlockDragStart(event,${b.id})"
         onclick="setCalMode('day');state.calDayStr='${ds}';loadTimeBlocks('${ds}').then(()=>renderCalendarDay());"
-        title="${esc(b.task_title)} · ${fmt12(b.start_time)} · ${fmtMins(b.duration_minutes)}">
-        <div class="cal-wtg-block-title">${esc(b.task_title)}</div>
+        title="${esc(b.task_title)} · ${fmt12(b.start_time)} · ${fmtMins(b.duration_minutes)}${overtime?' · Over time':''}">
+        <div class="cal-wtg-block-title" style="display:flex;align-items:center;gap:2px;">${esc(b.task_title)}${otDot}</div>
       </div>`;
     });
 
@@ -6725,8 +6801,20 @@ function renderCalendarWeekGrid() {
       </div>`;
     });
 
+    // Due chips for this column
+    const wkDueTasks = state.tasks.filter(t => isActiveTask(t) && t.status !== 'complete' && t.due_date === ds);
+    const wkOverdueTasks = isTday
+      ? state.tasks.filter(t => isActiveTask(t) && t.status !== 'complete' && t.due_date && t.due_date < ds)
+      : [];
+    const wkAllDue = [...wkOverdueTasks, ...wkDueTasks];
+    const wkDueHtml = wkAllDue.length
+      ? `<div style="display:flex;flex-wrap:wrap;gap:2px;padding:2px 2px 3px;justify-content:center;">${wkAllDue.map(t => {
+          const isOvd = t.due_date < ds;
+          const PDOT = {urgent:'#ef4444',high:'#f97316',medium:'#eab308',low:'#94a3b8'};
+          return `<span onclick="openDetail(${t.id})" style="cursor:pointer;font-size:8px;background:${isOvd?'#fef2f2':'#f0fdf4'};border:1px solid ${isOvd?'#ef4444':'#86efac'};border-radius:3px;padding:0 3px;line-height:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:55px;display:inline-block;" title="${esc(t.title)}${isOvd?' (overdue)':' (due)'}"><span style="display:inline-block;width:5px;height:5px;border-radius:50%;background:${PDOT[t.priority]||'#94a3b8'};vertical-align:middle;margin-right:2px;"></span>${esc(t.title.length>5?t.title.slice(0,5)+'…':t.title)}</span>`;
+        }).join('')}</div>` : '';
     colsHtml += `<div class="${colCls}" data-date="${ds}" ${drop} style="height:${totalPx}px;">
-      <div class="cal-wtg-col-hdr">${d.toLocaleDateString('en-US',{weekday:'short'})} <span class="${isTday?'today-num':''}">${d.getDate()}</span></div>
+      <div class="cal-wtg-col-hdr">${d.toLocaleDateString('en-US',{weekday:'short'})} <span class="${isTday?'today-num':''}">${d.getDate()}</span>${wkDueHtml}</div>
       ${linesHtml}${nowHtml}${blocksHtml}${gcalHtml}
       <div class="cal-wtg-drop-ind" id="wtg-ind-${ds}"></div>
     </div>`;
@@ -6841,6 +6929,7 @@ async function openDaySettings() {
   document.getElementById('day-cap-input').value   = state.daySettings.capacityMinutes / 60;
   document.getElementById('day-start-input').value = state.daySettings.startHour;
   document.getElementById('day-end-input').value   = state.daySettings.endHour;
+  document.getElementById('show-completed-toggle').checked = calShowCompleted;
   document.getElementById('day-settings-modal').classList.add('open');
   setTimeout(() => document.getElementById('day-cap-input').focus(), 50);
   // GCal section
