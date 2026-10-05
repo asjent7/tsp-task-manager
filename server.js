@@ -1707,7 +1707,8 @@ app.get('/api/time-blocks/from-google', async (req, res) => {
     const params = new URLSearchParams({
       timeMin: new Date(f + 'T00:00:00').toISOString(),
       timeMax: new Date(t + 'T23:59:59').toISOString(),
-      singleEvents: 'true', orderBy: 'startTime', maxResults: '500'
+      singleEvents: 'true', orderBy: 'startTime', maxResults: '500',
+      timeZone: 'America/New_York'
     });
     const data = await httpsReq({
       hostname: 'www.googleapis.com',
@@ -1716,8 +1717,7 @@ app.get('/api/time-blocks/from-google', async (req, res) => {
     });
     if (data?.error) throw new Error(`Google API: ${data.error.message}`);
 
-    const debugMap = {};  // gcal_event_id → { google_start_raw, parsed_local }
-    const seenIds  = new Set();
+    const seenIds = new Set();
 
     for (const gevt of (data.items || []).filter(e => e.status !== 'cancelled' && e.start?.dateTime)) {
       const rawStart = gevt.start.dateTime;
@@ -1732,7 +1732,6 @@ app.get('/api/time-blocks/from-google', async (req, res) => {
         continue;
       }
       seenIds.add(gevt.id);
-      debugMap[gevt.id] = { google_start_raw: rawStart, parsed_local: `${p.date} ${p.time}` };
 
       const existing = db.prepare('SELECT id FROM time_blocks WHERE gcal_event_id=?').get(gevt.id);
       if (existing) {
@@ -1755,12 +1754,8 @@ app.get('/api/time-blocks/from-google', async (req, res) => {
       }
     }
 
-    // Attach debug fields so callers can verify the Google→local conversion
     const blocks = db.prepare(sel + ' WHERE tb.date >= ? AND tb.date <= ? ORDER BY tb.date ASC, tb.start_time ASC').all(f, t);
-    res.json(blocks.map(b => {
-      const dbg = b.gcal_event_id ? debugMap[b.gcal_event_id] : null;
-      return dbg ? { ...b, ...dbg } : b;
-    }));
+    res.json(blocks);
   } catch(e) {
     console.error('time-blocks/from-google error:', e.message);
     res.status(502).json({ error: e.message });
@@ -2062,14 +2057,22 @@ async function getTaskCalendarId(token) {
   return 'primary';
 }
 
-// Extract date ("YYYY-MM-DD") and time ("HH:MM") from a Google dateTime string.
-// Google's dateTime already contains the LOCAL time with an offset, e.g.
-// "2024-10-04T09:00:00-04:00" → date="2024-10-04", time="09:00".
-// Using Date().getHours() on a UTC server would return 13 instead — this avoids that.
+// Extract date ("YYYY-MM-DD") and time ("HH:MM") in America/New_York from a Google dateTime string.
+// When Google returns an explicit UTC offset (e.g. "2024-10-04T09:00:00-04:00"), slice it directly —
+// the local time is already embedded. When Google returns UTC ("...Z") or a bare datetime,
+// convert to ET via Intl.DateTimeFormat (handles DST and date rollover correctly).
 function parseGoogleDt(dtStr) {
-  if (!dtStr) return null;
-  const m = dtStr.match(/^(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2})/);
-  return m ? { date: m[1], time: m[2] } : null;
+  if (!dtStr || !dtStr.includes('T')) return null;
+  const localMatch = dtStr.match(/^(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2}):\d{2}[+-]\d{2}:\d{2}$/);
+  if (localMatch) return { date: localMatch[1], time: localMatch[2] };
+  const d = new Date(dtStr);
+  if (isNaN(d.getTime())) return null;
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/New_York', year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', hourCycle: 'h23'
+  }).formatToParts(d);
+  const get = t => parts.find(p => p.type === t)?.value ?? '';
+  return { date: `${get('year')}-${get('month')}-${get('day')}`, time: `${get('hour')}:${get('minute')}` };
 }
 
 // Duration in minutes between two Google dateTime strings (always UTC-safe).

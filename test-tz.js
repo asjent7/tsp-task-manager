@@ -4,9 +4,17 @@
 // directly from the embedded offset in the ISO string — never use Date.getHours().
 
 function parseGoogleDt(dtStr) {
-  if (!dtStr) return null;
-  const m = dtStr.match(/^(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2})/);
-  return m ? { date: m[1], time: m[2] } : null;
+  if (!dtStr || !dtStr.includes('T')) return null;
+  const localMatch = dtStr.match(/^(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2}):\d{2}[+-]\d{2}:\d{2}$/);
+  if (localMatch) return { date: localMatch[1], time: localMatch[2] };
+  const d = new Date(dtStr);
+  if (isNaN(d.getTime())) return null;
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/New_York', year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', hourCycle: 'h23'
+  }).formatToParts(d);
+  const get = t => parts.find(p => p.type === t)?.value ?? '';
+  return { date: `${get('year')}-${get('month')}-${get('day')}`, time: `${get('hour')}:${get('minute')}` };
 }
 
 function googleDurMins(startStr, endStr) {
@@ -42,6 +50,16 @@ check('DST spring-forward after  (4am EDT)', parseGoogleDt('2026-03-08T04:00:00-
 check('DST fall-back before  (1am EDT)', parseGoogleDt('2026-11-01T01:00:00-04:00'), { date: '2026-11-01', time: '01:00' });
 check('DST fall-back after   (1am EST)', parseGoogleDt('2026-11-01T01:00:00-05:00'), { date: '2026-11-01', time: '01:00' });
 check('DST fall-back after   (2am EST)', parseGoogleDt('2026-11-01T02:00:00-05:00'), { date: '2026-11-01', time: '02:00' });
+
+// parseGoogleDt — UTC "Z" suffix (Google returns UTC when timeZone param absent)
+// EDT = UTC-4, so 13:15Z → 09:15 ET; 09:00Z → 05:00 ET
+check('UTC Z: afternoon EDT',    parseGoogleDt('2026-10-09T13:15:00Z'), { date: '2026-10-09', time: '09:15' });
+check('UTC Z: morning EDT',      parseGoogleDt('2026-10-07T09:00:00Z'), { date: '2026-10-07', time: '05:00' });
+// 03:30Z on Oct 6 = 23:30 ET on Oct 5 — date rolls back
+check('UTC Z: date rollover EDT', parseGoogleDt('2026-10-06T03:30:00Z'), { date: '2026-10-05', time: '23:30' });
+// EST = UTC-5 (winter)
+check('UTC Z: afternoon EST',    parseGoogleDt('2026-01-15T19:00:00Z'), { date: '2026-01-15', time: '14:00' });
+check('UTC Z: morning EST',      parseGoogleDt('2026-02-10T13:30:00Z'), { date: '2026-02-10', time: '08:30' });
 
 // Null / edge cases
 check('null input',           parseGoogleDt(null), null);
