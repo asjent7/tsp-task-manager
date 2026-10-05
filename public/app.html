@@ -6532,6 +6532,7 @@ function gcalRefreshButton() {
 async function refreshCalendar() {
   const btn = document.getElementById('gcal-refresh-btn');
   if (btn) { btn.textContent = '↻ Refreshing…'; btn.disabled = true; }
+  _clearCalGoogleError();
   try {
     if (state.calMode === 'week' && state.calWeekGridMode) {
       await loadWeekBlocks(); renderCalendarWeekGrid();
@@ -6542,6 +6543,25 @@ async function refreshCalendar() {
   finally {
     if (btn) { btn.textContent = '↻ Refresh'; btn.disabled = false; }
   }
+}
+
+function _showCalGoogleError(msg) {
+  const id = 'cal-google-error-banner';
+  let el = document.getElementById(id);
+  if (!el) {
+    el = document.createElement('div');
+    el.id = id;
+    el.style.cssText = 'background:#fef2f2;border:1px solid #fecaca;color:#b91c1c;padding:8px 14px;font-size:12px;border-radius:6px;margin-bottom:8px;display:flex;justify-content:space-between;align-items:center;';
+    const wrap = document.querySelector('.cal-day-wrap, .cal-wtg-wrap, #cal-day-grid-outer')?.parentElement;
+    if (wrap) wrap.insertBefore(el, wrap.firstChild);
+  }
+  el.innerHTML = `<span>⚠ Google Calendar error — times may be stale: ${esc(msg)}</span><button onclick="_clearCalGoogleError()" style="background:none;border:none;cursor:pointer;color:#b91c1c;font-size:14px;">×</button>`;
+  el.style.display = 'flex';
+}
+
+function _clearCalGoogleError() {
+  const el = document.getElementById('cal-google-error-banner');
+  if (el) el.style.display = 'none';
 }
 
 
@@ -6620,11 +6640,13 @@ async function loadTimeBlocks(date) {
   const tMax = encodeURIComponent(new Date(date + 'T23:59:59').toISOString());
 
   // When connected, read task blocks directly from Google (server rebuilds DB cache).
-  // Also fetch primary calendar events for the overlay display.
+  // On error: 401 = not connected (render empty); 502 = Google failure (show banner).
   const blocksPromise = state.googleCalConnected
     ? api('GET', `/api/time-blocks/from-google?date=${date}`).catch(e => {
-        toast('Calendar load failed: ' + e.message);
-        return api('GET', `/api/time-blocks?date=${date}`);
+        if (!e.message?.includes('401') && !e.message?.includes('not connected')) {
+          _showCalGoogleError(e.message);
+        }
+        return [];
       })
     : api('GET', `/api/time-blocks?date=${date}`);
 
@@ -7660,10 +7682,13 @@ async function loadWeekBlocks() {
   const tMax = encodeURIComponent(new Date(to   + 'T23:59:59').toISOString());
 
   // When connected, read task blocks directly from Google (server rebuilds DB cache).
+  // On error: 401 = not connected (render empty); 502 = Google failure (show banner).
   const blocksPromise = state.googleCalConnected
     ? api('GET', `/api/time-blocks/from-google?from=${from}&to=${to}`).catch(e => {
-        toast('Calendar load failed: ' + e.message);
-        return api('GET', `/api/time-blocks?from=${from}&to=${to}`);
+        if (!e.message?.includes('401') && !e.message?.includes('not connected')) {
+          _showCalGoogleError(e.message);
+        }
+        return [];
       })
     : api('GET', `/api/time-blocks?from=${from}&to=${to}`);
 
