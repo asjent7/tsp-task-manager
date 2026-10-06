@@ -237,7 +237,7 @@
     .sched-picker-slot:hover { background:#eff6ff; border-color:#3b82f6; color:#3b82f6; }
     .sched-picker-slot:last-child { margin-bottom:0; }
     /* slot picker */
-    .cal-slot-picker { position:absolute; z-index:50; background:var(--surface); border:1px solid var(--border); border-radius:8px; box-shadow:0 4px 16px rgba(0,0,0,.14); padding:8px; width:290px; }
+    .cal-slot-picker { position:fixed; z-index:10000; background:var(--surface); border:1px solid var(--border); border-radius:8px; box-shadow:0 4px 16px rgba(0,0,0,.14); padding:8px; width:290px; }
     .cal-slot-picker input { width:100%; font-size:12px; padding:4px 7px; border:1px solid var(--border); border-radius:4px; box-sizing:border-box; margin-bottom:5px; background:var(--bg); color:var(--text); outline:none; }
     .cal-slot-picker-item { padding:5px 7px; border-radius:4px; cursor:pointer; font-size:12px; }
     .cal-slot-picker-item:hover, .cal-slot-picker-item.focused { background:var(--bg); }
@@ -2201,18 +2201,26 @@ async function loadAll() {
   }
   state.userTimezone = settings.user_timezone || 'America/New_York';
   try {
-    const parsed = settings.gcal_theme_mappings ? JSON.parse(settings.gcal_theme_mappings) : null;
-    state.gcalThemeMappings = (parsed && Object.keys(parsed).length) ? parsed : {
+    const _slugRemap = { sales:'sales-marketing', marketing:'sales-marketing', admin:'operations', ops:'operations', accounting:'operations', hr:'operations', pm:'client-services' };
+    const _defaultMappings = {
       "Systems":           "systems",
-      "Operations":        "ops",
-      "Finance":           "ops",
-      "Sales & Marketing": "sales",
-      "S&M":               "sales",
-      "Client Work":       "sales",
-      "Client Services":   "sales",
-      "Client Svs":        "sales",
+      "Operations":        "operations",
+      "Finance":           "operations",
+      "Sales & Marketing": "sales-marketing",
+      "S&M":               "sales-marketing",
+      "Client Work":       "client-services",
+      "Client Services":   "client-services",
+      "Client Svs":        "client-services",
       "Personal Projects": "personal"
     };
+    let parsed = settings.gcal_theme_mappings ? JSON.parse(settings.gcal_theme_mappings) : null;
+    if (parsed && Object.keys(parsed).length) {
+      // Migrate any stale old-slug values to new slugs
+      for (const k of Object.keys(parsed)) { if (_slugRemap[parsed[k]]) parsed[k] = _slugRemap[parsed[k]]; }
+      state.gcalThemeMappings = parsed;
+    } else {
+      state.gcalThemeMappings = _defaultMappings;
+    }
   } catch(e) { state.gcalThemeMappings = {}; }
   state.googleCalConnected   = googleStatus.connected;
   state.googleCalConnectedAt = googleStatus.connected_at;
@@ -7187,9 +7195,9 @@ function calDayGridClick(e) {
   const y = snapY(gridY(e.clientY));
   openSlotPicker(state.calDayStr, yToTimeStr(y), e.clientX, e.clientY);
 }
-function getZoneCategoryAtTime(date, timeStr) {
+function getZoneCategoryAtTime(date, timeStr, eventsOverride) {
   const clickMs = new Date(`${date}T${timeStr}:00`).getTime();
-  for (const evt of (state.googleEvents || [])) {
+  for (const evt of (eventsOverride ?? state.googleEvents ?? [])) {
     if (!evt.start || evt.start.length === 10 || evt.transparency === 'transparent') continue;
     const startMs = new Date(evt.start).getTime();
     const endMs   = evt.end ? new Date(evt.end).getTime() : startMs + 3600000;
@@ -7201,15 +7209,13 @@ function getZoneCategoryAtTime(date, timeStr) {
   return null;
 }
 
-function openSlotPicker(date, time, clientX, clientY) {
+function openSlotPicker(date, time, clientX, clientY, eventsOverride) {
   slotPickerDate = date; slotPickerTime = time;
-  const content = document.getElementById('cal-day-content');
-  if (!content) return;
   const existing = document.getElementById('cal-slot-picker');
   if (existing) existing.remove();
 
   // Preselect zone category if clicking inside a mapped Google event, else restore last
-  const zoneCat = getZoneCategoryAtTime(date, time);
+  const zoneCat = getZoneCategoryAtTime(date, time, eventsOverride);
   slotPickerCat = zoneCat !== null ? zoneCat : slotPickerLastCat;
   slotPickerFocusIdx = -1;
   slotPickerDueSoon = false;
@@ -7218,9 +7224,8 @@ function openSlotPicker(date, time, clientX, clientY) {
   const picker = document.createElement('div');
   picker.id = 'cal-slot-picker';
   picker.className = 'cal-slot-picker';
-  const rect = content.getBoundingClientRect();
-  picker.style.top  = (gridY(clientY) + 6) + 'px';
-  picker.style.left = Math.min(Math.max(clientX - rect.left + 4, 0), rect.width - 295) + 'px';
+  picker.style.top  = Math.min(clientY + 6, window.innerHeight - 370) + 'px';
+  picker.style.left = Math.min(clientX + 4, window.innerWidth  - 300) + 'px';
   const sprintToggle = state.weekSprint
     ? `<label class="sp-toggle"><input type="checkbox" id="sp-sprint" onchange="slotPickerSprint=this.checked;renderSlotPickerList(document.getElementById('slot-picker-input')?.value||'')"> Sprint</label>`
     : '';
@@ -7233,7 +7238,7 @@ function openSlotPicker(date, time, clientX, clientY) {
       ${sprintToggle}
     </div>
     <div id="slot-picker-list"></div>`;
-  content.appendChild(picker);
+  document.body.appendChild(picker);
   _spRenderPills();
   renderSlotPickerList('');
   setTimeout(() => { const i = document.getElementById('slot-picker-input'); if (i) i.focus(); }, 10);
@@ -7344,6 +7349,9 @@ document.addEventListener('keydown', e => {
     const focused = document.querySelector('#slot-picker-list .cal-slot-picker-item.focused');
     if (focused) { e.preventDefault(); focused.click(); }
   }
+});
+document.addEventListener('mousedown', e => {
+  if (document.getElementById('cal-slot-picker') && !e.target.closest('#cal-slot-picker')) closeSlotPicker();
 });
 async function calDayDrop(e) {
   e.preventDefault();
@@ -7906,6 +7914,18 @@ function wtgYToTime(snappedY, startHour) {
 function wtgColY(e) {
   return e.clientY - e.currentTarget.getBoundingClientRect().top;
 }
+function wtgColClick(e, ds) {
+  if (e.target.closest('.cal-wtg-block') || e.target.closest('.cal-wtg-gcal') ||
+      e.target.closest('.cal-cat-block') || e.target.closest('#cal-slot-picker') ||
+      e.target.closest('.cal-wtg-col-hdr')) return;
+  closeSlotPicker();
+  const col = e.currentTarget;
+  const rawY = e.clientY - col.getBoundingClientRect().top - WTG_HDR_H;
+  const { startHour, endHour } = state.daySettings;
+  const snapped = wtgSnapY(rawY, startHour, endHour);
+  const time = wtgYToTime(snapped, startHour);
+  openSlotPicker(ds, time, e.clientX, e.clientY, state.googleWeekEvents[ds]);
+}
 
 async function loadWeekBlocks() {
   const days = [];
@@ -8065,7 +8085,8 @@ function renderCalendarWeekGrid() {
         : '';
       return `<div style="display:flex;flex-wrap:wrap;gap:2px;padding:2px 2px 3px;justify-content:center;">${chips}${moreBtn}</div>`;
     })() : '';
-    colsHtml += `<div class="${colCls}" data-date="${ds}" ${drop} style="height:${totalPx}px;">
+    const wtgClickAttr = isSun ? '' : `onclick="wtgColClick(event,'${ds}')"`;
+    colsHtml += `<div class="${colCls}" data-date="${ds}" ${drop} ${wtgClickAttr} style="height:${totalPx}px;">
       <div class="cal-wtg-col-hdr">${d.toLocaleDateString('en-US',{weekday:'short'})} <span class="${isTday?'today-num':''}">${d.getDate()}</span>${wkDueHtml}</div>
       ${linesHtml}${nowHtml}${blocksHtml}${gcalHtml}
       <div class="cal-wtg-drop-ind" id="wtg-ind-${ds}"></div>
