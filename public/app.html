@@ -237,11 +237,20 @@
     .sched-picker-slot:hover { background:#eff6ff; border-color:#3b82f6; color:#3b82f6; }
     .sched-picker-slot:last-child { margin-bottom:0; }
     /* slot picker */
-    .cal-slot-picker { position:absolute; z-index:50; background:var(--surface); border:1px solid var(--border); border-radius:8px; box-shadow:0 4px 16px rgba(0,0,0,.14); padding:8px; width:210px; }
+    .cal-slot-picker { position:absolute; z-index:50; background:var(--surface); border:1px solid var(--border); border-radius:8px; box-shadow:0 4px 16px rgba(0,0,0,.14); padding:8px; width:290px; }
     .cal-slot-picker input { width:100%; font-size:12px; padding:4px 7px; border:1px solid var(--border); border-radius:4px; box-sizing:border-box; margin-bottom:5px; background:var(--bg); color:var(--text); outline:none; }
-    .cal-slot-picker-item { padding:5px 7px; border-radius:4px; cursor:pointer; font-size:12px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-    .cal-slot-picker-item:hover { background:var(--bg); }
+    .cal-slot-picker-item { padding:5px 7px; border-radius:4px; cursor:pointer; font-size:12px; }
+    .cal-slot-picker-item:hover, .cal-slot-picker-item.focused { background:var(--bg); }
     .cal-slot-picker-empty { font-size:11px; color:var(--muted); padding:5px 7px; }
+    #slot-picker-list { max-height:220px; overflow-y:auto; }
+    .sp-cat-pills { display:flex; gap:3px; flex-wrap:wrap; margin-bottom:6px; }
+    .sp-cat-pill { font-size:10px; padding:2px 7px; border-radius:10px; border:1px solid var(--border); cursor:pointer; background:var(--bg); color:var(--muted); white-space:nowrap; line-height:1.5; }
+    .sp-cat-pill.active { background:var(--accent); color:white; border-color:var(--accent); }
+    .sp-cat-pill:hover:not(.active) { border-color:var(--accent); color:var(--accent); }
+    .sp-toggles { display:flex; gap:10px; margin-bottom:5px; }
+    .sp-toggle { font-size:10px; color:var(--muted); cursor:pointer; display:flex; align-items:center; gap:3px; user-select:none; }
+    .sp-toggle input { width:11px; height:11px; cursor:pointer; margin:0; }
+    .sp-due-badge { font-size:9px; padding:1px 4px; border-radius:3px; flex-shrink:0; }
     /* scheduled blocks in detail panel */
     .sched-block-row { display:flex; align-items:center; gap:6px; padding:3px 0; font-size:11px; border-bottom:1px solid var(--border); }
     .sched-block-row:last-child { border-bottom:none; }
@@ -2020,6 +2029,11 @@ let calPanelDuePills = (() => {
   catch(e) { return new Set(['overdue','today','duesoon']); }
 })();
 let slotPickerDate = null, slotPickerTime = null;
+let slotPickerCat = '';
+let slotPickerLastCat = localStorage.getItem('slotPickerLastCat') || '';
+let slotPickerDueSoon = false;
+let slotPickerSprint = false;
+let slotPickerFocusIdx = -1;
 let taskSchedBlocks = [];
 let toastUndoFn = null;
 let _lastSelTaskIdx = null;
@@ -7173,39 +7187,136 @@ function calDayGridClick(e) {
   const y = snapY(gridY(e.clientY));
   openSlotPicker(state.calDayStr, yToTimeStr(y), e.clientX, e.clientY);
 }
+function getZoneCategoryAtTime(date, timeStr) {
+  const clickMs = new Date(`${date}T${timeStr}:00`).getTime();
+  for (const evt of (state.googleEvents || [])) {
+    if (!evt.start || evt.start.length === 10 || evt.transparency === 'transparent') continue;
+    const startMs = new Date(evt.start).getTime();
+    const endMs   = evt.end ? new Date(evt.end).getTime() : startMs + 3600000;
+    if (clickMs >= startMs && clickMs < endMs) {
+      const mapping = getThemeMapping(evt.title);
+      if (mapping) return mapping.category;
+    }
+  }
+  return null;
+}
+
 function openSlotPicker(date, time, clientX, clientY) {
   slotPickerDate = date; slotPickerTime = time;
   const content = document.getElementById('cal-day-content');
   if (!content) return;
   const existing = document.getElementById('cal-slot-picker');
   if (existing) existing.remove();
+
+  // Preselect zone category if clicking inside a mapped Google event, else restore last
+  const zoneCat = getZoneCategoryAtTime(date, time);
+  slotPickerCat = zoneCat !== null ? zoneCat : slotPickerLastCat;
+  slotPickerFocusIdx = -1;
+  slotPickerDueSoon = false;
+  slotPickerSprint = false;
+
   const picker = document.createElement('div');
   picker.id = 'cal-slot-picker';
   picker.className = 'cal-slot-picker';
   const rect = content.getBoundingClientRect();
-  const rawY = gridY(clientY);
-  picker.style.top  = (rawY + 6) + 'px';
-  picker.style.left = Math.min(Math.max(clientX - rect.left + 4, 0), rect.width - 220) + 'px';
-  picker.innerHTML = `<div style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin-bottom:5px;">Add task at ${fmt12(time)}</div>
+  picker.style.top  = (gridY(clientY) + 6) + 'px';
+  picker.style.left = Math.min(Math.max(clientX - rect.left + 4, 0), rect.width - 295) + 'px';
+  const sprintToggle = state.weekSprint
+    ? `<label class="sp-toggle"><input type="checkbox" id="sp-sprint" onchange="slotPickerSprint=this.checked;renderSlotPickerList(document.getElementById('slot-picker-input')?.value||'')"> Sprint</label>`
+    : '';
+  picker.innerHTML = `
+    <div style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin-bottom:5px;">Add task at ${fmt12(time)}</div>
+    <div id="sp-cat-pills" class="sp-cat-pills"></div>
     <input id="slot-picker-input" type="text" placeholder="Search tasks…" oninput="renderSlotPickerList(this.value)" autocomplete="off">
+    <div class="sp-toggles">
+      <label class="sp-toggle"><input type="checkbox" id="sp-due-soon" onchange="slotPickerDueSoon=this.checked;renderSlotPickerList(document.getElementById('slot-picker-input')?.value||'')"> Due soon</label>
+      ${sprintToggle}
+    </div>
     <div id="slot-picker-list"></div>`;
   content.appendChild(picker);
+  _spRenderPills();
   renderSlotPickerList('');
   setTimeout(() => { const i = document.getElementById('slot-picker-input'); if (i) i.focus(); }, 10);
 }
+
+function _spRenderPills() {
+  const el = document.getElementById('sp-cat-pills');
+  if (!el) return;
+  const baseTasks = state.tasks.filter(t => isActiveTask(t) && t.status !== 'complete');
+  const allCount = baseTasks.length;
+  const catCounts = {};
+  state.categories.forEach(c => { catCounts[c.slug] = baseTasks.filter(t => t.category === c.slug).length; });
+  let html = `<button class="sp-cat-pill${slotPickerCat===''?' active':''}" onclick="spSetCat('')">All <span style="font-size:9px;opacity:.7;">${allCount}</span></button>`;
+  state.categories.forEach(c => {
+    const cnt = catCounts[c.slug] || 0;
+    if (!cnt) return;
+    html += `<button class="sp-cat-pill${slotPickerCat===c.slug?' active':''}" onclick="spSetCat('${c.slug}')">${esc(c.name)} <span style="font-size:9px;opacity:.7;">${cnt}</span></button>`;
+  });
+  el.innerHTML = html;
+}
+
+function spSetCat(cat) {
+  slotPickerCat = cat;
+  slotPickerLastCat = cat;
+  localStorage.setItem('slotPickerLastCat', cat);
+  slotPickerFocusIdx = -1;
+  _spRenderPills();
+  renderSlotPickerList(document.getElementById('slot-picker-input')?.value || '');
+}
+
+function _spHighlight() {
+  document.querySelectorAll('#slot-picker-list .cal-slot-picker-item').forEach((el, i) => {
+    el.classList.toggle('focused', i === slotPickerFocusIdx);
+    if (i === slotPickerFocusIdx) el.scrollIntoView({ block: 'nearest' });
+  });
+}
+
 function renderSlotPickerList(q) {
   const el = document.getElementById('slot-picker-list');
   if (!el) return;
   const query = q.toLowerCase().trim();
-  const tasks = state.tasks.filter(t => t.status !== 'complete')
-    .filter(t => !query || t.title.toLowerCase().includes(query)).slice(0, 8);
-  if (!tasks.length) { el.innerHTML = '<div class="cal-slot-picker-empty">No tasks found</div>'; return; }
-  el.innerHTML = tasks.map(t => {
+  const today = dateStr(new Date());
+  const PORD = { urgent: 0, high: 1, medium: 2, low: 3 };
+
+  let tasks = state.tasks.filter(t => isActiveTask(t) && t.status !== 'complete');
+  if (slotPickerCat) tasks = tasks.filter(t => t.category === slotPickerCat);
+  if (slotPickerDueSoon) tasks = tasks.filter(t => {
+    if (!t.due_date) return false;
+    return Math.round((new Date(t.due_date+'T00:00:00') - new Date(today+'T00:00:00')) / 86400000) <= 7;
+  });
+  if (slotPickerSprint && state.weekSprint) {
+    const ids = new Set((state.weekSprint.tasks || []).map(t => t.id));
+    tasks = tasks.filter(t => ids.has(t.id));
+  }
+  if (query) tasks = tasks.filter(t => t.title.toLowerCase().includes(query));
+
+  function isDoNow(t) {
+    if (!['urgent','high'].includes(t.priority) || !t.due_date) return false;
+    return Math.round((new Date(t.due_date+'T00:00:00') - new Date(today+'T00:00:00')) / 86400000) <= 3;
+  }
+  const doNow  = tasks.filter(isDoNow).sort((a,b) => (a.due_date||'').localeCompare(b.due_date||''));
+  const hasDue = tasks.filter(t => !isDoNow(t) && t.due_date).sort((a,b) => a.due_date.localeCompare(b.due_date));
+  const noDate = tasks.filter(t => !isDoNow(t) && !t.due_date).sort((a,b) => (PORD[a.priority]||3)-(PORD[b.priority]||3));
+  const sorted = [...doNow, ...hasDue, ...noDate].slice(0, 12);
+
+  if (!sorted.length) { el.innerHTML = '<div class="cal-slot-picker-empty">No tasks found</div>'; return; }
+  slotPickerFocusIdx = Math.min(slotPickerFocusIdx, sorted.length - 1);
+
+  el.innerHTML = sorted.map((t, i) => {
+    const badge = dueBadgeInfo(t.due_date, today);
+    const badgeHtml = badge ? `<span class="sp-due-badge" style="background:${badge.bg};color:${badge.color};">${badge.text}</span>` : '';
     const rem = t.estimated_minutes ? Math.max(0, t.estimated_minutes - (t.scheduled_minutes||0)) : null;
-    const remStr = rem !== null && rem > 0 ? `<span style="color:var(--muted);font-size:10px;"> · ${fmtMins(rem)} left</span>` : '';
-    return `<div class="cal-slot-picker-item" onclick="slotPickerSelect(${t.id})">${esc(t.title)}${remStr}</div>`;
+    const remHtml = rem !== null && rem > 0 ? `<span style="font-size:9px;color:var(--muted);">${fmtMins(rem)} left</span>` : '';
+    const focused = i === slotPickerFocusIdx ? ' focused' : '';
+    return `<div class="cal-slot-picker-item${focused}" data-idx="${i}"
+      onclick="slotPickerSelect(${t.id})"
+      onmouseenter="slotPickerFocusIdx=${i};_spHighlight()">
+      <div style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${esc(t.title)}</div>
+      ${(badgeHtml || remHtml) ? `<div style="display:flex;gap:4px;align-items:center;margin-top:2px;flex-wrap:wrap;">${badgeHtml}${remHtml}</div>` : ''}
+    </div>`;
   }).join('');
 }
+
 function slotPickerSelect(taskId) {
   const d = slotPickerDate, t = slotPickerTime;
   closeSlotPicker();
@@ -7215,8 +7326,25 @@ function closeSlotPicker() {
   const p = document.getElementById('cal-slot-picker');
   if (p) p.remove();
   slotPickerDate = null; slotPickerTime = null;
+  slotPickerFocusIdx = -1;
 }
-document.addEventListener('keydown', e => { if (e.key === 'Escape') closeSlotPicker(); });
+document.addEventListener('keydown', e => {
+  if (!document.getElementById('cal-slot-picker')) return;
+  if (e.key === 'Escape') { closeSlotPicker(); return; }
+  if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+    e.preventDefault();
+    const items = document.querySelectorAll('#slot-picker-list .cal-slot-picker-item');
+    if (!items.length) return;
+    slotPickerFocusIdx = e.key === 'ArrowDown'
+      ? Math.min(slotPickerFocusIdx + 1, items.length - 1)
+      : Math.max(slotPickerFocusIdx - 1, 0);
+    _spHighlight();
+  }
+  if (e.key === 'Enter') {
+    const focused = document.querySelector('#slot-picker-list .cal-slot-picker-item.focused');
+    if (focused) { e.preventDefault(); focused.click(); }
+  }
+});
 async function calDayDrop(e) {
   e.preventDefault();
   const ind = document.getElementById('cal-drop-indicator');
