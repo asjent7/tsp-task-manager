@@ -225,6 +225,17 @@
     .cal-day-block-remove { position:absolute; top:3px; right:4px; width:16px; height:16px; background:rgba(0,0,0,.3); color:white; border:none; border-radius:50%; font-size:11px; line-height:16px; text-align:center; cursor:pointer; display:none; padding:0; z-index:20; }
     .cal-day-block:hover .cal-day-block-remove { display:block; }
     .cal-day-block-remove:hover { background:rgba(0,0,0,.55); }
+    /* week block × button */
+    .cal-wtg-block-remove { position:absolute; top:1px; right:1px; width:12px; height:12px; background:rgba(0,0,0,.35); color:white; border:none; border-radius:50%; font-size:9px; line-height:12px; text-align:center; cursor:pointer; display:none; padding:0; z-index:20; }
+    .cal-wtg-block:hover .cal-wtg-block-remove { display:block; }
+    .cal-wtg-block-remove:hover { background:rgba(0,0,0,.6); }
+    /* block popover */
+    #block-popover { box-sizing:border-box; }
+    /* schedule picker (slot suggestions on panel cards) */
+    .sched-picker { position:fixed; z-index:10000; background:white; border:1px solid #e2e8f0; border-radius:8px; box-shadow:0 4px 16px rgba(0,0,0,.14); padding:8px 10px; min-width:210px; }
+    .sched-picker-slot { display:block; width:100%; text-align:left; font-size:12px; padding:6px 8px; border:1px solid #e2e8f0; border-radius:5px; background:white; color:#374151; cursor:pointer; margin-bottom:4px; }
+    .sched-picker-slot:hover { background:#eff6ff; border-color:#3b82f6; color:#3b82f6; }
+    .sched-picker-slot:last-child { margin-bottom:0; }
     /* slot picker */
     .cal-slot-picker { position:absolute; z-index:50; background:var(--surface); border:1px solid var(--border); border-radius:8px; box-shadow:0 4px 16px rgba(0,0,0,.14); padding:8px; width:210px; }
     .cal-slot-picker input { width:100%; font-size:12px; padding:4px 7px; border:1px solid var(--border); border-radius:4px; box-sizing:border-box; margin-bottom:5px; background:var(--bg); color:var(--text); outline:none; }
@@ -1684,40 +1695,7 @@
 </div>
 
 <!-- Block Edit Modal -->
-<div class="overlay" id="block-edit-modal">
-  <div class="modal">
-    <h3>Edit Block</h3>
-    <div class="modal-sub" id="block-edit-title" style="font-weight:500;color:var(--text);max-height:40px;overflow:hidden;"></div>
-    <div class="field-row" style="margin-top:6px;">
-      <div>
-        <label style="display:block;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin-bottom:4px;">Date</label>
-        <input type="date" id="block-edit-date">
-      </div>
-      <div>
-        <label style="display:block;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin-bottom:4px;">Start</label>
-        <input type="time" id="block-edit-start">
-      </div>
-      <div>
-        <label style="display:block;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin-bottom:4px;">End</label>
-        <input type="time" id="block-edit-end" readonly style="background:var(--bg-alt,#f8fafc);color:var(--muted);cursor:default;">
-      </div>
-    </div>
-    <label style="display:block;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin:8px 0 4px;">Duration (minutes)</label>
-    <input type="number" id="block-edit-duration" min="15" step="15" placeholder="60" oninput="blockEditUpdateEnd()">
-    <div style="display:flex;gap:6px;margin:6px 0 2px;">
-      <button class="btn btn-ghost btn-sm" style="flex:1;" onclick="document.getElementById('block-edit-duration').value=60;blockEditUpdateEnd()">1h</button>
-      <button class="btn btn-ghost btn-sm" style="flex:1;" onclick="document.getElementById('block-edit-duration').value=90;blockEditUpdateEnd()">90m</button>
-      <button class="btn btn-ghost btn-sm" style="flex:1;" onclick="document.getElementById('block-edit-duration').value=120;blockEditUpdateEnd()">2h</button>
-      <button class="btn btn-ghost btn-sm" style="flex:1;" onclick="document.getElementById('block-edit-duration').value=180;blockEditUpdateEnd()">3h</button>
-    </div>
-    <div class="modal-btns">
-      <button class="btn btn-danger btn-sm" id="block-edit-delete-btn">Delete</button>
-      <button class="btn btn-ghost btn-sm" id="block-edit-open-task-btn" onclick="closeBlockEdit()" style="display:none;">Open task</button>
-      <button class="btn btn-ghost btn-sm" onclick="closeBlockEdit()">Cancel</button>
-      <button class="btn btn-primary btn-sm" onclick="saveBlockEdit()">Save</button>
-    </div>
-  </div>
-</div>
+<div id="block-popover" style="display:none;position:fixed;z-index:9999;background:white;border:1px solid #e2e8f0;border-radius:10px;padding:14px 16px;box-shadow:0 6px 24px rgba(0,0,0,.16);width:272px;box-sizing:border-box;"></div>
 
 <!-- GCal Log-Time Modal -->
 <div class="overlay" id="gcal-log-modal">
@@ -1755,19 +1733,6 @@
 </div>
 
 <!-- Quick Block Modal (shown after dropping a task onto the day grid) -->
-<div class="overlay" id="quick-block-modal">
-  <div class="modal">
-    <h3>Schedule Block</h3>
-    <div class="modal-sub" id="quick-block-title" style="font-weight:500;color:var(--text);max-height:40px;overflow:hidden;"></div>
-    <div id="quick-block-remaining" style="font-size:11px;color:var(--muted);margin:4px 0 10px;"></div>
-    <label style="display:block;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin-bottom:4px;">Duration (minutes)</label>
-    <input type="number" id="quick-block-duration" min="15" step="15" placeholder="30">
-    <div class="modal-btns">
-      <button class="btn btn-ghost btn-sm" onclick="cancelQuickBlock()">Cancel</button>
-      <button class="btn btn-primary btn-sm" onclick="confirmQuickBlock()">Add Block</button>
-    </div>
-  </div>
-</div>
 
 <!-- Category Block Modal -->
 <!-- Day Settings Modal -->
@@ -2031,10 +1996,11 @@ let calPanelFocusList = '';
 let calPanelCategory  = '';
 let calPanelSearch    = '';
 let gcalRefreshTimer  = null;
-// Pending drop for quick-block modal
-let pendingDropDate   = null;
-let pendingDropTime   = null;
-let pendingDropTaskId = null;
+// Block popover
+let blockPopoverId = null;
+let bpAnchorX = 0, bpAnchorY = 0;
+// Schedule picker (panel card slot suggestions)
+let schedPickerTaskId = null;
 // Week time-grid drag
 let wtgHoverDate = null;   // date string of column currently hovered
 // Week time-grid resize
@@ -7021,8 +6987,9 @@ function renderDayPanel() {
     const otDot = isOverTime(t)
       ? `<span class="cal-overtime-dot" title="${esc(otTitle)}">!</span>` : '';
     return `<div class="cal-day-panel-task" data-priority="${t.priority}" draggable="true" ondragstart="calDayTaskDragStart(event,${t.id})" style="${fullySched?'opacity:.5;':''}">
-      <div style="font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:flex;align-items:center;gap:2px;">
+      <div style="font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:flex;align-items:center;gap:3px;">
         <span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;">${esc(t.title)}</span>${otDot}
+        <button class="sched-btn" onmousedown="event.stopPropagation()" onclick="event.stopPropagation();openSchedulePicker(${t.id},this)" title="Schedule next open slot" style="flex-shrink:0;font-size:10px;padding:2px 5px;border:1px solid var(--border);border-radius:3px;background:var(--surface);color:var(--accent);cursor:pointer;line-height:1.2;font-weight:600;">+</button>
       </div>
       ${dueLine}${schedLine}
     </div>`;
@@ -7070,6 +7037,94 @@ function toggleCalPanel() {
     b.textContent = calPanelCollapsed ? 'Tasks ▶' : 'Tasks ◀';
   });
 }
+
+// ── Schedule picker (panel "+" button) ────────────────────────────────────────
+
+function findNextSlots(taskId, count = 3) {
+  const { startHour, endHour } = state.daySettings;
+  const task = state.tasks.find(t => t.id === taskId);
+  const dur = defaultBlockDur(task);
+  const slots = [];
+  const now = new Date();
+  const cur = new Date(now);
+  cur.setSeconds(0, 0);
+  const rem = cur.getMinutes() % 15;
+  if (rem > 0) cur.setMinutes(cur.getMinutes() + (15 - rem));
+  if (cur.getHours() < startHour || (cur.getHours() === startHour && cur.getMinutes() === 0 && now.getMinutes() > 0)) {
+    cur.setHours(startHour, 0, 0, 0);
+  }
+  const todayDs = dateStr(new Date());
+  let attempts = 0;
+  while (slots.length < count && attempts < 300) {
+    attempts++;
+    if (cur.getDay() === 0) { cur.setDate(cur.getDate() + 1); cur.setHours(startHour, 0, 0, 0); continue; }
+    const ds = dateStr(cur);
+    const diffDays = Math.round((new Date(ds + 'T00:00:00') - new Date(todayDs + 'T00:00:00')) / 86400000);
+    if (diffDays > 14) break;
+    const slotEndMins = cur.getHours() * 60 + cur.getMinutes() + dur;
+    if (slotEndMins > endHour * 60) { cur.setDate(cur.getDate() + 1); cur.setHours(startHour, 0, 0, 0); continue; }
+    const timeStr = `${String(cur.getHours()).padStart(2,'0')}:${String(cur.getMinutes()).padStart(2,'0')}`;
+    const slotStartMs = cur.getTime();
+    const slotEndMs = slotStartMs + dur * 60000;
+    const allBlocks = [...state.timeBlocks, ...Object.values(state.weekBlocks).flat()];
+    const blockHit = allBlocks.some(b => {
+      if (b.date !== ds) return false;
+      const bS = new Date(`${b.date}T${b.start_time}:00`).getTime();
+      return slotStartMs < bS + b.duration_minutes * 60000 && slotEndMs > bS;
+    });
+    if (blockHit) { cur.setMinutes(cur.getMinutes() + 15); continue; }
+    const gcalEvts = [...(state.googleEvents || []), ...Object.values(state.googleWeekEvents || {}).flat()];
+    const gcalHit = gcalEvts.some(evt => {
+      if (evt.transparency === 'transparent' || !evt.start || evt.start.length === 10) return false;
+      if (evt.start.slice(0, 10) !== ds) return false;
+      const eS = new Date(evt.start).getTime(), eE = evt.end ? new Date(evt.end).getTime() : eS + 3600000;
+      return slotStartMs < eE && slotEndMs > eS;
+    });
+    if (gcalHit) { cur.setMinutes(cur.getMinutes() + 15); continue; }
+    const tomorrowDs = (() => { const d = new Date(); d.setDate(d.getDate()+1); return dateStr(d); })();
+    const dayLabel = ds === todayDs ? 'Today' : ds === tomorrowDs ? 'Tomorrow'
+      : cur.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+    slots.push({ date: ds, time: timeStr, dur, label: `${dayLabel} ${fmt12(timeStr)}` });
+    cur.setMinutes(cur.getMinutes() + dur);
+  }
+  return slots;
+}
+
+function openSchedulePicker(taskId, btnEl) {
+  closeSchedulePicker();
+  schedPickerTaskId = taskId;
+  const slots = findNextSlots(taskId);
+  if (!slots.length) { toast('No open slots found in the next 2 weeks'); schedPickerTaskId = null; return; }
+  const picker = document.createElement('div');
+  picker.id = 'sched-picker';
+  picker.className = 'sched-picker';
+  picker.innerHTML = slots.map(s =>
+    `<button class="sched-picker-slot" onclick="schedPickerSelect('${s.date}','${s.time}',${s.dur})">${esc(s.label)}</button>`
+  ).join('');
+  document.body.appendChild(picker);
+  const rect = btnEl.getBoundingClientRect();
+  picker.style.left = Math.min(rect.left, window.innerWidth - 224) + 'px';
+  picker.style.top  = (rect.bottom + 4) + 'px';
+}
+
+function closeSchedulePicker() {
+  const p = document.getElementById('sched-picker');
+  if (p) p.remove();
+  schedPickerTaskId = null;
+}
+
+async function schedPickerSelect(date, time, dur) {
+  const taskId = schedPickerTaskId;
+  closeSchedulePicker();
+  if (!taskId) return;
+  await calDayCreateBlock(taskId, date, time, dur, null);
+  if (date !== state.calDayStr) renderCalendarWeekGrid();
+  else refreshGoogleEventsDay(date);
+}
+
+document.addEventListener('mousedown', e => {
+  if (schedPickerTaskId && !e.target.closest('#sched-picker') && !e.target.closest('.sched-btn')) closeSchedulePicker();
+});
 
 function calDayNav(dir) {
   const d = new Date(state.calDayStr + 'T00:00:00');
@@ -7295,7 +7350,7 @@ document.addEventListener('mouseup', e => {
         calDayMoveBlock(bid, state.calDayStr, newTime).then(() => refreshGoogleEventsDay(state.calDayStr));
       }
     } else {
-      openBlockEdit(bid);
+      openBlockPopover(bid, e);
     }
   }
 });
@@ -7379,13 +7434,31 @@ async function calDayResizeBlock(blockId, durMins) {
 }
 async function calDayDeleteBlock(blockId) {
   const b = findBlock(blockId);
-  await api('DELETE', `/api/time-blocks/${blockId}`);
+  const snap = b ? { task_id: b.task_id, date: b.date, start_time: b.start_time, duration_minutes: b.duration_minutes } : null;
+  try { await api('DELETE', `/api/time-blocks/${blockId}`); } catch(e) { toast(e.message); return; }
   removeBlockLocal(blockId);
+  closeBlockPopover();
   if (b) {
     const task = state.tasks.find(t => t.id === b.task_id);
     if (task) task.scheduled_minutes = Math.max(0, (task.scheduled_minutes || 0) - b.duration_minutes);
   }
-  closeBlockEdit(); renderCurrentCal(); toast('Block deleted');
+  renderCurrentCal();
+  toast('Removed from calendar', snap ? async () => {
+    try {
+      const nb = await api('POST', '/api/time-blocks', snap);
+      const task = state.tasks.find(t => t.id === snap.task_id);
+      if (task) task.scheduled_minutes = (task.scheduled_minutes || 0) + snap.duration_minutes;
+      if (snap.date === state.calDayStr) {
+        state.timeBlocks.push(nb);
+        state.timeBlocks.sort((a,x) => a.start_time.localeCompare(x.start_time));
+      }
+      if (state.weekBlocks[snap.date] !== undefined) {
+        state.weekBlocks[snap.date].push(nb);
+        state.weekBlocks[snap.date].sort((a,x) => a.start_time.localeCompare(x.start_time));
+      }
+      renderCurrentCal(); toast('Block restored');
+    } catch(e) { toast(e.message); }
+  } : null);
 }
 async function autoUpdateEstimate(taskId, newScheduledMins) {
   const task = state.tasks.find(t => t.id === taskId);
@@ -7435,62 +7508,144 @@ async function calDayLogBlock(blockId) {
 }
 
 // Block edit modal
-let blockEditId = null;
-function blockEditUpdateEnd() {
-  const start = document.getElementById('block-edit-start').value;
-  const dur   = parseInt(document.getElementById('block-edit-duration').value) || 0;
-  if (!start || !dur) return;
-  const [h, m] = start.split(':').map(Number);
-  const endMins = h * 60 + m + dur;
-  const eh = Math.floor(endMins / 60) % 24, em = endMins % 60;
-  document.getElementById('block-edit-end').value = `${String(eh).padStart(2,'0')}:${String(em).padStart(2,'0')}`;
+// ── Block Popover ─────────────────────────────────────────────────────────────
+
+function closeBlockPopover() {
+  document.getElementById('block-popover').style.display = 'none';
+  blockPopoverId = null;
 }
-function openBlockEdit(blockId) {
+
+function openBlockPopover(blockId, evt) {
   const b = findBlock(blockId);
   if (!b) return;
-  blockEditId = blockId;
-  document.getElementById('block-edit-title').textContent = b.task_title;
-  document.getElementById('block-edit-date').value     = b.date;
-  document.getElementById('block-edit-start').value    = b.start_time;
-  document.getElementById('block-edit-duration').value = b.duration_minutes;
-  blockEditUpdateEnd();
-  document.getElementById('block-edit-delete-btn').onclick = () => calDayDeleteBlock(blockId);
-  const openBtn = document.getElementById('block-edit-open-task-btn');
-  openBtn.style.display = '';
-  openBtn.onclick = () => { closeBlockEdit(); openDetail(b.task_id); };
-  document.getElementById('block-edit-modal').classList.add('open');
+  blockPopoverId = blockId;
+  bpAnchorX = evt.clientX;
+  bpAnchorY = evt.clientY;
+  _bpRender(b);
 }
-function closeBlockEdit() { document.getElementById('block-edit-modal').classList.remove('open'); blockEditId = null; }
-document.getElementById('block-edit-modal').addEventListener('click', e => { if (e.target===e.currentTarget) closeBlockEdit(); });
 
-// Quick-block modal: shown after dropping a task onto the day grid
+function _bpRender(b) {
+  const [sh, sm] = b.start_time.split(':').map(Number);
+  const endMins = sh * 60 + sm + b.duration_minutes;
+  const eh = Math.floor(endMins / 60) % 24, em = endMins % 60;
+  const endStr = `${String(eh).padStart(2,'0')}:${String(em).padStart(2,'0')}`;
+  const durBtns = [60,90,120,180].map(m => {
+    const active = b.duration_minutes === m;
+    return `<button onmousedown="event.stopPropagation()" onclick="bpSetDur(${m})" style="flex:1;font-size:11px;padding:3px 0;border:1px solid ${active?'#3b82f6':'#e2e8f0'};border-radius:4px;background:${active?'#eff6ff':'white'};color:${active?'#3b82f6':'#475569'};cursor:pointer;">${m===60?'1h':m===90?'90m':m===120?'2h':'3h'}</button>`;
+  }).join('');
+  const p = document.getElementById('block-popover');
+  p.innerHTML = `
+    <button onclick="closeBlockPopover()" style="position:absolute;top:6px;right:10px;background:none;border:none;cursor:pointer;font-size:17px;color:#94a3b8;line-height:1;padding:0;">×</button>
+    <div style="font-size:13px;font-weight:600;color:#0f172a;padding-right:20px;margin-bottom:10px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="${esc(b.task_title)}">${esc(b.task_title)}</div>
+    <div style="display:flex;gap:8px;margin-bottom:8px;">
+      <div style="flex:1;"><div style="font-size:10px;color:#94a3b8;font-weight:600;letter-spacing:.06em;margin-bottom:3px;">START</div>
+        <input type="time" id="bp-start" value="${b.start_time}" onchange="bpSaveTime()" style="width:100%;font-size:13px;padding:4px 6px;border:1px solid #e2e8f0;border-radius:5px;box-sizing:border-box;"></div>
+      <div style="flex:1;"><div style="font-size:10px;color:#94a3b8;font-weight:600;letter-spacing:.06em;margin-bottom:3px;">END</div>
+        <input type="time" id="bp-end" value="${endStr}" onchange="bpSaveTime()" style="width:100%;font-size:13px;padding:4px 6px;border:1px solid #e2e8f0;border-radius:5px;box-sizing:border-box;"></div>
+    </div>
+    <div style="display:flex;gap:4px;margin-bottom:8px;">${durBtns}</div>
+    <div style="margin-bottom:10px;">
+      <div style="font-size:10px;color:#94a3b8;font-weight:600;letter-spacing:.06em;margin-bottom:3px;">MOVE TO DAY</div>
+      <input type="date" id="bp-date" value="${b.date}" onchange="bpSaveDate()" style="width:100%;font-size:13px;padding:4px 6px;border:1px solid #e2e8f0;border-radius:5px;box-sizing:border-box;">
+    </div>
+    <button onclick="bpLogTime()" style="width:100%;font-size:12px;padding:5px;border:1px solid #bfdbfe;border-radius:5px;background:#eff6ff;color:#3b82f6;cursor:pointer;margin-bottom:6px;font-weight:500;">✓ Log time</button>
+    <div style="display:flex;gap:6px;">
+      <button onclick="closeBlockPopover();openDetail(${b.task_id})" style="flex:1;font-size:12px;padding:4px 6px;border:1px solid #e2e8f0;border-radius:5px;background:white;color:#475569;cursor:pointer;">Open task</button>
+      <button onclick="bpRemove()" style="flex:1;font-size:12px;padding:4px 6px;border:1px solid #fca5a5;border-radius:5px;background:#fef2f2;color:#b91c1c;cursor:pointer;">Remove from calendar</button>
+    </div>`;
+  const x = Math.min(bpAnchorX + 8, window.innerWidth - 284);
+  const y = Math.min(bpAnchorY + 8, window.innerHeight - 380);
+  p.style.left = Math.max(4, x) + 'px';
+  p.style.top  = Math.max(4, y) + 'px';
+  p.style.display = 'block';
+}
+
+async function bpApply(changes) {
+  const bid = blockPopoverId;
+  if (!bid) return;
+  const oldBlock = findBlock(bid);
+  const oldDur = oldBlock?.duration_minutes || 0;
+  try {
+    const updated = await api('PATCH', `/api/time-blocks/${bid}`, changes);
+    removeBlockLocal(bid);
+    if (updated.date === state.calDayStr) {
+      state.timeBlocks.push(updated);
+      state.timeBlocks.sort((a,b) => a.start_time.localeCompare(b.start_time));
+    }
+    if (state.weekBlocks[updated.date] !== undefined) {
+      state.weekBlocks[updated.date].push(updated);
+      state.weekBlocks[updated.date].sort((a,b) => a.start_time.localeCompare(b.start_time));
+    } else if (state.calMode === 'week') {
+      state.weekBlocks[updated.date] = [updated];
+    }
+    if (changes.duration_minutes !== undefined) {
+      const task = state.tasks.find(t => t.id === updated.task_id);
+      if (task) {
+        task.scheduled_minutes = Math.max(0, (task.scheduled_minutes || 0) - oldDur + updated.duration_minutes);
+        await autoUpdateEstimate(updated.task_id, task.scheduled_minutes);
+      }
+    }
+    blockPopoverId = updated.id;
+    _bpRender(updated);
+    renderCurrentCal();
+  } catch(err) { toast(err.message); }
+}
+
+async function bpSaveTime() {
+  if (!blockPopoverId) return;
+  const start = document.getElementById('bp-start')?.value;
+  const end   = document.getElementById('bp-end')?.value;
+  if (!start || !end) return;
+  const [sh, sm] = start.split(':').map(Number);
+  const [eh, em] = end.split(':').map(Number);
+  let dur = (eh * 60 + em) - (sh * 60 + sm);
+  if (dur <= 0) dur += 24 * 60;
+  dur = Math.max(15, Math.round(dur / 15) * 15);
+  await bpApply({ start_time: start, duration_minutes: dur });
+}
+
+async function bpSetDur(mins) {
+  if (!blockPopoverId) return;
+  const start = document.getElementById('bp-start')?.value;
+  const changes = { duration_minutes: mins };
+  if (start) changes.start_time = start;
+  await bpApply(changes);
+}
+
+async function bpSaveDate() {
+  if (!blockPopoverId) return;
+  const date = document.getElementById('bp-date')?.value;
+  if (!date) return;
+  await bpApply({ date });
+}
+
+async function bpLogTime() {
+  if (!blockPopoverId) return;
+  const bid = blockPopoverId;
+  const b = findBlock(bid);
+  if (!b) return;
+  if (!confirm(`Log ${fmtMins(b.duration_minutes)} to "${b.task_title}"?`)) return;
+  closeBlockPopover();
+  await calDayLogBlock(bid);
+}
+
+async function bpRemove() {
+  if (!blockPopoverId) return;
+  const bid = blockPopoverId;
+  closeBlockPopover();
+  await calDayDeleteBlock(bid);
+}
+
+// Close block popover when clicking outside it
+document.addEventListener('mousedown', e => {
+  if (blockPopoverId && !e.target.closest('#block-popover')) closeBlockPopover();
+});
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && blockPopoverId) closeBlockPopover(); });
+
 function defaultBlockDur(task) {
   const remaining = Math.max(0, (task?.estimated_minutes || 0) - (task?.scheduled_minutes || 0));
   if (remaining > 0 && remaining < 60) return remaining;
   return 60;
-}
-function openQuickBlock(taskId, date, time) {
-  pendingDropDate = date; pendingDropTime = time; pendingDropTaskId = taskId;
-  const task = state.tasks.find(t => t.id === taskId);
-  const estimated  = task?.estimated_minutes || 0;
-  const scheduled  = task?.scheduled_minutes || 0;
-  const remaining  = Math.max(0, estimated - scheduled);
-  document.getElementById('quick-block-title').textContent = task?.title || '';
-  const remEl = document.getElementById('quick-block-remaining');
-  if (estimated > 0) {
-    remEl.textContent = remaining > 0
-      ? `${fmtMins(remaining)} remaining of ${fmtMins(estimated)} estimated`
-      : `Fully scheduled (${fmtMins(estimated)} estimated) — adding extra block`;
-  } else {
-    remEl.textContent = '';
-  }
-  document.getElementById('quick-block-duration').value = defaultBlockDur(task);
-  document.getElementById('quick-block-modal').classList.add('open');
-  setTimeout(() => document.getElementById('quick-block-duration').select(), 50);
-}
-function cancelQuickBlock() {
-  document.getElementById('quick-block-modal').classList.remove('open');
-  pendingDropDate = pendingDropTime = pendingDropTaskId = null;
 }
 async function calDropInstant(taskId, date, time) {
   const task = state.tasks.find(t => t.id === taskId);
@@ -7511,54 +7666,6 @@ async function calDropInstant(taskId, date, time) {
   } else {
     refreshGoogleEventsDay(date);
   }
-}
-async function confirmQuickBlock() {
-  const dur = parseInt(document.getElementById('quick-block-duration').value, 10);
-  if (!dur || dur < 1) return;
-  const date = pendingDropDate, time = pendingDropTime, taskId = pendingDropTaskId;
-  document.getElementById('quick-block-modal').classList.remove('open');
-  pendingDropDate = pendingDropTime = pendingDropTaskId = null;
-
-  // Check Google Calendar conflict
-  const { busyEvt: qBusy, themeEvt: qTheme, mapping: qMap } = gcalAnalyzeConflict(date, time, dur);
-  if (qBusy) {
-    if (!confirm(`Overlaps "${qBusy.title}". Place anyway?`)) return;
-  } else if (qTheme) {
-    const task = state.tasks.find(t => t.id === taskId);
-    const taskCat = task?.category;
-    if (taskCat && qMap && taskCat !== qMap.category) {
-      toast(`⚠ Dropping into "${qTheme.title}" (${qMap.category}) but task is ${taskCat}`);
-    }
-  }
-
-  await calDayCreateBlock(taskId, date, time, dur, null);
-  if (date !== state.calDayStr) {
-    renderCalendarWeekGrid();
-  } else {
-    refreshGoogleEventsDay(date);
-  }
-}
-document.getElementById('quick-block-modal').addEventListener('click', e => { if (e.target===e.currentTarget) cancelQuickBlock(); });
-document.getElementById('quick-block-duration').addEventListener('keydown', e => { if (e.key === 'Enter') confirmQuickBlock(); });
-
-async function saveBlockEdit() {
-  const date  = document.getElementById('block-edit-date').value;
-  const start = document.getElementById('block-edit-start').value;
-  const dur   = parseInt(document.getElementById('block-edit-duration').value);
-  if (!date || !start || !dur) { toast('Fill all fields'); return; }
-  try {
-    const updated = await api('PATCH', `/api/time-blocks/${blockEditId}`, { date, start_time: start, duration_minutes: dur });
-    removeBlockLocal(blockEditId);
-    if (updated.date === state.calDayStr) {
-      state.timeBlocks.push(updated);
-      state.timeBlocks.sort((a,b) => a.start_time.localeCompare(b.start_time));
-    } else if (state.weekBlocks[updated.date] !== undefined || state.calMode === 'week') {
-      state.weekBlocks[updated.date] = state.weekBlocks[updated.date] || [];
-      state.weekBlocks[updated.date].push(updated);
-      state.weekBlocks[updated.date].sort((a,b) => a.start_time.localeCompare(b.start_time));
-    }
-    closeBlockEdit(); renderCurrentCal(); toast('Block updated');
-  } catch(err) { toast(err.message); }
 }
 
 // ── Category block helpers ────────────────────────────────────────────────────
@@ -7776,11 +7883,12 @@ function renderCalendarWeekGrid() {
       blocksHtml += `<div class="cal-wtg-block${completedCls}" draggable="true"
         data-block-id="${b.id}" style="top:${y}px;height:${h}px;background:${col};"
         ondragstart="wtgBlockDragStart(event,${b.id})"
-        onclick="event.stopPropagation();openDetail(${b.task_id})"
+        onclick="if(!this.classList.contains('dragging'))openBlockPopover(${b.id},event)"
         title="${esc(b.task_title)} · ${fmt12(b.start_time)} · ${fmtMins(b.duration_minutes)}${overtime?' · Over time':''}">
         <div class="cal-wtg-resize-t" onmousedown="event.stopPropagation();wtgResizeStart(event,${b.id},'top','${ds}',${b.duration_minutes},${y})"></div>
         <div class="cal-wtg-block-title" style="display:flex;align-items:center;gap:2px;">${esc(b.task_title)}${otDot}</div>
         ${b.sync_error ? `<span title="Sync error: ${esc(b.sync_error)}" style="position:absolute;top:1px;right:2px;font-size:7px;background:#fef2f2;color:#ef4444;border-radius:2px;padding:0 2px;">⚠</span>` : ''}
+        <button class="cal-wtg-block-remove" onmousedown="event.stopPropagation()" onclick="event.stopPropagation();calDayDeleteBlock(${b.id})">×</button>
         ${logBtn}
         <div class="cal-wtg-resize-b" onmousedown="event.stopPropagation();wtgResizeStart(event,${b.id},'bottom','${ds}',${b.duration_minutes},${y})"></div>
       </div>`;
